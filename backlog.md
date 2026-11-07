@@ -1,20 +1,23 @@
 # ControlRoom backlog
 
-`/factory next --project ControlRoom` runs the first unchecked item, checks it off and records the job id.
-Write one feature per line, in plain language.
-`- [?]` lines are follow-ups the factory proposed; change `[?]` to `[ ]` to approve one, or delete it.
+`/factory next --project ControlRoom` runs the first open item, checks it off and records the job id.
+Each item is a user story in its own file under `backlog/`, numbered `NNN-slug.md`; the line links it as `#N`.
+The order of the lines is the priority. Add items with `python3 factory/tools/job.py add --project ControlRoom '<json>'`
+(or by hand: write the story file first, then the line), and keep a number once it is given.
+`- [?]` items are follow-ups the factory proposed: change `[?]` to `[ ]` to approve one, or delete the line and its file.
+`- [h]` items are tasks for you. `(after: #3)` waits until item 3 is done; `(after: Times#5)` names another project's item.
 
 - [x] Server and backlogs view: set up the stack (see CLAUDE.md) with a server on `127.0.0.1:8100` that finds the projects in the factory root and serves a mobile-first web app showing every project's backlog, read-only: one section per project, its lines grouped as open, waiting for approval (`[?]`), for the user (`[h]`) and done (collapsed), in file order, with the line title in bold and the rest of the line below. A project whose backlog can't be read shows a fixed red line. Tests use a temporary factory root with sample projects, never the real one. → 125-server-backlogs-view
-- [ ] Installable web app: a web app manifest, icons and a service worker that caches only the app shell (never backlog or job data), so the app can be added to the iPhone home screen and opens full screen; when the server can't be reached it says so instead of showing old data.
-- [ ] Factory dashboard: bring the factory dashboard (`factory/dashboard.html`, `/board.json` in `factory/server`) into ControlRoom: the jobs board from every `factory/jobs/*/state.json` (stage, round, reviews, decision, mode, path, risk, project filter, live refresh), the `[h]` lines of every project at the top, and a job page that shows its spec, spec review, build log, reviews and decision as Markdown (raw HTML off). Once it matches the old dashboard, `factory/server` can be retired (a factory backlog change, done by hand).
-- [ ] Access token: the server creates a random access token on first start (kept in a file next to the server's settings, mode `0600`, never in a URL or log) and every request must carry it; the web app asks for it once and keeps it on the device. A command prints it and another replaces it. Full path, high risk.
-- [ ] Edit backlogs: from the backlogs view, approve a `[?]` line (to `[ ]`), drop it, add a line at the top or the bottom, move a line up, down or to the top, and edit a line's text. Every change follows the write rules in CLAUDE.md (develop only, clean `backlog.md`, version check, one commit per change with a clear message) and then pushes `develop` when the project has a remote; a refused change says why in a fixed text. Full path, high risk. (after: Access token)
-- [ ] Start at login: a script that installs and removes a macOS LaunchAgent so the server starts at login and restarts if it stops, with its log in a known place; documented in CLAUDE.md and the README.
-- [ ] Push notifications: web push to the installed iPhone app (iOS 16.4 or later) when a job reaches `needs-human` or `done`, or a project gets new `[?]` lines; the server keeps its push keys and subscriptions next to its settings and sends only the project, job id and stage, never record text. (after: Installable web app; Access token)
-- [ ] Host-header check: the server refuses any request whose Host header is not `127.0.0.1:8100`, `localhost:8100` or the configured tailnet name (a fixed error text), so DNS rebinding can't reach it from a browser. Full path, high risk. (after: Access token)
-- [ ] Done-group marker style: give the disclosure marker of the collapsed "done" group in the backlogs view a style that fits the app in light and dark mode.
-- [ ] Empty titles and retry hint: a backlog line with an empty title shows a fixed placeholder, and the "can't be read" line tells the user to reload to try again.
-- [ ] AC-1 test without reflection: the listen-address test checks `127.0.0.1:8100` without reading a non-public Kestrel property (still no real port).
-- [h] Tailscale: install Tailscale on the Mac and the iPhone and sign in to the same account, run `tailscale serve --bg 8100` on the Mac, then open the `https://<mac-name>.<tailnet>.ts.net` address on the iPhone and add it to the home screen. Set the Mac to stay awake (or wake for network access) while you are away.
-- [?] Start factory runs from the phone: a button that starts `/factory auto --project <P>` on the Mac and shows that it is running. This runs work on the Mac from the phone, so plan it in detail first (fixed command only, one run per project, how it is stopped); Remote Control already covers this today.
-- [?] Releases overview: per project, the last release tag, the commits on `develop` since then and the version `/factory release` would suggest.
+- [ ] [#1](backlog/001-installable-web-app.md) Installable web app
+- [ ] [#2](backlog/002-factory-dashboard.md) Factory dashboard
+- [ ] [#3](backlog/003-access-token.md) Access token
+- [ ] [#4](backlog/004-edit-backlogs.md) Edit backlogs (after: #3)
+- [ ] [#5](backlog/005-start-at-login.md) Start at login
+- [ ] [#6](backlog/006-push-notifications.md) Push notifications (after: #1; #3)
+- [ ] [#7](backlog/007-host-header-check.md) Host-header check (after: #3)
+- [ ] [#8](backlog/008-done-group-marker-style.md) Done-group marker style
+- [ ] [#9](backlog/009-empty-titles-and-retry-hint.md) Empty titles and retry hint
+- [ ] [#10](backlog/010-ac-1-test-without-reflection.md) AC-1 test without reflection
+- [h] [#11](backlog/011-tailscale.md) Tailscale
+- [?] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone
+- [?] [#13](backlog/013-releases-overview.md) Releases overview
