@@ -99,10 +99,12 @@ internal static class BacklogReader
 
     private static SafeFileHandle OpenNoFollowNonBlocking(string path)
     {
-        // Flags: O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC (the values differ per platform).
+        // Flags: O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC (the values differ per platform; on Linux,
+        // O_NOFOLLOW is 0x8000 on arm64 and 0x20000 on x64). Linux needs glibc (libc.so.6).
+        int linuxNoFollow = RuntimeInformation.OSArchitecture == Architecture.Arm64 ? 0x8000 : 0x20000;
         int descriptor = OperatingSystem.IsMacOS()
             ? MacOpen(path, 0x0000 | 0x0004 | 0x0100 | 0x01000000)
-            : LinuxOpen(path, 0x0000 | 0x0800 | 0x20000 | 0x80000);
+            : LinuxOpen(path, 0x0000 | 0x0800 | linuxNoFollow | 0x80000);
         return new SafeFileHandle(descriptor, ownsHandle: true);
     }
 
