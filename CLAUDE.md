@@ -24,11 +24,22 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     in that project's repo with only that file. Nothing else in the factory root is written.
   - Text from files (backlog lines, job records) is shown as text, never as raw HTML; Markdown is rendered
     with raw HTML turned off.
-- **Stack:** none yet. The first factory job picks it within these bounds: .NET 10 (ASP.NET Core minimal
-  API) for the server, a plain HTML/CSS/JS web app served by it (no CDN, a strict CSP), xUnit tests. No new
-  package without a reason in the spec. Its builder fills in this line, the test command and the layout.
-- **Test command:** none yet.
-- **Layout:** none yet.
+- **Stack:** .NET 10 ASP.NET Core minimal API (`Microsoft.NET.Sdk.Web`, no extra packages) serving a plain
+  HTML/CSS/JS web app from its own `wwwroot` (no CDN, no build step, strict CSP), xUnit tests with
+  `Microsoft.AspNetCore.Mvc.Testing` to host the app in memory. No new package without a reason in the spec.
+  Run: `dotnet run --project src/ControlRoom.Server` (listens on `127.0.0.1:8100` only; the factory root is the
+  parent of the folder holding `ControlRoom.slnx`, or `--FactoryRoot <path>`).
+- **Test command:** `dotnet test` (from `ControlRoom/`; `dotnet build` must stay at 0 warnings). Tests build a
+  temporary factory root (`TempFactoryRoot`) and host the server with `ServerFactory`; no test reads the real
+  factory root or opens a real port.
+- **Layout:**
+  - `ControlRoom.slnx`, `Directory.Build.props` (nullable, implicit usings, code style in build), `.editorconfig`.
+  - `src/ControlRoom.Server/`: `Program.cs` (entry), `ServerApp` (builds the app: Kestrel, headers, GET/HEAD
+    only, static files, endpoints), `ServerEndpoint` (the one listen address), `FactoryRootLocator`,
+    `ProjectFinder` (project discovery), `BacklogReader` (safe `backlog.md` read), `BacklogParser` (lines to
+    entries), `BacklogsEndpoint` (`GET /api/backlogs`), `wwwroot/` (`index.html`, `app.css`, `app.js`).
+  - `tests/ControlRoom.Server.Tests/`: one test class per unit or concern; `TempFactoryRoot` and
+    `ServerFactory` are the shared fixtures.
 - **Style:** C# like Context: file-scoped namespaces, `internal sealed` unless a type must be public, no
   primary constructors, no `var`, braces on every body, camelCase private fields without `_`; the build
   stays at 0 warnings. The web app is mobile first (iPhone width), works in light and dark mode and uses
