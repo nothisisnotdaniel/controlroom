@@ -22,3 +22,15 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [h] [#11](backlog/011-tailscale.md) Tailscale
 - [?] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone
 - [?] [#13](backlog/013-releases-overview.md) Releases overview
+- [ ] [#15](backlog/015-job-detail.md) Job detail (after: #2)
+- [ ] [#16](backlog/016-live-updates.md) Live updates
+- [ ] [#17](backlog/017-approval-inbox.md) Approval inbox (after: #4)
+- [ ] [#18](backlog/018-search-and-filter.md) Search and filter
+- [ ] [#19](backlog/019-next-and-blocked.md) Next and blocked (after: #14)
+- [ ] [#20](backlog/020-notes-on-a-story.md) Notes on a story (after: #3)
+- [ ] [#21](backlog/021-quick-capture.md) Quick capture (after: #3)
+- [ ] [#22](backlog/022-act-on-escalated-jobs.md) Act on escalated jobs (after: #2; #3)
+- [ ] [#23](backlog/023-costs-and-history.md) Costs and history (after: #2)
+- [ ] [#24](backlog/024-doctor-view.md) Doctor view
+- [ ] [#25](backlog/025-ci-and-git-status.md) CI and git status
+- [ ] [#26](backlog/026-usage-view-spike.md) Usage view spike
