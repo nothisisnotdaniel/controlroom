@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 
 namespace ControlRoom.Server.Tests;
@@ -83,6 +84,14 @@ internal sealed class TempFactoryRoot : IDisposable
 
         File.SetUnixFileMode(file, UnixFileMode.None);
         lockedFiles.Add(file);
+    }
+
+    /// <summary>Creates a named pipe (FIFO) at the path with <c>mkfifo</c> (Unix only; tests only).</summary>
+    public static void MakeFifo(string path)
+    {
+        using Process process = Process.Start(new ProcessStartInfo("mkfifo") { ArgumentList = { path } })!;
+        process.WaitForExit();
+        Assert.Equal(0, process.ExitCode);
     }
 
     /// <summary>Every file and folder under the root with its size, time and content hash.</summary>

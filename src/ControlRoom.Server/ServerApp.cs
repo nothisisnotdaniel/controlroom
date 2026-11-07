@@ -14,7 +14,13 @@ internal static class ServerApp
     /// factory root.</summary>
     public static WebApplication? Create(string[] args, TextWriter error)
     {
-        WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+        // Content root (and so wwwroot) is the server's own output folder, never the current directory.
+        WebApplicationBuilder builder = WebApplication.CreateBuilder(new WebApplicationOptions
+        {
+            Args = args,
+            ContentRootPath = AppContext.BaseDirectory,
+            WebRootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot"),
+        });
 
         string? root = FactoryRootLocator.Resolve(builder.Configuration["FactoryRoot"], AppContext.BaseDirectory);
         if (root is null)

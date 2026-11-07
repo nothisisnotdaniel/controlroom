@@ -87,6 +87,30 @@ public sealed class BacklogsApiTests
     }
 
     [Fact]
+    public async Task Backlogs_FifoBacklogIsRefusedWithoutHanging()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TempFactoryRoot root = new();
+        string folder = root.AddProject("Fifo", null);
+        root.AddProject("Open", "- [ ] Fine: line\n");
+        TempFactoryRoot.MakeFifo(Path.Combine(folder, "backlog.md"));
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateClient();
+
+        string body = await client.GetStringAsync("/api/backlogs").WaitAsync(TimeSpan.FromSeconds(10));
+
+        using JsonDocument json = JsonDocument.Parse(body);
+        JsonElement fifo = Project(json, "Fifo");
+        Assert.False(fifo.GetProperty("readable").GetBoolean());
+        Assert.All(["open", "approval", "user", "done"], group => Assert.Empty(Entries(fifo, group)));
+        Assert.Equal([("Fine", "line")], Entries(Project(json, "Open"), "open"));
+    }
+
+    [Fact]
     public async Task Backlogs_BacklogExactlyAtTheLimitIsRead()
     {
         using TempFactoryRoot root = new();
