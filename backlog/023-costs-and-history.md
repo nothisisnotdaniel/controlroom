@@ -9,3 +9,7 @@ A History view lists finished jobs newest first with project, title, mode, path,
 ## Why
 
 With weekly limits, knowing which modes and projects cost what helps choose modes. The factory's own backlog has the same wish for the old dashboard (factory#5), and ControlRoom is replacing it.
+
+## Notes
+
+Merged on 2026-11-15: factory #5 (Costs on the dashboard). Add a simple chart of tokens over time, so the modes can be compared.
