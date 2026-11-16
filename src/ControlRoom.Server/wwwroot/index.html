@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="/app.css">
   <script src="/token.js" defer></script>
   <script src="/board.js" defer></script>
+  <script src="/edit.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
 <body>
@@ -38,6 +39,10 @@
   </main>
   <main id="job" hidden></main>
   <main id="story" hidden></main>
+  <div class="edit-notice" id="edit-notice" role="status" aria-live="polite" hidden>
+    <p class="edit-notice-text" id="edit-notice-text"></p>
+    <button class="edit-button" id="edit-notice-close" type="button">Close</button>
+  </div>
   <main id="token" hidden>
     <form class="token-form" id="token-form" novalidate>
       <h1 class="token-title">Control Room</h1>

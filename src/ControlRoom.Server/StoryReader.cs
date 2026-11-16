@@ -14,6 +14,22 @@ internal static partial class StoryReader
 
     public static string? Read(ProjectFolder project, BacklogEntry entry)
     {
+        byte[]? bytes = ReadBytes(project, entry);
+        return bytes is null ? null : SafeFileReader.Decode(bytes);
+    }
+
+    /// <summary>The story file's raw bytes, with the same rules and refusals as <see cref="Read"/>.</summary>
+    public static byte[]? ReadBytes(ProjectFolder project, BacklogEntry entry)
+    {
+        string? path = ResolvePath(project, entry);
+        return path is null ? null : SafeFileReader.ReadBytes(path, MaxBytes);
+    }
+
+    /// <summary>The full path of the story file a numbered line links to, or <c>null</c> when the target is not
+    /// <c>backlog/NNN-slug.md</c> with the line's own number, or the <c>backlog</c> folder is missing or a symlink.
+    /// The file itself is not checked.</summary>
+    public static string? ResolvePath(ProjectFolder project, BacklogEntry entry)
+    {
         if (entry.Number is null || entry.Story is null)
         {
             return null;
@@ -42,7 +58,7 @@ internal static partial class StoryReader
                 return null;
             }
 
-            return SafeFileReader.ReadText(filePath, MaxBytes);
+            return filePath;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {

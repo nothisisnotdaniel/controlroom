@@ -21,6 +21,8 @@
   --human-bg: #fdecee;
   --human: #b3132b;
   --accent: #0a5ad4;
+  --danger: #b3132b;
+  --primary-fg: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -46,6 +48,8 @@
     --human-bg: #3a1a20;
     --human: #ff7a8a;
     --accent: #6cb4ff;
+    --danger: #ff7a8a;
+    --primary-fg: #000000;
   }
 }
 
@@ -730,4 +734,166 @@ a.card:focus-visible {
   font: inherit;
   font-weight: 600;
   cursor: pointer;
+}
+
+/* Backlog editing: each project has an Edit toggle; its action rows and Add form show only in edit mode. */
+.project-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.project-head h2 {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.project:not(.editing) .edit-only {
+  display: none;
+}
+
+.edit-button {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--link);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.edit-button:disabled,
+.edit-busy .edit-button {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.edit-toggle[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.edit-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--primary-fg);
+}
+
+.edit-danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.edit-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  cursor: default;
+}
+
+.edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.edit-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.edit-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 1rem;
+}
+
+textarea.edit-input {
+  resize: vertical;
+}
+
+.edit-story-text {
+  font: 0.95rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.edit-add {
+  margin: 12px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.edit-add summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: var(--link);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.story-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.edit-notice {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 696px;
+  margin: 0 auto;
+  padding: 8px 8px 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--fg);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* Keeps the last lines and the Back button reachable above the fixed notice. */
+body:has(#edit-notice:not([hidden])) {
+  padding-bottom: calc(max(24px, env(safe-area-inset-bottom)) + 72px);
+}
+
+.edit-notice-text {
+  flex: 1;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.edit-notice-error .edit-notice-text {
+  color: var(--error);
+  font-weight: 600;
 }

@@ -158,6 +158,53 @@ public sealed class HttpSafetyTests
         Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData("POST", "/api/backlogs")]
+    [InlineData("POST", "/api/story?project=Normal&number=1")]
+    [InlineData("POST", "/index.html")]
+    [InlineData("POST", "/app.js")]
+    [InlineData("POST", "/edit.js")]
+    [InlineData("POST", "/API/backlog/change")]
+    [InlineData("POST", "/api/backlog/change/")]
+    [InlineData("POST", "/api/backlog")]
+    [InlineData("PUT", "/api/backlog/change")]
+    [InlineData("PATCH", "/api/backlog/change")]
+    [InlineData("DELETE", "/api/backlog/change")]
+    public async Task Post_IsAcceptedOnlyOnTheBacklogChangeRoute(string method, string path)
+    {
+        using TempFactoryRoot root = TempFactoryRoot.WithSamples();
+        IReadOnlyList<string> before = root.Snapshot();
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+        using HttpRequestMessage request = new(new HttpMethod(method), path)
+        {
+            Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json"),
+        };
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
+        Assert.Equal(before, root.Snapshot());
+    }
+
+    [Fact]
+    public async Task Post_ToTheBacklogChangeRoute_ReachesTheEndpointBehindTheToken()
+    {
+        using TempFactoryRoot root = TempFactoryRoot.WithSamples();
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+        using HttpClient anonymous = factory.CreateClient();
+
+        using HttpResponseMessage response = await client.PostAsync(
+            "/api/backlog/change", new StringContent("{}", System.Text.Encoding.UTF8, "application/json"));
+        using HttpResponseMessage refused = await anonymous.PostAsync(
+            "/api/backlog/change", new StringContent("{}", System.Text.Encoding.UTF8, "application/json"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("{\"error\":\"invalid\"}", await response.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.Unauthorized, refused.StatusCode);
+    }
+
     [Fact]
     public async Task ServiceWorker_IsJavaScriptWithNoCache()
     {
