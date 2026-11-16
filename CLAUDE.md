@@ -32,11 +32,23 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     factory root is written.
   - Text from files (backlog lines, job records) is shown as text, never as raw HTML; Markdown is rendered
     with raw HTML turned off.
+  - Push files live next to the token file (never in the factory root): `push-keys.json` (VAPID P-256 key pair,
+    a secret like the token) and `push.json` (subscriptions, `notifyDone`). Both `0600`, written atomically
+    (`0600` temp file, then rename); their folder must be `0700` and owned by the current user (created `0700`
+    when missing; owner read with `lstat` in `UnixOwner`). A symlinked, loose-mode or invalid file or folder (or
+    one owned by someone else) makes every `/api/push*` route return `500 {"error":"push_store"}` and is never
+    overwritten. `POST /api/push/test` sends at most once per 10 s server-wide (`PushTestLimiter` on
+    `TimeProvider`); a call inside that window returns `429 {"error":"too_many_requests"}` and sends nothing.
+  - The only outbound calls are Web Push POSTs to subscription endpoints, allowed only as `https`, port 443, no
+    userinfo, on `*.push.apple.com`, `fcm.googleapis.com` or `updates.push.services.mozilla.com`; no redirects,
+    10 s timeout. Endpoints, keys and the token are never logged (status codes only). A payload holds only
+    `kind`, `project`, `job`, `stage`, a fixed `reason` and `count`, never record or backlog text.
 - **Stack:** .NET 10 ASP.NET Core minimal API (`Microsoft.NET.Sdk.Web`, no extra packages) serving a plain
   HTML/CSS/JS web app from its own `wwwroot` (no CDN, no build step, strict CSP), xUnit tests with
   `Microsoft.AspNetCore.Mvc.Testing` to host the app in memory. No new package without a reason in the spec.
   Run: `dotnet run --project src/ControlRoom.Server` (listens on `127.0.0.1:8100` only; the factory root is the
   parent of the folder holding `ControlRoom.slnx`, or `--FactoryRoot <path>`).
+  `--PushSubject <mailto:…>` sets the VAPID `sub` (default `mailto:controlroom@localhost`).
   Start at login: `scripts/launch-agent.sh install|status|uninstall` (LaunchAgent `local.controlroom.server`,
   published server in `~/Library/Application Support/ControlRoom/server/`, log `~/Library/Logs/ControlRoom/server.log`).
 - **Test command:** `dotnet test` (from `ControlRoom/`; `dotnet build` must stay at 0 warnings). Tests build a
@@ -45,7 +57,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
 - **Layout:**
   - `ControlRoom.slnx`, `Directory.Build.props` (nullable, implicit usings, code style in build), `.editorconfig`.
   - `src/ControlRoom.Server/`: `Program.cs` (entry; `token` runs `TokenCommand`), `ServerApp` (builds the app:
-    Kestrel, headers, GET/HEAD only (POST only on `/api/backlog/change`), the `/api/` token gate, static files, endpoints), `AccessToken` (token file
+    Kestrel, headers, GET/HEAD only (POST only on `/api/backlog/change` and the four `/api/push/*` POST routes), the `/api/` token gate, static files, endpoints, push services), `AccessToken` (token file
     path, create, safe read, atomic replace, constant-time check), `TokenCommand` (`token`, `token --new`), `ServerEndpoint` (the one listen address), `FactoryRootLocator`,
     `ProjectFinder` (project discovery), `SafeFileReader` (no-follow, regular-file, size-capped text or bytes read, SHA-256 version),
     `SafeFileWriter` (temp file in the same folder, then rename; refuses a symlinked target or folder),
@@ -59,17 +71,27 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `StoryEndpoint` (`GET /api/story?project=&number=`, with `markdown`
     and `storyVersion`), `JobReader` (`factory/jobs/<id>/state.json` to a typed
     `JobSummary`), `BoardEndpoint` (`GET /api/board`: jobs and `[h]` tasks), `JobEndpoint` (`GET /api/job?id=`:
-    a job and its records from a fixed list), `wwwroot/` (`index.html`, `app.css`, `token.js` (stored token under
+    a job and its records from a fixed list), `PushCrypto` (RFC 8291 `aes128gcm`, RFC 8292 VAPID ES256 JWT, P-256
+    point check, `Base64Url`), `PushStore` (`push-keys.json`/`push.json` next to the token file;
+    `PushSubscriptionRules`: endpoint host allowlist and key checks), `PushSender` (`PushPayload` with the fixed
+    reason table, `PushTransport` (the injectable `HttpMessageHandler`), one POST per subscription, `404`/`410`
+    removes it), `PushWatcher` (hosted service, `Scan()` every 30 s on `TimeProvider`; first scan is the baseline),
+    `PushEndpoint` (`GET /api/push`, `POST /api/push/subscribe|unsubscribe|settings|test`), `PushTestLimiter`
+    (one test send per 10 s), `UnixOwner` (`geteuid`, `lstat` uid via P/Invoke), `wwwroot/` (`index.html`, `app.css`, `token.js` (stored token under
     `controlroom-token`, `authFetch` for every `/api/` call, the token view), `app.js` (routing, backlogs,
-    story), `edit.js` (per-project edit mode, the Add form, Edit story, fixed texts per error code), `board.js` (jobs board and job page, polls every 5 s while visible),
+    story), `edit.js` (per-project edit mode, the Add form, Edit story, fixed texts per error code), `board.js` (jobs board and job page, polls every 5 s while visible), `push.js` (Notifications section on the
+    board: state texts, Turn on (permission only from the tap), done switch, Send test, Turn off),
     `sw.js` (service worker: caches only the fixed app shell, never `/api/`; bump its cache version when the
-    shell list changes), `manifest.webmanifest`, `icons/` (opaque RGB PNGs, 180/192/512 px)).
+    shell list changes; `push` shows a notification from fixed titles, `notificationclick` opens `#job/<id>` or
+    `#backlogs`), `manifest.webmanifest`, `icons/` (opaque RGB PNGs, 180/192/512 px)).
   - `scripts/launch-agent.sh`: POSIX `sh` LaunchAgent installer (publish, `bootout`, replace, plist `0644`,
     `bootstrap`; refuses symlinks; never reads the token). Not part of the server.
   - `tests/ControlRoom.Server.Tests/`: one test class per unit or concern (`LaunchAgentScriptTests` runs the script with fake
     `launchctl`/`dotnet` in a temp `HOME`); `TempFactoryRoot` (`InitGit`, `AddBareRemote`
     and `Git` for a real local repo), `TempTokenFolder` and `ServerFactory` (own temp token file;
-    `CreateTokenClient()` for API calls) are the shared fixtures.
+    `CreateTokenClient()` for API calls; `Push` fake push service, `Time` fixed clock whose timers never fire,
+    `Logs`) are the shared fixtures; `PushFakes` holds `FakeTime`, `FakePushHandler`, `PushReceiver` (test-side
+    decrypt) and `LogCapture`.
 - **Style:** C# like Context: file-scoped namespaces, `internal sealed` unless a type must be public, no
   primary constructors, no `var`, braces on every body, camelCase private fields without `_`; the build
   stays at 0 warnings. The web app is mobile first (iPhone width), works in light and dark mode and uses

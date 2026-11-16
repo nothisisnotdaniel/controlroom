@@ -9,7 +9,7 @@ public sealed partial class ServiceWorkerTests
 {
     private static readonly string[] ShellPaths =
     [
-        "/", "/index.html", "/app.css", "/app.js", "/board.js", "/edit.js", "/token.js", "/manifest.webmanifest", "/icons/apple-touch-icon.png",
+        "/", "/index.html", "/app.css", "/app.js", "/board.js", "/edit.js", "/push.js", "/token.js", "/manifest.webmanifest", "/icons/apple-touch-icon.png",
         "/icons/icon-192.png", "/icons/icon-512.png",
     ];
 
@@ -46,8 +46,9 @@ public sealed partial class ServiceWorkerTests
     {
         string js = await Fetch();
 
-        Assert.Contains("const CacheVersion = \"v4\";", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v5\";", js, StringComparison.Ordinal);
         Assert.Contains("  \"/edit.js\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("  \"/push.js\",\n", js, StringComparison.Ordinal);
         Assert.Contains("  \"/board.js\",\n", js, StringComparison.Ordinal);
         Assert.Contains("  \"/token.js\",\n", js, StringComparison.Ordinal);
         Assert.DoesNotContain("Authorization", js, StringComparison.Ordinal);
@@ -84,6 +85,47 @@ public sealed partial class ServiceWorkerTests
         Assert.True(ok >= 0 && ok < put);
         Assert.Single(Put().Matches(js));
         Assert.Contains("return cached;", js, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Push_ShowsANotificationFromFixedTitlesAndPayloadFields()
+    {
+        string js = await Fetch();
+
+        int push = js.IndexOf("self.addEventListener(\"push\", (event) => {", StringComparison.Ordinal);
+        Assert.True(push >= 0);
+        Assert.Contains("event.waitUntil(self.registration.showNotification(note.title, note.options));", js,
+            StringComparison.Ordinal);
+        Assert.Contains("\"needs-human\": \"Needs you\",", js, StringComparison.Ordinal);
+        Assert.Contains("\"merge-conflict\": \"Merge conflict\",", js, StringComparison.Ordinal);
+        Assert.Contains("\"ci-failed\": \"CI failed after merge\",", js, StringComparison.Ordinal);
+        Assert.Contains("done: \"Done\",", js, StringComparison.Ordinal);
+        Assert.Contains("approval: \"New items to approve\",", js, StringComparison.Ordinal);
+        Assert.Contains("test: \"Test notification\",", js, StringComparison.Ordinal);
+        Assert.Contains("title: kind ? PushTitles[kind] : PushFallbackTitle,", js, StringComparison.Ordinal);
+        Assert.Contains("tag = \"approval:\" + project;", js, StringComparison.Ordinal);
+        Assert.Contains("tag = kind + \":\" + job;", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("data.reason", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("innerHTML", js, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task NotificationClick_OpensTheJobOrBacklogsAndFetchesNothing()
+    {
+        string js = await Fetch();
+
+        int click = js.IndexOf("self.addEventListener(\"notificationclick\", (event) => {", StringComparison.Ordinal);
+        Assert.True(click >= 0);
+        Assert.Contains("url = \"/#job/\" + job;", js, StringComparison.Ordinal);
+        Assert.Contains("url = \"/#backlogs\";", js, StringComparison.Ordinal);
+        Assert.Contains("const PushJobPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}$/;", js, StringComparison.Ordinal);
+        string onClick = js[click..];
+        Assert.Contains("self.clients.openWindow(url)", onClick, StringComparison.Ordinal);
+        Assert.Contains("data.url.startsWith(\"/#\")", onClick, StringComparison.Ordinal);
+        int push = js.IndexOf("// Push:", StringComparison.Ordinal);
+        Assert.True(push >= 0);
+        Assert.DoesNotContain("fetch(", js[push..], StringComparison.Ordinal);
+        Assert.DoesNotContain("/api/", js[push..], StringComparison.Ordinal);
     }
 
     [Fact]

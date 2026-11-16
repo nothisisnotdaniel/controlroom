@@ -1,0 +1,213 @@
+namespace ControlRoom.Server;
+
+/// <summary>Watches the factory root for things the user should hear about and sends a push for each: a job that
+/// becomes <c>needs-human</c> (<c>merge-conflict</c> when its note starts with "merge conflict"), <c>ci.status</c>
+/// becoming <c>failure</c>, a job becoming <c>done</c> (only with <c>notifyDone</c>) and new <c>[?]</c> lines in a
+/// project. <see cref="Scan"/> runs every 30 s on the <see cref="TimeProvider"/>; the first scan only records a
+/// baseline. A job or backlog that can't be read keeps its last known state, and <c>[?]</c> lines once seen stay
+/// seen, so no event is sent twice.</summary>
+internal sealed class PushWatcher : IHostedService, IDisposable
+{
+    public static readonly TimeSpan Interval = TimeSpan.FromSeconds(30);
+
+    /// <summary>Stages a payload may name; any other value from a file is left out.</summary>
+    public static readonly IReadOnlySet<string> KnownStages = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "spike", "spec", "build", "review", "approve", "done", "needs-human",
+    };
+
+    private readonly string factoryRoot;
+
+    private readonly PushStore store;
+
+    private readonly PushSender sender;
+
+    private readonly TimeProvider time;
+
+    private readonly ILogger<PushWatcher> logger;
+
+    private readonly SemaphoreSlim scanning = new(1, 1);
+
+    private readonly Dictionary<string, JobState> jobs = new(StringComparer.Ordinal);
+
+    private readonly Dictionary<string, HashSet<string>> approvals = new(StringComparer.Ordinal);
+
+    private bool baseline;
+
+    private ITimer? timer;
+
+    public PushWatcher(
+        FactoryRoot root, PushStore store, PushSender sender, TimeProvider time, ILogger<PushWatcher> logger)
+    {
+        factoryRoot = root.Path;
+        this.store = store;
+        this.sender = sender;
+        this.time = time;
+        this.logger = logger;
+    }
+
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        timer = time.CreateTimer(_ => _ = TimerScan(), null, Interval, Interval);
+        return TimerScan();
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        timer?.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        return Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        timer?.Dispose();
+        scanning.Dispose();
+    }
+
+    /// <summary>Reads the jobs and every project's <c>[?]</c> lines, compares them with the last scan and sends one
+    /// notification per new event. Returns the payloads it sent (or tried to send).</summary>
+    public async Task<IReadOnlyList<PushPayload>> Scan()
+    {
+        await scanning.WaitAsync();
+        try
+        {
+            List<PushPayload> events = Collect();
+            if (events.Count == 0)
+            {
+                return events;
+            }
+
+            bool notifyDone;
+            try
+            {
+                notifyDone = store.Settings().NotifyDone;
+            }
+            catch (PushStoreException)
+            {
+                logger.LogWarning("Push files refused; events dropped");
+                return [];
+            }
+
+            List<PushPayload> sent = [];
+            foreach (PushPayload payload in events)
+            {
+                if (payload.Kind == PushPayload.Done && !notifyDone)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    await sender.Send(payload, CancellationToken.None);
+                    sent.Add(payload);
+                }
+                catch (PushStoreException)
+                {
+                    logger.LogWarning("Push files refused; events dropped");
+                    return sent;
+                }
+            }
+
+            return sent;
+        }
+        finally
+        {
+            scanning.Release();
+        }
+    }
+
+    private async Task TimerScan()
+    {
+        if (scanning.CurrentCount == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            await Scan();
+        }
+        catch (Exception)
+        {
+            // A failed scan must never stop the server or surface as an unobserved task exception.
+            logger.LogWarning("Push scan failed; its events are dropped");
+        }
+    }
+
+    /// <summary>Updates the remembered state and returns the events since the last scan (none on the
+    /// baseline).</summary>
+    private List<PushPayload> Collect()
+    {
+        List<PushPayload> events = [];
+        HashSet<string> projects = new(ProjectFinder.Find(factoryRoot).Select(project => project.Name), StringComparer.Ordinal);
+        foreach (JobSummary job in JobReader.ReadAll(factoryRoot))
+        {
+            JobState now = new(job.Stage, job.CiStatus);
+            jobs.TryGetValue(job.Id, out JobState? before);
+            jobs[job.Id] = now;
+            if (!baseline)
+            {
+                continue;
+            }
+
+            string? project = job.Project is not null && projects.Contains(job.Project) ? job.Project : null;
+            string? stage = job.Stage is not null && KnownStages.Contains(job.Stage) ? job.Stage : null;
+            if (job.Stage == "needs-human" && before?.Stage != "needs-human")
+            {
+                bool conflict = job.Note is not null
+                    && job.Note.TrimStart().StartsWith("merge conflict", StringComparison.OrdinalIgnoreCase);
+                events.Add(new PushPayload(conflict ? PushPayload.MergeConflict : PushPayload.NeedsHuman, project, job.Id, stage));
+            }
+
+            if (job.CiStatus == "failure" && before?.CiStatus != "failure")
+            {
+                events.Add(new PushPayload(PushPayload.CiFailed, project, job.Id, stage));
+            }
+
+            if (job.Stage == "done" && before?.Stage != "done")
+            {
+                events.Add(new PushPayload(PushPayload.Done, project, job.Id, stage));
+            }
+        }
+
+        foreach (ProjectFolder project in ProjectFinder.Find(factoryRoot))
+        {
+            Backlog? backlog = BacklogReader.Read(project);
+            if (backlog is null)
+            {
+                continue;
+            }
+
+            if (!approvals.TryGetValue(project.Name, out HashSet<string>? seen))
+            {
+                seen = new HashSet<string>(StringComparer.Ordinal);
+                approvals[project.Name] = seen;
+            }
+
+            int added = 0;
+            foreach (BacklogEntry entry in backlog.Approval)
+            {
+                if (seen.Add(Key(entry)))
+                {
+                    added++;
+                }
+            }
+
+            if (baseline && added > 0)
+            {
+                events.Add(new PushPayload(PushPayload.Approval, project.Name, null, null, added));
+            }
+        }
+
+        baseline = true;
+        return events;
+    }
+
+    /// <summary>A line's identity: its number when it has one, else its text.</summary>
+    private static string Key(BacklogEntry entry)
+    {
+        return entry.Number is int number ? "#" + number : entry.Title + "\u0000" + entry.Rest;
+    }
+
+    private sealed record JobState(string? Stage, string? CiStatus);
+}
