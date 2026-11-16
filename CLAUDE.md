@@ -40,7 +40,10 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `BacklogReader` (safe `backlog.md` read), `BacklogParser` (lines to entries, old and numbered `[#N](…)`
     format), `BacklogsEndpoint` (`GET /api/backlogs`, with `waiting`), `StoryReader` (fenced read of
     `<project>/backlog/NNN-slug.md`), `StoryMarkdown` (Markdown to a JSON block tree, no HTML),
-    `StoryEndpoint` (`GET /api/story?project=&number=`), `wwwroot/` (`index.html`, `app.css`, `app.js`,
+    `StoryEndpoint` (`GET /api/story?project=&number=`), `JobReader` (`factory/jobs/<id>/state.json` to a typed
+    `JobSummary`), `BoardEndpoint` (`GET /api/board`: jobs and `[h]` tasks), `JobEndpoint` (`GET /api/job?id=`:
+    a job and its records from a fixed list), `wwwroot/` (`index.html`, `app.css`, `app.js` (routing, backlogs,
+    story), `board.js` (jobs board and job page, polls every 5 s while visible),
     `sw.js` (service worker: caches only the fixed app shell, never `/api/`; bump its cache version when the
     shell list changes), `manifest.webmanifest`, `icons/` (opaque RGB PNGs, 180/192/512 px)).
   - `tests/ControlRoom.Server.Tests/`: one test class per unit or concern; `TempFactoryRoot` and

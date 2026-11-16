@@ -227,6 +227,30 @@ function renderInlines(parent, inlines) {
   return parent;
 }
 
+// A table scrolls sideways inside its own box so a wide one never widens the page.
+function renderTable(block) {
+  const wrap = element("div", "story-table");
+  const table = element("table");
+  const head = element("thead");
+  const headRow = element("tr");
+  for (const cell of asList(block.header)) {
+    headRow.appendChild(renderInlines(element("th"), cell));
+  }
+  head.appendChild(headRow);
+  table.appendChild(head);
+  const body = element("tbody");
+  for (const row of asList(block.rows)) {
+    const line = element("tr");
+    for (const cell of asList(row)) {
+      line.appendChild(renderInlines(element("td"), cell));
+    }
+    body.appendChild(line);
+  }
+  table.appendChild(body);
+  wrap.appendChild(table);
+  return wrap;
+}
+
 function renderBlock(block) {
   const kind = asText(block && block.kind);
   if (kind === "heading") {
@@ -244,6 +268,9 @@ function renderBlock(block) {
     const pre = element("pre", "story-code");
     pre.appendChild(element("code", null, asText(block.text)));
     return pre;
+  }
+  if (kind === "table") {
+    return renderTable(block);
   }
   return renderInlines(element("p"), block && block.inlines);
 }
@@ -309,28 +336,72 @@ async function loadStory(target) {
   title.focus({ preventScroll: true });
 }
 
-function route() {
-  const target = parseStoryHash(location.hash);
+const Views = ["backlogs", "board", "job", "story"];
+const ViewTitles = { backlogs: "Backlogs", board: "Jobs" };
+let currentView = null;
+
+function viewFor(hash) {
+  if (parseStoryHash(hash)) {
+    return "story";
+  }
+  if (parseJobHash(hash) !== null) {
+    return "job";
+  }
+  return hash === BoardRoute ? "board" : "backlogs";
+}
+
+function showView(name) {
+  for (const view of Views) {
+    document.getElementById(view).hidden = view !== name;
+  }
+  // The wide board view widens the header too, so the nav lines up with the board's left edge.
+  document.body.classList.toggle("view-board", name === "board");
   const top = document.getElementById("top");
-  const list = document.getElementById("backlogs");
-  const story = document.getElementById("story");
-  if (target) {
-    if (story.hidden) {
-      listScroll = window.scrollY;
+  top.hidden = !(name in ViewTitles);
+  if (!top.hidden) {
+    document.getElementById("top-title").textContent = ViewTitles[name];
+    for (const link of document.querySelectorAll(".nav a")) {
+      if (link.dataset.view === name) {
+        link.setAttribute("aria-current", "page");
+      } else {
+        link.removeAttribute("aria-current");
+      }
     }
-    top.hidden = true;
-    list.hidden = true;
-    story.hidden = false;
+  }
+}
+
+function route() {
+  const next = viewFor(location.hash);
+  // Keep the scroll position of the list being left, so Back returns to it.
+  if (currentView === "backlogs" && next !== "backlogs") {
+    listScroll = window.scrollY;
+  }
+  if (currentView === "board" && next !== "board") {
+    rememberBoardScroll();
+  }
+  currentView = next;
+  if (next !== "story") {
+    storyRequest += 1;
+    openedFromList = false;
+    document.getElementById("story").replaceChildren();
+  }
+  if (next !== "job") {
+    leaveJob();
+  }
+  showView(next);
+  if (next === "story") {
     window.scrollTo(0, 0);
-    loadStory(target);
+    loadStory(parseStoryHash(location.hash));
     return;
   }
-  storyRequest += 1;
-  openedFromList = false;
-  story.hidden = true;
-  story.replaceChildren();
-  top.hidden = false;
-  list.hidden = false;
+  if (next === "job") {
+    showJob(parseJobHash(location.hash));
+    return;
+  }
+  if (next === "board") {
+    showBoard();
+    return;
+  }
   window.scrollTo(0, listScroll);
 }
 
@@ -345,4 +416,5 @@ function registerServiceWorker() {
 window.addEventListener("hashchange", route);
 route();
 load();
+startBoardPolling();
 registerServiceWorker();

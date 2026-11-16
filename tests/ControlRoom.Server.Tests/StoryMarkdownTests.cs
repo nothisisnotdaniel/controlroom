@@ -126,6 +126,71 @@ public sealed class StoryMarkdownTests
     }
 
     [Fact]
+    public void Parse_PipeTableGivesATableBlock()
+    {
+        string markdown =
+            "Before\n"
+            + "| AC | Test | Result |\n"
+            + "|:---|------|-------:|\n"
+            + "| AC-1 | `x::y` | **pass** |\n"
+            + "| AC-2 | a \\| b |\n"
+            + "| AC-3 | c | d | extra |\n"
+            + "\n"
+            + "After\n";
+
+        IReadOnlyList<StoryBlock> blocks = StoryMarkdown.Parse(markdown);
+
+        Assert.Equal(["paragraph", "table", "paragraph"], blocks.Select(block => block.Kind));
+        StoryBlock table = blocks[1];
+        Assert.Null(table.Inlines);
+        Assert.Equal(["AC", "Test", "Result"], table.Header!.Select(Plain));
+        Assert.Equal(3, table.Rows!.Count);
+        Assert.Equal(
+            [new StoryInline("text", "AC-1")],
+            table.Rows[0][0]);
+        Assert.Equal([new StoryInline("code", "x::y")], table.Rows[0][1]);
+        Assert.Equal([new StoryInline("strong", "pass")], table.Rows[0][2]);
+        Assert.Equal(["AC-2", "a | b"], table.Rows[1].Select(Plain));
+        Assert.Equal(["AC-3", "c", "d"], table.Rows[2].Select(Plain));
+        Assert.Equal([new StoryInline("text", "After")], blocks[2].Inlines);
+    }
+
+    [Fact]
+    public void Parse_TableWithoutOuterPipesAndNoBodyRows()
+    {
+        IReadOnlyList<StoryBlock> blocks = StoryMarkdown.Parse("a | b\n--- | ---\n");
+
+        StoryBlock table = Assert.Single(blocks);
+        Assert.Equal("table", table.Kind);
+        Assert.Equal(["a", "b"], table.Header!.Select(Plain));
+        Assert.Empty(table.Rows!);
+    }
+
+    [Fact]
+    public void Parse_HtmlInATableCellStaysLiteralText()
+    {
+        IReadOnlyList<StoryBlock> blocks = StoryMarkdown.Parse("| <b>x</b> |\n|---|\n| <script>y</script> |\n");
+
+        StoryBlock table = Assert.Single(blocks);
+        Assert.Equal([new StoryInline("text", "<b>x</b>")], table.Header![0]);
+        Assert.Equal([new StoryInline("text", "<script>y</script>")], table.Rows![0][0]);
+    }
+
+    [Theory]
+    [InlineData("|")]
+    [InlineData("| a | b |")]
+    [InlineData("| a | b |\nnext line")]
+    [InlineData("| a | b |\n|---|")]
+    [InlineData("| a |\n| b |")]
+    public void Parse_PipeLinesThatAreNoTableStayParagraphs(string markdown)
+    {
+        IReadOnlyList<StoryBlock> blocks = StoryMarkdown.Parse(markdown);
+
+        Assert.All(blocks, block => Assert.Equal("paragraph", block.Kind));
+        Assert.Contains("|", Plain(blocks[0].Inlines!), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Parse_EmptyTextGivesNoBlocks()
     {
         Assert.Empty(StoryMarkdown.Parse(""));
@@ -150,6 +215,9 @@ public sealed class StoryMarkdownTests
             "link-starts",
             "heading-spaces",
             "list-of-brackets",
+            "table-columns",
+            "table-short-rows",
+            "separator-spaces",
         ];
     }
 
@@ -164,7 +232,10 @@ public sealed class StoryMarkdownTests
 
         Assert.NotEmpty(blocks);
         Assert.All(
-            blocks.SelectMany(block => block.Inlines ?? block.Items?.SelectMany(item => item) ?? []),
+            blocks.SelectMany(block => block.Inlines
+                ?? block.Items?.SelectMany(item => item)
+                ?? block.Header?.Concat(block.Rows!.SelectMany(row => row)).SelectMany(cell => cell)
+                ?? []),
             inline => Assert.Contains(inline.Kind, new[] { "text", "code", "strong", "em" }));
     }
 
@@ -205,8 +276,16 @@ public sealed class StoryMarkdownTests
             "link-starts" => string.Concat(Enumerable.Repeat("[a](", Size / 4)),
             "heading-spaces" => "# a" + new string(' ', Size) + "b",
             "list-of-brackets" => string.Concat(Enumerable.Repeat("- [\n", Size / 4)),
+            "table-columns" => Repeat("|a", Size / 6) + "|\n" + Repeat("|-", Size / 6) + "|\n" + Repeat("|b", Size / 6),
+            "table-short-rows" => Repeat("|a", Size / 8) + "|\n" + Repeat("|-", Size / 8) + "|\n" + Repeat("|\n", Size / 4),
+            "separator-spaces" => "| a |\n|" + new string(' ', Size) + "x\n",
             _ => throw new ArgumentOutOfRangeException(nameof(sample)),
         };
+    }
+
+    private static string Repeat(string text, int count)
+    {
+        return string.Concat(Enumerable.Repeat(text, count));
     }
 
     private static string Plain(IEnumerable<StoryInline> inlines)

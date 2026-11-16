@@ -15,7 +15,8 @@ public sealed class HttpSafetyTests
         {
             foreach (string path in new[]
                      {
-                         "/", "/api/backlogs", "/api/story?project=Normal&number=1", "/index.html",
+                         "/", "/api/backlogs", "/api/story?project=Normal&number=1", "/api/board",
+                         "/api/job?id=1-a", "/index.html",
                          "/Normal/backlog.md", "/x",
                      })
             {
@@ -31,6 +32,9 @@ public sealed class HttpSafetyTests
     public async Task OtherMethods_AreRefusedAndWriteNothing(string method, string path)
     {
         using TempFactoryRoot root = TempFactoryRoot.WithSamples();
+        root.AddJob("1-a", "{\"stage\":\"review\",\"round\":1}");
+        root.AddRecord("1-a", "spec.md", "# Spec\n");
+        root.AddRecord("1-a", "round-1/review-ux.md", "VERDICT: PASS\n");
         IReadOnlyList<string> before = root.Snapshot();
         using ServerFactory factory = new(root.Path);
         using HttpClient client = factory.CreateClient();
@@ -96,6 +100,14 @@ public sealed class HttpSafetyTests
     [InlineData("GET", "/missing")]
     [InlineData("HEAD", "/")]
     [InlineData("POST", "/api/backlogs")]
+    [InlineData("GET", "/board.js")]
+    [InlineData("GET", "/api/board")]
+    [InlineData("HEAD", "/api/board")]
+    [InlineData("POST", "/api/board")]
+    [InlineData("GET", "/api/job?id=1-a")]
+    [InlineData("GET", "/api/job?id=..")]
+    [InlineData("HEAD", "/api/job?id=1-a")]
+    [InlineData("POST", "/api/job?id=1-a")]
     public async Task EveryResponse_CarriesCspAndNoSniff(string method, string path)
     {
         using TempFactoryRoot root = new();
@@ -132,6 +144,9 @@ public sealed class HttpSafetyTests
     [Theory]
     [InlineData("/sw.js")]
     [InlineData("/manifest.webmanifest")]
+    [InlineData("/board.js")]
+    [InlineData("/api/board")]
+    [InlineData("/api/job?id=1-a")]
     public async Task Post_ToAppFiles_Gets405(string path)
     {
         using TempFactoryRoot root = new();

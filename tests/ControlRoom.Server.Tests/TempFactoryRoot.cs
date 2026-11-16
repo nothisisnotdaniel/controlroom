@@ -59,6 +59,33 @@ internal sealed class TempFactoryRoot : IDisposable
         return file;
     }
 
+    /// <summary>The jobs folder <c>factory/jobs</c> under the root.</summary>
+    public string JobsPath => System.IO.Path.Combine(Path, "factory", "jobs");
+
+    /// <summary>Creates the job folder <c>factory/jobs/&lt;id&gt;</c> and, when given, its <c>state.json</c>, and
+    /// returns the folder's path.</summary>
+    public string AddJob(string id, string? stateJson)
+    {
+        string folder = System.IO.Path.Combine(JobsPath, id);
+        Directory.CreateDirectory(folder);
+        if (stateJson is not null)
+        {
+            File.WriteAllText(System.IO.Path.Combine(folder, "state.json"), stateJson);
+        }
+
+        return folder;
+    }
+
+    /// <summary>Writes a record (a path relative to the job folder, folders created when missing) and returns its
+    /// path.</summary>
+    public string AddRecord(string id, string relativePath, string text)
+    {
+        string file = System.IO.Path.Combine(JobsPath, id, relativePath);
+        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(file)!);
+        File.WriteAllText(file, text);
+        return file;
+    }
+
     /// <summary>The full sample set from the spec's test plan.</summary>
     public static TempFactoryRoot WithSamples()
     {

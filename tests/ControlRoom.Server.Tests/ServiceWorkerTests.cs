@@ -9,7 +9,7 @@ public sealed partial class ServiceWorkerTests
 {
     private static readonly string[] ShellPaths =
     [
-        "/", "/index.html", "/app.css", "/app.js", "/manifest.webmanifest", "/icons/apple-touch-icon.png",
+        "/", "/index.html", "/app.css", "/app.js", "/board.js", "/manifest.webmanifest", "/icons/apple-touch-icon.png",
         "/icons/icon-192.png", "/icons/icon-512.png",
     ];
 
@@ -39,6 +39,15 @@ public sealed partial class ServiceWorkerTests
         Assert.Contains("caches.keys()", onActivate, StringComparison.Ordinal);
         Assert.Contains("name !== CacheName", onActivate, StringComparison.Ordinal);
         Assert.Contains("caches.delete(name)", onActivate, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Cache_VersionIsBumpedForTheBoardScript()
+    {
+        string js = await Fetch();
+
+        Assert.Contains("const CacheVersion = \"v2\";", js, StringComparison.Ordinal);
+        Assert.Contains("  \"/board.js\",\n", js, StringComparison.Ordinal);
     }
 
     [Fact]

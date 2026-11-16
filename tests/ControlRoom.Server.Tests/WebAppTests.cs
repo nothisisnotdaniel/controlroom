@@ -17,7 +17,7 @@ public sealed partial class WebAppTests
         Assert.Contains("<meta name=\"color-scheme\" content=\"light dark\">", html, StringComparison.Ordinal);
         Assert.Contains("<script src=\"/app.js\" defer></script>", html, StringComparison.Ordinal);
         Assert.Contains("<link rel=\"stylesheet\" href=\"/app.css\">", html, StringComparison.Ordinal);
-        Assert.Single(ScriptTag().Matches(html));
+        Assert.Equal(2, ScriptTag().Matches(html).Count);
         Assert.DoesNotContain("<style", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("style=", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(" on", AttributeStarts(html), StringComparison.Ordinal);
@@ -216,6 +216,213 @@ public sealed partial class WebAppTests
         Assert.Contains(".story-bar {", css, StringComparison.Ordinal);
         Assert.Contains("min-height: 44px;", css, StringComparison.Ordinal);
         Assert.Contains("[hidden] {", css, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task IndexHtml_HasTheTopNavAndBoardAndJobViewsWithBoardJsBeforeAppJs()
+    {
+        string html = await Fetch("/index.html");
+
+        Assert.Contains("<nav class=\"nav\" aria-label=\"Sections\">", html, StringComparison.Ordinal);
+        int jobs = html.IndexOf("<a href=\"#jobs\" data-view=\"board\">Jobs</a>", StringComparison.Ordinal);
+        int backlogs = html.IndexOf(
+            "<a href=\"#backlogs\" data-view=\"backlogs\">Backlogs</a>", StringComparison.Ordinal);
+        Assert.True(jobs >= 0 && jobs < backlogs);
+        Assert.Contains("<main id=\"board\" hidden>", html, StringComparison.Ordinal);
+        Assert.Contains("<main id=\"job\" hidden></main>", html, StringComparison.Ordinal);
+        Assert.Contains("<p class=\"live-status\" id=\"board-status\">", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"board-filter\"", html, StringComparison.Ordinal);
+        Assert.Contains("<div id=\"board-content\"></div>", html, StringComparison.Ordinal);
+        int board = html.IndexOf("<script src=\"/board.js\" defer></script>", StringComparison.Ordinal);
+        int app = html.IndexOf("<script src=\"/app.js\" defer></script>", StringComparison.Ordinal);
+        Assert.True(board >= 0 && board < app);
+    }
+
+    [Fact]
+    public async Task AppJs_RoutesJobsJobStoryAndBacklogsAndKeepsScroll()
+    {
+        string js = await Fetch("/app.js");
+
+        Assert.Contains("const Views = [\"backlogs\", \"board\", \"job\", \"story\"];", js, StringComparison.Ordinal);
+        Assert.Contains("if (parseStoryHash(hash)) {", js, StringComparison.Ordinal);
+        Assert.Contains("if (parseJobHash(hash) !== null) {", js, StringComparison.Ordinal);
+        Assert.Contains("return hash === BoardRoute ? \"board\" : \"backlogs\";", js, StringComparison.Ordinal);
+        Assert.Contains("showJob(parseJobHash(location.hash));", js, StringComparison.Ordinal);
+        Assert.Contains("loadStory(parseStoryHash(location.hash));", js, StringComparison.Ordinal);
+        Assert.Contains("rememberBoardScroll();", js, StringComparison.Ordinal);
+        Assert.Contains("window.scrollTo(0, listScroll);", js, StringComparison.Ordinal);
+        Assert.Contains("link.setAttribute(\"aria-current\", \"page\");", js, StringComparison.Ordinal);
+        Assert.Contains("startBoardPolling();", js, StringComparison.Ordinal);
+        Assert.Contains("document.body.classList.toggle(\"view-board\", name === \"board\");", js,
+            StringComparison.Ordinal);
+        Assert.Contains("if (kind === \"table\") {", js, StringComparison.Ordinal);
+        Assert.Contains("headRow.appendChild(renderInlines(element(\"th\"), cell));", js, StringComparison.Ordinal);
+        Assert.Contains("line.appendChild(renderInlines(element(\"td\"), cell));", js, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BoardJs_RoutesAndBackReturnsToTheBoardAtItsScroll()
+    {
+        string js = await Fetch("/board.js");
+
+        Assert.Contains("const BoardRoute = \"#jobs\";", js, StringComparison.Ordinal);
+        Assert.Contains("const JobRoute = \"#job/\";", js, StringComparison.Ordinal);
+        Assert.Contains("return JobRoute + encodeURIComponent(id);", js, StringComparison.Ordinal);
+        Assert.Contains("const JobIdPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}$/;", js, StringComparison.Ordinal);
+        Assert.Contains("\"/api/job?id=\" + encodeURIComponent(id)", js, StringComparison.Ordinal);
+        Assert.Contains("if (openedFromBoard) {", js, StringComparison.Ordinal);
+        Assert.Contains("history.back();", js, StringComparison.Ordinal);
+        Assert.Contains("history.replaceState(null, \"\", BoardRoute);", js, StringComparison.Ordinal);
+        Assert.Contains("window.scrollTo(0, boardScroll);", js, StringComparison.Ordinal);
+        Assert.Contains("boardScroll = window.scrollY;", js, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BoardJs_RendersNeedsYouThenStagesInOrderWithCounts()
+    {
+        string js = await Fetch("/board.js");
+
+        string[] stages =
+        [
+            "{ key: \"spike\", label: \"Spike\" }", "{ key: \"spec\", label: \"Spec\" }",
+            "{ key: \"build\", label: \"Build\" }", "{ key: \"review\", label: \"Review\" }",
+            "{ key: \"approve\", label: \"Approve\" }", "{ key: \"done\", label: \"Merged\", collapsed: true }",
+        ];
+        int[] positions = stages.Select(stage => js.IndexOf(stage, StringComparison.Ordinal)).ToArray();
+        Assert.All(positions, position => Assert.True(position >= 0));
+        Assert.Equal(positions.Order(), positions);
+        Assert.Contains("needsYou: \"Needs you\"", js, StringComparison.Ordinal);
+        Assert.Contains(
+            "const nodes = [renderNeedsYou(shown.filter((job) => job.stage === \"needs-human\"), tasks)];", js,
+            StringComparison.Ordinal);
+        Assert.Contains("section.hidden = count === 0;", js, StringComparison.Ordinal);
+        Assert.Contains("return label + \" (\" + count + \")\";", js, StringComparison.Ordinal);
+        Assert.Contains("card.href = storyHash(project, number);", js, StringComparison.Ordinal);
+        Assert.Contains("job.stage === \"needs-human\" ? \"card card-human\" : \"card\"", js, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BoardJs_CardShowsModeRoundsNoteBranchTokensCiAndRightText()
+    {
+        string js = await Fetch("/board.js");
+
+        Assert.Contains("text += \" · light\";", js, StringComparison.Ordinal);
+        Assert.Contains("text += \" · spike\";", js, StringComparison.Ordinal);
+        Assert.Contains("text += \" · high risk\";", js, StringComparison.Ordinal);
+        Assert.Contains("const Reviewers = [\"security\", \"ux\", \"ui\", \"code\"];", js, StringComparison.Ordinal);
+        Assert.Contains("if (value === \"skipped\") {", js, StringComparison.Ordinal);
+        Assert.Contains("element(\"span\", chipClass(specReview), \"spec check\")", js, StringComparison.Ordinal);
+        Assert.Contains("rounds.appendChild(roundRow(\"R\" + (index + 1), reviews, true));",
+            js, StringComparison.Ordinal);
+        Assert.Contains("rounds.appendChild(roundRow(\"R\" + round, job.reviews, false));",
+            js, StringComparison.Ordinal);
+        Assert.Contains("element(\"span\", \"card-note\", asText(job.note))", js, StringComparison.Ordinal);
+        Assert.Contains("element(\"span\", \"card-branch\", asText(job.branch))", js, StringComparison.Ordinal);
+        Assert.Contains(
+            "return count >= 1e6 ? (count / 1e6).toFixed(1) + \"M\" : Math.round(count / 1e3) + \"k\";", js,
+            StringComparison.Ordinal);
+        Assert.Contains("if (ci && ci !== \"skipped\") {", js, StringComparison.Ordinal);
+        Assert.Contains("return \"rework \" + (round - 1);", js, StringComparison.Ordinal);
+        Assert.Contains("return round ? \"round \" + round : \"\";", js, StringComparison.Ordinal);
+        Assert.Contains("return asText(job.decision);", js, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BoardJs_FilterIsKeptInLocalStorageAndFallsBack()
+    {
+        string js = await Fetch("/board.js");
+
+        Assert.Contains("const ProjectKey = \"controlroom.project\";", js, StringComparison.Ordinal);
+        Assert.Contains("localStorage.getItem(ProjectKey)", js, StringComparison.Ordinal);
+        Assert.Contains("localStorage.setItem(ProjectKey, name);", js, StringComparison.Ordinal);
+        Assert.Contains("allProjects: \"All projects\"", js, StringComparison.Ordinal);
+        Assert.Contains("filter.hidden = names.length < 2;", js, StringComparison.Ordinal);
+        Assert.Contains("if (selectedProject && !names.includes(selectedProject)) {", js, StringComparison.Ordinal);
+        Assert.Contains("boardTasks.filter((task) => task.project === selectedProject)", js, StringComparison.Ordinal);
+        Assert.Contains("boardJobs.filter((job) => job.project === selectedProject)", js, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BoardJs_PollsEveryFiveSecondsOnlyWhileVisibleAndRendersOnlyOnChange()
+    {
+        string js = await Fetch("/board.js");
+
+        Assert.Contains("const PollInterval = 5000;", js, StringComparison.Ordinal);
+        Assert.Contains("setInterval(pollBoard, PollInterval);", js, StringComparison.Ordinal);
+        Assert.Contains(
+            "if (document.visibilityState !== \"visible\" || !boardViewsVisible() || boardPolling) {", js,
+            StringComparison.Ordinal);
+        Assert.Contains("fetch(\"/api/board\", { cache: \"no-store\" })", js, StringComparison.Ordinal);
+        Assert.Contains("if (text === boardText) {", js, StringComparison.Ordinal);
+        Assert.Contains("window.scrollTo(0, scroll);", js, StringComparison.Ordinal);
+        Assert.Contains("JSON.stringify(entry) !== openJobEntry", js, StringComparison.Ordinal);
+        Assert.Contains("loadJob(openJobId, true);", js, StringComparison.Ordinal);
+        Assert.Contains("live: \"Live · \"", js, StringComparison.Ordinal);
+        Assert.Contains("status.textContent = BoardTexts.live + new Date().toLocaleTimeString();", js,
+            StringComparison.Ordinal);
+        Assert.Contains("unreachable: \"Can't reach the server.\"", js, StringComparison.Ordinal);
+        Assert.Contains("status.className = \"live-status error\";", js, StringComparison.Ordinal);
+        Assert.Contains("noJobs: \"No jobs yet.\"", js, StringComparison.Ordinal);
+        Assert.Contains("element(\"p\", \"empty\", BoardTexts.noJobs)", js, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BoardJs_JobPageShowsFactsTabsVerdictAndFixedTexts()
+    {
+        string js = await Fetch("/board.js");
+
+        Assert.Contains("job.mode + \" mode\"", js, StringComparison.Ordinal);
+        Assert.Contains("job.path + \" path\"", js, StringComparison.Ordinal);
+        Assert.Contains("job.risk + \" risk\"", js, StringComparison.Ordinal);
+        Assert.Contains("asText(job.branch),", js, StringComparison.Ordinal);
+        Assert.Contains("openJobRecord = names.length > 0 ? names[names.length - 1] : null;", js,
+            StringComparison.Ordinal);
+        Assert.Contains("tab.setAttribute(\"role\", \"tab\");", js, StringComparison.Ordinal);
+        Assert.Contains("const Verdict = /^(?:VERDICT: (PASS|CHANGES)|(APPROVE|ESCALATE))$/;",
+            js, StringComparison.Ordinal);
+        Assert.Contains("recordUnreadable: \"Can't read this record.\"", js, StringComparison.Ordinal);
+        Assert.Contains("chipClass(match[1] || match[2]) + \" verdict\"", js, StringComparison.Ordinal);
+        Assert.Contains("element(\"p\", \"error\", BoardTexts.recordUnreadable)", js, StringComparison.Ordinal);
+        Assert.Contains("jobFailed: \"Can't load this job.\"", js, StringComparison.Ordinal);
+        Assert.Contains("element(\"p\", \"error\", BoardTexts.jobFailed)", js, StringComparison.Ordinal);
+        Assert.Contains("catch {", js, StringComparison.Ordinal);
+        Assert.DoesNotContain(".message", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("statusText", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("caches", js, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AppCss_StylesTheBoardChipsTabsAndTables()
+    {
+        string css = await Fetch("/app.css");
+
+        foreach (string rule in new[]
+                 {
+                     ".nav a {", ".needs-you {", ".card-human {", ".chip-pass {", ".chip-changes {", ".tab {",
+                     ".filter-button {", ".story-table {", "--human:", "--pass-fg:", "--changes-fg:",
+                     ".view-board .top {",
+                 })
+        {
+            Assert.Contains(rule, css, StringComparison.Ordinal);
+        }
+    }
+
+    [Theory]
+    [InlineData("innerHTML")]
+    [InlineData("outerHTML")]
+    [InlineData("insertAdjacentHTML")]
+    [InlineData("document.write")]
+    [InlineData("eval(")]
+    [InlineData("new Function")]
+    [InlineData("http://")]
+    [InlineData("https://")]
+    [InlineData("createTextNode")]
+    public async Task BoardJs_AvoidsHtmlInjectionApis(string forbidden)
+    {
+        string js = await Fetch("/board.js");
+
+        Assert.DoesNotContain(forbidden, js, StringComparison.Ordinal);
+        Assert.Contains("textContent", js, StringComparison.Ordinal);
     }
 
     [Theory]
