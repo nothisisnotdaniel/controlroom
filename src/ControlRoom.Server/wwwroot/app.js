@@ -3,7 +3,8 @@
 // Fixed texts: never show server or exception text.
 const Texts = {
   unreachable: "Can't reach the server.",
-  unreadable: "Can't read backlog.md.",
+  unreadable: "Can't read backlog.md. Reload to try again.",
+  noTitle: "(no title)",
   noLines: "No backlog lines.",
   noProjects: "No projects found.",
   storyFailed: "Can't load this story.",
@@ -42,6 +43,18 @@ function element(tag, className, text) {
 
 function asText(value) {
   return typeof value === "string" ? value : "";
+}
+
+function titleText(value) {
+  return asText(value).trim() !== "" ? asText(value) : Texts.noTitle;
+}
+
+function titleElement(value) {
+  const title = element("strong", "title", titleText(value));
+  if (asText(value).trim() === "") {
+    title.classList.add("title-empty");
+  }
+  return title;
 }
 
 function asList(value) {
@@ -104,7 +117,7 @@ function renderNumberedLine(projectName, version, entry, number) {
   head.href = storyHash(projectName, number);
   head.appendChild(element("span", "mark", Marks[asText(entry.mark)] || Marks[" "]));
   head.appendChild(element("span", "number", "#" + number));
-  head.appendChild(element("strong", "title", asText(entry.title)));
+  head.appendChild(titleElement(entry.title));
   if (entry.waiting === true) {
     head.appendChild(element("span", "badge badge-waiting", Texts.waiting));
   }
@@ -146,7 +159,7 @@ function renderLines(projectName, version, entries) {
       continue;
     }
     const item = element("li");
-    item.appendChild(element("strong", "title", asText(entry && entry.title)));
+    item.appendChild(titleElement(entry && entry.title));
     const rest = asText(entry && entry.rest);
     if (rest !== "") {
       item.appendChild(element("span", "rest", rest));

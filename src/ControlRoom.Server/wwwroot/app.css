@@ -167,6 +167,12 @@ main {
   font-weight: 700;
 }
 
+.title.title-empty {
+  color: var(--muted);
+  font-weight: 400;
+  font-style: italic;
+}
+
 .rest {
   display: block;
   margin-top: 2px;

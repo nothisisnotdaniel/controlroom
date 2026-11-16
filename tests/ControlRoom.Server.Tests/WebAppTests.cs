@@ -51,7 +51,8 @@ public sealed partial class WebAppTests
         string js = await Fetch("/app.js");
 
         Assert.Contains("unreachable: \"Can't reach the server.\"", js, StringComparison.Ordinal);
-        Assert.Contains("unreadable: \"Can't read backlog.md.\"", js, StringComparison.Ordinal);
+        Assert.Contains("unreadable: \"Can't read backlog.md. Reload to try again.\"", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("unreadable: \"Can't read backlog.md.\"", js, StringComparison.Ordinal);
         Assert.Contains("noLines: \"No backlog lines.\"", js, StringComparison.Ordinal);
         Assert.Contains("element(\"p\", \"error\", Texts.unreadable)", js, StringComparison.Ordinal);
         Assert.Contains("element(\"p\", \"error\", Texts.unreachable)", js, StringComparison.Ordinal);
@@ -72,7 +73,7 @@ public sealed partial class WebAppTests
         Assert.Contains("if (entry.waiting === true)", js, StringComparison.Ordinal);
         Assert.Contains("element(\"span\", \"badge badge-waiting\", Texts.waiting)", js, StringComparison.Ordinal);
         Assert.Contains("element(\"span\", \"number\", \"#\" + number)", js, StringComparison.Ordinal);
-        Assert.Contains("element(\"strong\", \"title\", asText(entry.title))", js, StringComparison.Ordinal);
+        Assert.Contains("titleElement(entry.title)", js, StringComparison.Ordinal);
         Assert.Contains("const StoryRoute = \"#story/\";", js, StringComparison.Ordinal);
         Assert.Contains("return StoryRoute + encodeURIComponent(project) + \"/\" + number;", js,
             StringComparison.Ordinal);
@@ -531,7 +532,7 @@ public sealed partial class WebAppTests
         Assert.Contains("if (mark === \"x\" || line === null || version === \"\") {", js, StringComparison.Ordinal);
         Assert.Contains("if (number !== null) {\n    row.appendChild(named(editButton(EditTexts.editTitle", js,
             StringComparison.Ordinal);
-        Assert.Contains("const subject = number !== null ? \"#\" + number : asText(entry.title);", js,
+        Assert.Contains("const subject = number !== null ? \"#\" + number : titleText(entry.title);", js,
             StringComparison.Ordinal);
         Assert.Contains("button.setAttribute(\"aria-label\", button.textContent + \" \" + subject);", js,
             StringComparison.Ordinal);
@@ -629,6 +630,45 @@ public sealed partial class WebAppTests
         Assert.DoesNotContain("@import", css, StringComparison.Ordinal);
         Assert.DoesNotContain("url(", css, StringComparison.Ordinal);
         Assert.DoesNotMatch(FixedWideWidth(), css);
+    }
+
+    [Fact]
+    public async Task AppJs_ShowsFixedPlaceholderForEmptyTitles()
+    {
+        string js = await Fetch("/app.js");
+
+        Assert.Contains("noTitle: \"(no title)\"", js, StringComparison.Ordinal);
+        Assert.Contains("function titleText(value) {\n  return asText(value).trim() !== \"\" ? asText(value) : Texts.noTitle;\n}",
+            js.Replace("\r\n", "\n"), StringComparison.Ordinal);
+        Assert.Contains("element(\"strong\", \"title\", titleText(value))", js, StringComparison.Ordinal);
+        Assert.Contains("title.classList.add(\"title-empty\")", js, StringComparison.Ordinal);
+        Assert.Contains("head.appendChild(titleElement(entry.title));", js, StringComparison.Ordinal);
+        Assert.Contains("item.appendChild(titleElement(entry && entry.title));", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("innerHTML", js, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EditJs_NamesUnnumberedButtonsWithPlaceholderAndKeepsRealTitleInInput()
+    {
+        string js = await Fetch("/edit.js");
+
+        Assert.Contains("number !== null ? \"#\" + number : titleText(entry.title)", js, StringComparison.Ordinal);
+        Assert.Contains("input.value = asText(entry.title);", js, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AppCss_TitleEmptyIsMutedWithThemeVariableAfterTitleRule()
+    {
+        string css = await Fetch("/app.css");
+
+        int title = css.IndexOf("\n.title {", StringComparison.Ordinal);
+        int empty = css.IndexOf(".title.title-empty {", StringComparison.Ordinal);
+        Assert.True(title >= 0 && empty > title);
+        string rule = css[empty..css.IndexOf('}', empty)];
+        Assert.Contains("color: var(--muted);", rule, StringComparison.Ordinal);
+        Assert.Contains("font-weight: 400;", rule, StringComparison.Ordinal);
+        Assert.Contains("font-style: italic;", rule, StringComparison.Ordinal);
+        Assert.DoesNotContain("#", rule, StringComparison.Ordinal);
     }
 
     private static async Task<string> Fetch(string path)
