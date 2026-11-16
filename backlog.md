@@ -40,3 +40,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#30](backlog/030-cap-the-bytes-read-per-board.md) Cap the bytes read per board and job response
 - [?] [#31](backlog/031-show-pending-reviewer-chips-with-a.md) Show pending reviewer chips with a text marker
 - [?] [#32](backlog/032-show-the-live-status-line-on.md) Show the live status line on the job page
+- [?] [#33](backlog/033-refuse-a-token-folder-others-can.md) Refuse a token folder others can write to
+- [?] [#34](backlog/034-check-the-token-file-s-mode.md) Check the token file's mode and owner on the open handle
+- [?] [#35](backlog/035-keep-the-token-in-memory-when.md) Keep the token in memory when localStorage is unavailable
+- [?] [#36](backlog/036-hints-in-the-token-view.md) Hints in the token view
