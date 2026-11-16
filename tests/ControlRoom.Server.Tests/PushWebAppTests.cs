@@ -44,6 +44,8 @@ public sealed partial class PushWebAppTests
         Assert.Contains("sendTest: \"Send test\"", js, StringComparison.Ordinal);
         Assert.Contains("notifyDone: \"Notify when a job is done\"", js, StringComparison.Ordinal);
         Assert.Contains("failed: \"Can't change notifications. Try again.\"", js, StringComparison.Ordinal);
+        Assert.Contains("notAllowed: \"Permission was not given.\"", js, StringComparison.Ordinal);
+        Assert.Contains("pushNote = PushTexts.notAllowed;", js, StringComparison.Ordinal);
         Assert.DoesNotContain(".message", js, StringComparison.Ordinal);
         Assert.DoesNotContain("innerHTML", js, StringComparison.Ordinal);
     }

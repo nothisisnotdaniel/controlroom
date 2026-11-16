@@ -16,6 +16,7 @@ const PushTexts = {
   checkAgain: "Check again",
   notifyDone: "Notify when a job is done",
   failed: "Can't change notifications. Try again.",
+  notAllowed: "Permission was not given.",
   testSent: "Test sent.",
   testNone: "No device got the test.",
 };
@@ -191,6 +192,7 @@ function turnOnPush() {
   withPushBusy(async () => {
     const permission = await asked;
     if (permission !== "granted") {
+      pushNote = PushTexts.notAllowed;
       return;
     }
     const info = await pushInfo();

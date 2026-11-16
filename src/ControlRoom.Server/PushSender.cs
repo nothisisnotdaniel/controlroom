@@ -81,13 +81,14 @@ internal sealed class PushTransport
 
     public HttpMessageHandler Handler { get; }
 
-    /// <summary>The real handler: no redirects, no cookies, no proxy credentials.</summary>
+    /// <summary>The real handler: no redirects, no cookies, no proxy (the endpoint is a capability URL).</summary>
     public static PushTransport CreateDefault()
     {
         return new PushTransport(new SocketsHttpHandler
         {
             AllowAutoRedirect = false,
             UseCookies = false,
+            UseProxy = false,
             ConnectTimeout = PushSender.Timeout,
         });
     }

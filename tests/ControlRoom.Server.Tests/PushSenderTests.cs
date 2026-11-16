@@ -80,6 +80,7 @@ public sealed class PushSenderTests : IDisposable
         SocketsHttpHandler sockets = Assert.IsType<SocketsHttpHandler>(transport.Handler);
         Assert.False(sockets.AllowAutoRedirect);
         Assert.False(sockets.UseCookies);
+        Assert.False(sockets.UseProxy);
         Assert.Equal(TimeSpan.FromSeconds(10), PushSender.Timeout);
         sockets.Dispose();
     }

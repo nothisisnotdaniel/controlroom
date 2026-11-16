@@ -84,7 +84,7 @@ internal sealed class PushWatcher : IHostedService, IDisposable
             }
             catch (PushStoreException)
             {
-                logger.LogWarning("Push files refused; no notification sent");
+                logger.LogWarning("Push files refused; events dropped");
                 return [];
             }
 
@@ -103,7 +103,7 @@ internal sealed class PushWatcher : IHostedService, IDisposable
                 }
                 catch (PushStoreException)
                 {
-                    logger.LogWarning("Push files refused; no notification sent");
+                    logger.LogWarning("Push files refused; events dropped");
                     return sent;
                 }
             }
@@ -127,9 +127,10 @@ internal sealed class PushWatcher : IHostedService, IDisposable
         {
             await Scan();
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception)
         {
-            logger.LogWarning("Push scan failed");
+            // A failed scan must never stop the server or surface as an unobserved task exception.
+            logger.LogWarning("Push scan failed; its events are dropped");
         }
     }
 
