@@ -63,7 +63,9 @@ public sealed partial class ServiceWorkerTests
     {
         string js = await Fetch();
 
-        Assert.Contains("const cached = await cache.match(", js, StringComparison.Ordinal);
+        Assert.Contains("const key = new URL(event.request.url).pathname;", js, StringComparison.Ordinal);
+        Assert.Contains("const cached = await cache.match(key);", js, StringComparison.Ordinal);
+        Assert.Contains("await cache.put(key, response.clone());", js, StringComparison.Ordinal);
         Assert.Contains("const network = fetch(event.request)", js, StringComparison.Ordinal);
         int ok = js.IndexOf("if (response.ok) {", StringComparison.Ordinal);
         int put = js.IndexOf("cache.put(", StringComparison.Ordinal);

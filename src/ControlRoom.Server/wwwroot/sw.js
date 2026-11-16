@@ -41,11 +41,13 @@ function isShellRequest(request) {
 }
 
 async function staleWhileRevalidate(event) {
+  // One entry per shell path: the key is the bare pathname, so a query string never adds an entry.
+  const key = new URL(event.request.url).pathname;
   const cache = await caches.open(CacheName);
-  const cached = await cache.match(event.request, { ignoreSearch: true });
+  const cached = await cache.match(key);
   const network = fetch(event.request).then(async (response) => {
     if (response.ok) {
-      await cache.put(event.request, response.clone());
+      await cache.put(key, response.clone());
     }
     return response;
   });
