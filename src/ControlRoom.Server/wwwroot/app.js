@@ -334,6 +334,15 @@ function route() {
   window.scrollTo(0, listScroll);
 }
 
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) {
+    return;
+  }
+  // A failed registration only means no fast start; show nothing.
+  navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+}
+
 window.addEventListener("hashchange", route);
 route();
 load();
+registerServiceWorker();
