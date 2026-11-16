@@ -4,9 +4,9 @@ using Microsoft.AspNetCore.StaticFiles;
 namespace ControlRoom.Server;
 
 /// <summary>Builds the web app: loopback-only Kestrel, security headers, GET/HEAD only (plus POST on
-/// the one backlog change route), static files from the
-/// server's own <c>wwwroot</c>, an access token on every <c>/api/</c> request, the backlogs, story, board and job
-/// APIs.</summary>
+/// the backlog change route and the push routes), static files from the
+/// server's own <c>wwwroot</c>, an access token on every <c>/api/</c> request, the backlogs, story, board, job
+/// and push APIs, and the push watcher.</summary>
 internal static class ServerApp
 {
     public const string ContentSecurityPolicy =
@@ -63,6 +63,7 @@ internal static class ServerApp
         builder.WebHost.ConfigureKestrel(ConfigureKestrel);
         builder.Services.AddSingleton(new FactoryRoot(root));
         builder.Services.AddSingleton(new BacklogWriteLock());
+        AddPush(builder, tokenPath);
 
         WebApplication app = builder.Build();
         app.Use(async (context, next) =>
@@ -91,10 +92,28 @@ internal static class ServerApp
         BoardEndpoint.Map(app);
         JobEndpoint.Map(app);
         BacklogChangeEndpoint.Map(app);
+        PushEndpoint.Map(app);
         return app;
     }
 
-    /// <summary>GET and HEAD everywhere; POST only on exactly <see cref="BacklogChangeEndpoint.Route"/>.</summary>
+    /// <summary>The push store next to the token file, the crypto (clock from the container, subject from
+    /// <c>PushSubject</c>), the real no-redirect transport and the watcher.</summary>
+    private static void AddPush(WebApplicationBuilder builder, string tokenPath)
+    {
+        string folder = Path.GetDirectoryName(Path.GetFullPath(tokenPath))!;
+        string? subject = builder.Configuration["PushSubject"];
+        builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddSingleton(new PushStore(folder));
+        builder.Services.AddSingleton(_ => PushTransport.CreateDefault());
+        builder.Services.AddSingleton(services => new PushCrypto(
+            services.GetRequiredService<TimeProvider>(), PushCrypto.SystemEphemeralKey, AccessToken.SystemRandom, subject));
+        builder.Services.AddSingleton<PushSender>();
+        builder.Services.AddSingleton<PushWatcher>();
+        builder.Services.AddHostedService(services => services.GetRequiredService<PushWatcher>());
+    }
+
+    /// <summary>GET and HEAD everywhere; POST only on exactly <see cref="BacklogChangeEndpoint.Route"/> and the
+    /// <see cref="PushEndpoint.PostRoutes"/>.</summary>
     private static bool IsAllowedMethod(HttpRequest request)
     {
         if (HttpMethods.IsGet(request.Method) || HttpMethods.IsHead(request.Method))
@@ -103,7 +122,8 @@ internal static class ServerApp
         }
 
         return HttpMethods.IsPost(request.Method)
-            && string.Equals(request.Path.Value, BacklogChangeEndpoint.Route, StringComparison.Ordinal);
+            && (string.Equals(request.Path.Value, BacklogChangeEndpoint.Route, StringComparison.Ordinal)
+                || (request.Path.Value is string path && PushEndpoint.PostRoutes.Contains(path)));
     }
 
     /// <summary>True when the request carries exactly one <c>Authorization: Bearer &lt;token&gt;</c> header that

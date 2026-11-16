@@ -897,3 +897,58 @@ body:has(#edit-notice:not([hidden])) {
   color: var(--error);
   font-weight: 600;
 }
+
+/* Notifications section at the end of the board view. */
+.push {
+  max-width: 640px;
+  margin: 24px 0 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.push-title {
+  margin: 0 0 6px;
+  font-size: 1.05rem;
+}
+
+.push-text {
+  margin: 0;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+.push-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 10px;
+}
+
+.push-actions:empty {
+  display: none;
+}
+
+.push-switch {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.push-switch input {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.push-note {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}

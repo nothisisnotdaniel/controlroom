@@ -1,12 +1,16 @@
 using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace ControlRoom.Server.Tests;
 
 /// <summary>Hosts the server in memory (no real port) with <c>FactoryRoot</c> set to a temporary root and
 /// <c>TokenFile</c> set to a file in the factory's own temp folder (outside the root, never the real one), deleted
-/// on dispose.</summary>
+/// on dispose. Push requests go to <see cref="Push"/> (never the network) and the clock is <see cref="Time"/>,
+/// whose timers never fire.</summary>
 internal sealed class ServerFactory : WebApplicationFactory<Program>
 {
     private readonly string factoryRoot;
@@ -29,6 +33,15 @@ internal sealed class ServerFactory : WebApplicationFactory<Program>
 
         TokenFile = tokenFile;
     }
+
+    /// <summary>The fake push service every push request goes to.</summary>
+    public FakePushHandler Push { get; } = new();
+
+    /// <summary>Every log line the server writes.</summary>
+    public LogCapture Logs { get; } = new();
+
+    /// <summary>The server's clock.</summary>
+    public FakeTime Time { get; } = new();
 
     /// <summary>The token file the hosted server uses.</summary>
     public string TokenFile { get; }
@@ -53,6 +66,12 @@ internal sealed class ServerFactory : WebApplicationFactory<Program>
     {
         builder.UseSetting("FactoryRoot", factoryRoot);
         builder.UseSetting(AccessToken.ConfigKey, TokenFile);
+        builder.ConfigureTestServices(services =>
+        {
+            services.AddSingleton<TimeProvider>(Time);
+            services.AddSingleton(new PushTransport(Push));
+            services.AddSingleton<ILoggerProvider>(Logs);
+        });
     }
 
     protected override void Dispose(bool disposing)

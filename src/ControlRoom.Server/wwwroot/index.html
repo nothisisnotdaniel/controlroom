@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="/app.css">
   <script src="/token.js" defer></script>
   <script src="/board.js" defer></script>
+  <script src="/push.js" defer></script>
   <script src="/edit.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
@@ -36,6 +37,12 @@
       <div class="filter" id="board-filter" role="group" aria-label="Filter by project" hidden></div>
     </div>
     <div id="board-content"></div>
+    <section class="push" id="push" aria-labelledby="push-title">
+      <h2 class="push-title" id="push-title">Notifications</h2>
+      <p class="push-text" id="push-text">Checking notifications…</p>
+      <div class="push-actions" id="push-actions"></div>
+      <p class="push-note" id="push-note" role="status" aria-live="polite" hidden></p>
+    </section>
   </main>
   <main id="job" hidden></main>
   <main id="story" hidden></main>

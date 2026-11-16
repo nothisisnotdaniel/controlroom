@@ -411,6 +411,7 @@ function showBoard() {
   leaveJob();
   window.scrollTo(0, boardScroll);
   pollBoard();
+  showPushSection();
 }
 
 function rememberBoardScroll() {
