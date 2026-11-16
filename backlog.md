@@ -18,7 +18,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#7](backlog/007-host-header-check.md) Host-header check (after: #3) → 188-host-header-check
 - [x] [#8](backlog/008-done-group-marker-style.md) Done-group marker style → 189-done-marker-style
 - [x] [#9](backlog/009-empty-titles-and-retry-hint.md) Empty titles and retry hint → 190-empty-titles-retry-hint
-- [ ] [#10](backlog/010-ac-1-test-without-reflection.md) AC-1 test without reflection
+- [x] [#10](backlog/010-ac-1-test-without-reflection.md) AC-1 test without reflection → 191-listen-test-no-reflection
 - [h] [#11](backlog/011-tailscale.md) Tailscale
 - [?] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone
 - [?] [#13](backlog/013-releases-overview.md) Releases overview
