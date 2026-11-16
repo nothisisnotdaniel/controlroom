@@ -1,3 +1,5 @@
+using System.Net;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace ControlRoom.Server.Tests;
@@ -111,6 +113,91 @@ public sealed partial class WebAppTests
     }
 
     [Fact]
+    public async Task IndexHtml_LinksManifestIconAndHomeScreenMetas()
+    {
+        string html = await Fetch("/index.html");
+
+        Assert.Contains("<link rel=\"manifest\" href=\"/manifest.webmanifest\">", html, StringComparison.Ordinal);
+        Assert.Contains("<link rel=\"apple-touch-icon\" href=\"/icons/apple-touch-icon.png\">", html,
+            StringComparison.Ordinal);
+        Assert.Contains("<meta name=\"apple-mobile-web-app-capable\" content=\"yes\">", html,
+            StringComparison.Ordinal);
+        Assert.Contains("<meta name=\"mobile-web-app-capable\" content=\"yes\">", html, StringComparison.Ordinal);
+        Assert.Contains("<meta name=\"apple-mobile-web-app-title\" content=\"Control Room\">", html,
+            StringComparison.Ordinal);
+        Assert.Contains("<meta name=\"apple-mobile-web-app-status-bar-style\" content=\"default\">", html,
+            StringComparison.Ordinal);
+        Assert.Contains("<meta name=\"theme-color\" media=\"(prefers-color-scheme: light)\"", html,
+            StringComparison.Ordinal);
+        Assert.Contains("<meta name=\"theme-color\" media=\"(prefers-color-scheme: dark)\"", html,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Manifest_DescribesAStandaloneAppWithSameOriginIcons()
+    {
+        using TempFactoryRoot root = new();
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateClient();
+
+        using HttpResponseMessage response = await client.GetAsync("/manifest.webmanifest");
+        using JsonDocument document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        JsonElement manifest = document.RootElement;
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/manifest+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("Control Room", manifest.GetProperty("name").GetString());
+        Assert.Equal("Control Room", manifest.GetProperty("short_name").GetString());
+        Assert.Equal("/", manifest.GetProperty("start_url").GetString());
+        Assert.Equal("/", manifest.GetProperty("scope").GetString());
+        Assert.Equal("standalone", manifest.GetProperty("display").GetString());
+        Assert.Equal("#ffffff", manifest.GetProperty("background_color").GetString());
+        Assert.Equal("#ffffff", manifest.GetProperty("theme_color").GetString());
+        JsonElement[] icons = manifest.GetProperty("icons").EnumerateArray().ToArray();
+        Assert.Equal(2, icons.Length);
+        Assert.Equal("/icons/icon-192.png", icons[0].GetProperty("src").GetString());
+        Assert.Equal("192x192", icons[0].GetProperty("sizes").GetString());
+        Assert.Equal("/icons/icon-512.png", icons[1].GetProperty("src").GetString());
+        Assert.Equal("512x512", icons[1].GetProperty("sizes").GetString());
+        foreach (JsonElement icon in icons)
+        {
+            Assert.Equal("image/png", icon.GetProperty("type").GetString());
+            Assert.Equal("any", icon.GetProperty("purpose").GetString());
+        }
+
+        foreach (string? url in icons.Select(icon => icon.GetProperty("src").GetString())
+                     .Append(manifest.GetProperty("start_url").GetString()))
+        {
+            Assert.NotNull(url);
+            Assert.StartsWith("/", url, StringComparison.Ordinal);
+            Assert.False(url.StartsWith("//", StringComparison.Ordinal));
+        }
+    }
+
+    [Fact]
+    public async Task AppCss_LightBackgroundMatchesTheManifestColours()
+    {
+        string css = await Fetch("/app.css");
+
+        Assert.Contains("--bg: #ffffff;", css, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AppJs_RegistersTheServiceWorkerQuietlyAndNeverCachesData()
+    {
+        string js = await Fetch("/app.js");
+
+        Assert.Contains("if (!(\"serviceWorker\" in navigator)) {", js, StringComparison.Ordinal);
+        Assert.Contains("navigator.serviceWorker.register(\"/sw.js\").catch(() => undefined);", js,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("caches", js, StringComparison.Ordinal);
+        Assert.Contains("fetch(\"/api/backlogs\", { cache: \"no-store\" })", js, StringComparison.Ordinal);
+        Assert.Equal(2, NoStore().Matches(js).Count);
+        Assert.Contains("unreachable: \"Can't reach the server.\"", js, StringComparison.Ordinal);
+        Assert.Contains("storyFailed: \"Can't load this story.\"", js, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task IndexHtml_HasAHiddenStoryView()
     {
         string html = await Fetch("/index.html");
@@ -176,6 +263,9 @@ public sealed partial class WebAppTests
     {
         return string.Concat(AttributeName().Matches(html).Select(match => match.Value.ToLowerInvariant()));
     }
+
+    [GeneratedRegex("\\{ cache: \"no-store\" \\}")]
+    private static partial Regex NoStore();
 
     [GeneratedRegex("<script\\b", RegexOptions.IgnoreCase)]
     private static partial Regex ScriptTag();

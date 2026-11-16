@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.AspNetCore.StaticFiles;
 
 namespace ControlRoom.Server;
 
@@ -8,7 +9,11 @@ internal static class ServerApp
 {
     public const string ContentSecurityPolicy =
         "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; "
-        + "base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+        + "manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+
+    /// <summary>The service worker, served with <c>Cache-Control: no-cache</c> so a changed worker is picked
+    /// up.</summary>
+    public const string ServiceWorkerPath = "/sw.js";
 
     /// <summary>Builds the app, or returns <c>null</c> after writing a fixed error text when there is no
     /// factory root.</summary>
@@ -47,10 +52,29 @@ internal static class ServerApp
             await next(context);
         });
         app.UseDefaultFiles();
-        app.UseStaticFiles();
+        app.UseStaticFiles(CreateStaticFileOptions());
         BacklogsEndpoint.Map(app);
         StoryEndpoint.Map(app);
         return app;
+    }
+
+    /// <summary>Static files: <c>.webmanifest</c> as <c>application/manifest+json</c>, and the service worker
+    /// revalidated on every load.</summary>
+    private static StaticFileOptions CreateStaticFileOptions()
+    {
+        FileExtensionContentTypeProvider contentTypes = new();
+        contentTypes.Mappings[".webmanifest"] = "application/manifest+json";
+        return new StaticFileOptions
+        {
+            ContentTypeProvider = contentTypes,
+            OnPrepareResponse = context =>
+            {
+                if (string.Equals(context.Context.Request.Path.Value, ServiceWorkerPath, StringComparison.Ordinal))
+                {
+                    context.Context.Response.Headers.CacheControl = "no-cache";
+                }
+            },
+        };
     }
 
     /// <summary>Listens only on <see cref="ServerEndpoint.Address"/>, and drops any <c>Kestrel</c> config section

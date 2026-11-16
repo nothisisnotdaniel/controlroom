@@ -6,7 +6,7 @@ public sealed class HttpSafetyTests
 {
     private const string ExpectedPolicy =
         "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; "
-        + "base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+        + "manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
     public static TheoryData<string, string> WriteRequests()
     {
@@ -85,6 +85,13 @@ public sealed class HttpSafetyTests
     [InlineData("GET", "/index.html")]
     [InlineData("GET", "/app.js")]
     [InlineData("GET", "/app.css")]
+    [InlineData("GET", "/sw.js")]
+    [InlineData("GET", "/manifest.webmanifest")]
+    [InlineData("GET", "/icons/apple-touch-icon.png")]
+    [InlineData("GET", "/icons/icon-192.png")]
+    [InlineData("GET", "/icons/icon-512.png")]
+    [InlineData("POST", "/sw.js")]
+    [InlineData("POST", "/manifest.webmanifest")]
     [InlineData("GET", "/api/backlogs")]
     [InlineData("GET", "/missing")]
     [InlineData("HEAD", "/")]
@@ -100,5 +107,54 @@ public sealed class HttpSafetyTests
 
         Assert.Equal(ExpectedPolicy, string.Join(",", response.Headers.GetValues("Content-Security-Policy")));
         Assert.Equal("nosniff", string.Join(",", response.Headers.GetValues("X-Content-Type-Options")));
+    }
+
+    [Fact]
+    public async Task Csp_AllowsOnlySelfForManifestAndWorkerAndStaysStrict()
+    {
+        using TempFactoryRoot root = new();
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateClient();
+
+        using HttpResponseMessage response = await client.GetAsync("/sw.js");
+        string policy = string.Join(",", response.Headers.GetValues("Content-Security-Policy"));
+
+        foreach (string part in new[]
+                 {
+                     "default-src 'none'", "script-src 'self'", "connect-src 'self'", "frame-ancestors 'none'",
+                     "manifest-src 'self'", "worker-src 'self'",
+                 })
+        {
+            Assert.Contains(part, policy.Split("; "));
+        }
+    }
+
+    [Theory]
+    [InlineData("/sw.js")]
+    [InlineData("/manifest.webmanifest")]
+    public async Task Post_ToAppFiles_Gets405(string path)
+    {
+        using TempFactoryRoot root = new();
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateClient();
+
+        using HttpResponseMessage response = await client.PostAsync(path, new StringContent("x"));
+
+        Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ServiceWorker_IsJavaScriptWithNoCache()
+    {
+        using TempFactoryRoot root = new();
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateClient();
+
+        using HttpResponseMessage response = await client.GetAsync("/sw.js");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains(response.Content.Headers.ContentType?.MediaType,
+            new[] { "text/javascript", "application/javascript" });
+        Assert.True(response.Headers.CacheControl?.NoCache);
     }
 }
