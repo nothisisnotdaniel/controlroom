@@ -35,7 +35,8 @@ const JobRoute = "#job/";
 const JobIdPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}$/;
 const ProjectKey = "controlroom.project";
 const PollInterval = 5000;
-const Verdict = /^(VERDICT: )?(PASS|CHANGES|APPROVE|ESCALATE)$/;
+// Reviews start with "VERDICT: PASS" or "VERDICT: CHANGES"; decisions start with a bare APPROVE or ESCALATE.
+const Verdict = /^(?:VERDICT: (PASS|CHANGES)|(APPROVE|ESCALATE))$/;
 
 let boardText = null;
 let boardJobs = [];
@@ -466,7 +467,7 @@ function renderRecord(record) {
   if (blocks.length > 0 && asText(blocks[0] && blocks[0].kind) === "paragraph") {
     const match = Verdict.exec(blockText(blocks[0]));
     if (match) {
-      panel.appendChild(element("span", chipClass(match[2]) + " verdict", blockText(blocks[0])));
+      panel.appendChild(element("span", chipClass(match[1] || match[2]) + " verdict", blockText(blocks[0])));
       start = 1;
     }
   }

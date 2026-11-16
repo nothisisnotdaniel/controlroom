@@ -253,6 +253,8 @@ public sealed partial class WebAppTests
         Assert.Contains("window.scrollTo(0, listScroll);", js, StringComparison.Ordinal);
         Assert.Contains("link.setAttribute(\"aria-current\", \"page\");", js, StringComparison.Ordinal);
         Assert.Contains("startBoardPolling();", js, StringComparison.Ordinal);
+        Assert.Contains("document.body.classList.toggle(\"view-board\", name === \"board\");", js,
+            StringComparison.Ordinal);
         Assert.Contains("if (kind === \"table\") {", js, StringComparison.Ordinal);
         Assert.Contains("headRow.appendChild(renderInlines(element(\"th\"), cell));", js, StringComparison.Ordinal);
         Assert.Contains("line.appendChild(renderInlines(element(\"td\"), cell));", js, StringComparison.Ordinal);
@@ -376,9 +378,10 @@ public sealed partial class WebAppTests
         Assert.Contains("openJobRecord = names.length > 0 ? names[names.length - 1] : null;", js,
             StringComparison.Ordinal);
         Assert.Contains("tab.setAttribute(\"role\", \"tab\");", js, StringComparison.Ordinal);
-        Assert.Contains("const Verdict = /^(VERDICT: )?(PASS|CHANGES|APPROVE|ESCALATE)$/;",
+        Assert.Contains("const Verdict = /^(?:VERDICT: (PASS|CHANGES)|(APPROVE|ESCALATE))$/;",
             js, StringComparison.Ordinal);
         Assert.Contains("recordUnreadable: \"Can't read this record.\"", js, StringComparison.Ordinal);
+        Assert.Contains("chipClass(match[1] || match[2]) + \" verdict\"", js, StringComparison.Ordinal);
         Assert.Contains("element(\"p\", \"error\", BoardTexts.recordUnreadable)", js, StringComparison.Ordinal);
         Assert.Contains("jobFailed: \"Can't load this job.\"", js, StringComparison.Ordinal);
         Assert.Contains("element(\"p\", \"error\", BoardTexts.jobFailed)", js, StringComparison.Ordinal);
@@ -397,6 +400,7 @@ public sealed partial class WebAppTests
                  {
                      ".nav a {", ".needs-you {", ".card-human {", ".chip-pass {", ".chip-changes {", ".tab {",
                      ".filter-button {", ".story-table {", "--human:", "--pass-fg:", "--changes-fg:",
+                     ".view-board .top {",
                  })
         {
             Assert.Contains(rule, css, StringComparison.Ordinal);

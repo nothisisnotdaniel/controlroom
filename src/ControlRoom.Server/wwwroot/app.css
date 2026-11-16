@@ -336,7 +336,8 @@ main {
 }
 
 /* Jobs board: stages stack on the iPhone and become columns on wide screens. */
-#board {
+#board,
+.view-board .top {
   max-width: 1440px;
 }
 

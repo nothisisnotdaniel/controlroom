@@ -354,6 +354,8 @@ function showView(name) {
   for (const view of Views) {
     document.getElementById(view).hidden = view !== name;
   }
+  // The wide board view widens the header too, so the nav lines up with the board's left edge.
+  document.body.classList.toggle("view-board", name === "board");
   const top = document.getElementById("top");
   top.hidden = !(name in ViewTitles);
   if (!top.hidden) {
