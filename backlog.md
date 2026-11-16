@@ -44,3 +44,6 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#34](backlog/034-check-the-token-file-s-mode.md) Check the token file's mode and owner on the open handle
 - [?] [#35](backlog/035-keep-the-token-in-memory-when.md) Keep the token in memory when localStorage is unavailable
 - [?] [#36](backlog/036-hints-in-the-token-view.md) Hints in the token view
+- [?] [#37](backlog/037-refuse-after-in-titles-regardless-of.md) Refuse (after: in titles regardless of case and spacing
+- [?] [#38](backlog/038-clearer-validation-messages-in-the-backlog.md) Clearer validation messages in the backlog edit forms
+- [?] [#39](backlog/039-keep-focus-and-the-open-add.md) Keep focus and the open Add form after an edit reloads the backlog
