@@ -152,21 +152,27 @@ function editRow(projectName, version, entry) {
     return null;
   }
   const number = asNumber(entry.number);
+  // Screen readers hear which item each button acts on, not the same names on every line.
+  const subject = number !== null ? "#" + number : asText(entry.title);
+  const named = (button) => {
+    button.setAttribute("aria-label", button.textContent + " " + subject);
+    return button;
+  };
   const row = element("div", "edit-row edit-only");
   const send = (fields) => changeAndReload(Object.assign({ project: projectName, version: version, line: line }, fields));
   if (mark === "?") {
-    row.appendChild(editButton(EditTexts.approve, "edit-primary", () => send({ action: "approve" })));
-    row.appendChild(editButton(EditTexts.drop, "edit-danger", () => {
+    row.appendChild(named(editButton(EditTexts.approve, "edit-primary", () => send({ action: "approve" }))));
+    row.appendChild(named(editButton(EditTexts.drop, "edit-danger", () => {
       if (confirm(EditTexts.confirmDrop)) {
         send({ action: "drop" });
       }
-    }));
+    })));
   }
-  row.appendChild(editButton(EditTexts.up, null, () => send({ action: "up" })));
-  row.appendChild(editButton(EditTexts.down, null, () => send({ action: "down" })));
-  row.appendChild(editButton(EditTexts.toTop, null, () => send({ action: "top" })));
+  row.appendChild(named(editButton(EditTexts.up, null, () => send({ action: "up" }))));
+  row.appendChild(named(editButton(EditTexts.down, null, () => send({ action: "down" }))));
+  row.appendChild(named(editButton(EditTexts.toTop, null, () => send({ action: "top" }))));
   if (number !== null) {
-    row.appendChild(editButton(EditTexts.editTitle, null, () => openTitleForm(row, entry, send)));
+    row.appendChild(named(editButton(EditTexts.editTitle, null, () => openTitleForm(row, entry, send))));
   }
   row.addEventListener("click", (event) => event.stopPropagation());
   return row;

@@ -882,6 +882,11 @@ textarea.edit-input {
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
 }
 
+/* Keeps the last lines and the Back button reachable above the fixed notice. */
+body:has(#edit-notice:not([hidden])) {
+  padding-bottom: calc(max(24px, env(safe-area-inset-bottom)) + 72px);
+}
+
 .edit-notice-text {
   flex: 1;
   margin: 0;

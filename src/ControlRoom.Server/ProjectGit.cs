@@ -29,6 +29,13 @@ internal static class ProjectGit
         "GIT_COMMON_DIR", "GIT_NAMESPACE", "GIT_PREFIX",
     ];
 
+    // Variables that would add config from the shell that started the server.
+    private static readonly string[] ConfigVariables =
+    [
+        "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT", "GIT_CONFIG", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM",
+        "GIT_CONFIG_NOSYSTEM",
+    ];
+
     /// <summary>The current branch, or <c>null</c> when the project folder has no repo of its own or git
     /// fails.</summary>
     public static async Task<string?> CurrentBranch(string folder)
@@ -99,7 +106,15 @@ internal static class ProjectGit
             start.ArgumentList.Add(argument);
         }
 
-        foreach (string name in RepoVariables)
+        foreach (string name in RepoVariables.Concat(ConfigVariables))
+        {
+            start.Environment.Remove(name);
+        }
+
+        foreach (string name in start.Environment.Keys
+            .Where(key => key.StartsWith("GIT_CONFIG_KEY_", StringComparison.Ordinal)
+                || key.StartsWith("GIT_CONFIG_VALUE_", StringComparison.Ordinal))
+            .ToArray())
         {
             start.Environment.Remove(name);
         }

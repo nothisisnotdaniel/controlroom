@@ -104,7 +104,7 @@ internal static class BacklogChangeEndpoint
                 return Error(StatusCodes.Status400BadRequest, Invalid);
             }
 
-            await writeLock.Gate.WaitAsync();
+            await writeLock.Gate.WaitAsync(context.RequestAborted);
             try
             {
                 return await Change(project, request);
@@ -175,6 +175,12 @@ internal static class BacklogChangeEndpoint
             Restore(applied, project, createdFolder);
             return Error(StatusCodes.Status500InternalServerError, WriteFailed);
         }
+        catch
+        {
+            // Any other failure still puts the files back before it surfaces.
+            Restore(applied, project, createdFolder);
+            throw;
+        }
 
         if (!await ProjectGit.Commit(project.Path, plan.Message, paths))
         {
@@ -191,6 +197,8 @@ internal static class BacklogChangeEndpoint
             warning = pushed ? null : PushFailed;
         }
 
+        // Every plan carries the backlog bytes after the change (a story edit passes the unchanged file bytes), so this
+        // is the version the client sends next.
         return Results.Json(new BacklogChangeResponse(true, pushed, SafeFileReader.Version(plan.BacklogBytes), warning));
     }
 

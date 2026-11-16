@@ -478,7 +478,11 @@ public sealed partial class WebAppTests
 
         Assert.Contains("if (mark === \"?\") {", js, StringComparison.Ordinal);
         Assert.Contains("if (mark === \"x\" || line === null || version === \"\") {", js, StringComparison.Ordinal);
-        Assert.Contains("if (number !== null) {\n    row.appendChild(editButton(EditTexts.editTitle", js,
+        Assert.Contains("if (number !== null) {\n    row.appendChild(named(editButton(EditTexts.editTitle", js,
+            StringComparison.Ordinal);
+        Assert.Contains("const subject = number !== null ? \"#\" + number : asText(entry.title);", js,
+            StringComparison.Ordinal);
+        Assert.Contains("button.setAttribute(\"aria-label\", button.textContent + \" \" + subject);", js,
             StringComparison.Ordinal);
         Assert.Contains("if (confirm(EditTexts.confirmDrop)) {", js, StringComparison.Ordinal);
         Assert.Contains("element(\"textarea\", \"edit-input edit-story-text\")", js, StringComparison.Ordinal);
@@ -540,6 +544,7 @@ public sealed partial class WebAppTests
         Assert.Contains("min-height: 44px;", css[button..css.IndexOf('}', button)], StringComparison.Ordinal);
         Assert.Contains("--danger:", css, StringComparison.Ordinal);
         Assert.Contains(".edit-notice {", css, StringComparison.Ordinal);
+        Assert.Contains("body:has(#edit-notice:not([hidden])) {", css, StringComparison.Ordinal);
     }
 
     [Theory]
