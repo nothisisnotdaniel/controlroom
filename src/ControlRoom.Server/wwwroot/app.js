@@ -106,7 +106,7 @@ function renderNumberedLine(projectName, entry, number) {
   head.appendChild(element("span", "number", "#" + number));
   head.appendChild(element("strong", "title", asText(entry.title)));
   if (entry.waiting === true) {
-    head.appendChild(element("span", "badge waiting", Texts.waiting));
+    head.appendChild(element("span", "badge badge-waiting", Texts.waiting));
   }
   item.appendChild(head);
   const after = asList(entry.after);
@@ -289,6 +289,7 @@ async function loadStory(target) {
   } catch {
     if (request === storyRequest) {
       showStoryContent([element("p", "error", Texts.storyFailed)]);
+      document.querySelector("#story .back").focus({ preventScroll: true });
     }
     return;
   }
@@ -297,11 +298,15 @@ async function loadStory(target) {
   }
   const heading = asText(data && data.project) + " #" + asNumber(data && data.number) + " " + asText(data && data.title);
   const article = element("article", "story");
-  article.appendChild(element("h1", "story-title", heading));
+  const title = element("h1", "story-title", heading);
+  title.tabIndex = -1;
+  article.appendChild(title);
   for (const block of asList(data && data.blocks)) {
     article.appendChild(renderBlock(block));
   }
   showStoryContent([article]);
+  // Move focus into the story so keyboard and screen-reader users don't stay on the hidden list.
+  title.focus({ preventScroll: true });
 }
 
 function route() {

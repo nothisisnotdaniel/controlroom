@@ -284,6 +284,8 @@ internal static partial class StoryMarkdown
     /// whitespace) and, per emphasis delimiter, the sorted positions that can close it outside code spans.</summary>
     private sealed class InlineScan
     {
+        private static readonly int[] EmphasisRuns = [1, 2];
+
         private readonly string text;
         private readonly Dictionary<int, int> codeClose = [];
         private readonly Dictionary<int, int> bracketClose = [];
@@ -415,7 +417,7 @@ internal static partial class StoryMarkdown
 
                 if ((ch == '*' || ch == '_') && !char.IsWhiteSpace(text[i - 1]))
                 {
-                    foreach (int run in new[] { 1, 2 })
+                    foreach (int run in EmphasisRuns)
                     {
                         if (IsCloser(i, ch, run))
                         {

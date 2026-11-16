@@ -68,7 +68,7 @@ public sealed partial class WebAppTests
             StringComparison.Ordinal);
         Assert.Contains("waiting: \"Waiting\"", js, StringComparison.Ordinal);
         Assert.Contains("if (entry.waiting === true)", js, StringComparison.Ordinal);
-        Assert.Contains("element(\"span\", \"badge waiting\", Texts.waiting)", js, StringComparison.Ordinal);
+        Assert.Contains("element(\"span\", \"badge badge-waiting\", Texts.waiting)", js, StringComparison.Ordinal);
         Assert.Contains("element(\"span\", \"number\", \"#\" + number)", js, StringComparison.Ordinal);
         Assert.Contains("element(\"strong\", \"title\", asText(entry.title))", js, StringComparison.Ordinal);
         Assert.Contains("const StoryRoute = \"#story/\";", js, StringComparison.Ordinal);
@@ -105,6 +105,7 @@ public sealed partial class WebAppTests
         Assert.Contains("parent.appendChild(element(\"span\", null, text));", js, StringComparison.Ordinal);
         Assert.Contains(
             "pre.appendChild(element(\"code\", null, asText(block.text)));", js, StringComparison.Ordinal);
+        Assert.Contains("title.focus({ preventScroll: true });", js, StringComparison.Ordinal);
         Assert.DoesNotContain("createTextNode", js, StringComparison.Ordinal);
         Assert.DoesNotContain(".href = asText", js, StringComparison.Ordinal);
     }
@@ -124,7 +125,7 @@ public sealed partial class WebAppTests
         string css = await Fetch("/app.css");
 
         Assert.Contains("--waiting-bg:", css, StringComparison.Ordinal);
-        Assert.Contains(".waiting {", css, StringComparison.Ordinal);
+        Assert.Contains(".badge-waiting {", css, StringComparison.Ordinal);
         Assert.Contains(".story-bar {", css, StringComparison.Ordinal);
         Assert.Contains("min-height: 44px;", css, StringComparison.Ordinal);
         Assert.Contains("[hidden] {", css, StringComparison.Ordinal);

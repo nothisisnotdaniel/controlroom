@@ -199,6 +199,12 @@ public sealed class StoryApiTests
 
         Assert.Equal(HttpStatusCode.OK, story.StatusCode);
         Assert.Equal(HttpStatusCode.OK, after.StatusCode);
+        using JsonDocument json = JsonDocument.Parse(await story.Content.ReadAsStringAsync());
+        JsonElement[] inlines = json.RootElement.GetProperty("blocks")[0].GetProperty("inlines").EnumerateArray()
+            .ToArray();
+        Assert.All(inlines, inline => Assert.Equal("text", inline.GetProperty("kind").GetString()));
+        Assert.Contains("a", string.Concat(inlines.Select(inline => inline.GetProperty("text").GetString())),
+            StringComparison.Ordinal);
     }
 
     private static async Task AssertNotFound(HttpClient client, string url, string rootPath)

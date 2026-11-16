@@ -179,7 +179,7 @@ main {
   margin: 0 0 0 6px;
 }
 
-.waiting {
+.badge-waiting {
   background: var(--waiting-bg);
   color: var(--waiting-fg);
 }
@@ -201,8 +201,10 @@ main {
 }
 
 .dependency {
-  display: inline-block;
-  padding: 4px 8px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 6px 12px;
   border-radius: 6px;
   color: var(--link);
   font-weight: 600;
@@ -241,6 +243,10 @@ main {
   background: var(--card);
   border-radius: 12px;
   padding: 12px 14px;
+}
+
+.story-title:focus {
+  outline: none;
 }
 
 .story-title {
