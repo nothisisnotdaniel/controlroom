@@ -37,6 +37,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   `Microsoft.AspNetCore.Mvc.Testing` to host the app in memory. No new package without a reason in the spec.
   Run: `dotnet run --project src/ControlRoom.Server` (listens on `127.0.0.1:8100` only; the factory root is the
   parent of the folder holding `ControlRoom.slnx`, or `--FactoryRoot <path>`).
+  Start at login: `scripts/launch-agent.sh install|status|uninstall` (LaunchAgent `local.controlroom.server`,
+  published server in `~/Library/Application Support/ControlRoom/server/`, log `~/Library/Logs/ControlRoom/server.log`).
 - **Test command:** `dotnet test` (from `ControlRoom/`; `dotnet build` must stay at 0 warnings). Tests build a
   temporary factory root (`TempFactoryRoot`) and host the server with `ServerFactory`; no test reads the real
   factory root or opens a real port.
@@ -62,7 +64,10 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     story), `edit.js` (per-project edit mode, the Add form, Edit story, fixed texts per error code), `board.js` (jobs board and job page, polls every 5 s while visible),
     `sw.js` (service worker: caches only the fixed app shell, never `/api/`; bump its cache version when the
     shell list changes), `manifest.webmanifest`, `icons/` (opaque RGB PNGs, 180/192/512 px)).
-  - `tests/ControlRoom.Server.Tests/`: one test class per unit or concern; `TempFactoryRoot` (`InitGit`, `AddBareRemote`
+  - `scripts/launch-agent.sh`: POSIX `sh` LaunchAgent installer (publish, `bootout`, replace, plist `0644`,
+    `bootstrap`; refuses symlinks; never reads the token). Not part of the server.
+  - `tests/ControlRoom.Server.Tests/`: one test class per unit or concern (`LaunchAgentScriptTests` runs the script with fake
+    `launchctl`/`dotnet` in a temp `HOME`); `TempFactoryRoot` (`InitGit`, `AddBareRemote`
     and `Git` for a real local repo), `TempTokenFolder` and `ServerFactory` (own temp token file;
     `CreateTokenClient()` for API calls) are the shared fixtures.
 - **Style:** C# like Context: file-scoped namespaces, `internal sealed` unless a type must be public, no
