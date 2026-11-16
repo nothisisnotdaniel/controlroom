@@ -240,6 +240,71 @@ public sealed class LaunchAgentScriptTests
     }
 
     [Fact]
+    public void Install_RefusesASymlinkedLogFile()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        string target = Path.Combine(home.Path, "elsewhere.log");
+        File.WriteAllText(target, "original");
+        Directory.CreateDirectory(Path.GetDirectoryName(home.Log)!);
+        File.CreateSymbolicLink(home.Log, target);
+
+        ScriptRun run = home.Run("install");
+
+        Assert.Equal(1, run.ExitCode);
+        Assert.Equal(SymlinkText + home.Log + "\n", run.Error);
+        Assert.Equal("original", File.ReadAllText(target));
+        Assert.Empty(home.LaunchctlCalls());
+        Assert.False(File.Exists(home.Plist));
+    }
+
+    [Fact]
+    public void Install_WhenBootstrapFails_ExitsOneWithAFixedMessage()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.SetExit("bootstrap", 5);
+
+        ScriptRun run = home.Run("install");
+
+        Assert.Equal(1, run.ExitCode);
+        Assert.Equal(
+            "launchctl bootstrap failed. Check: launchctl print gui/" + ScriptHome.UserId() + "/" + Label + "\n",
+            run.Error);
+        Assert.Equal("", run.Output);
+    }
+
+    [Fact]
+    public void Uninstall_RefusesASymlinkedLibraryFolder()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        string target = Path.Combine(home.Path, "elsewhere");
+        string server = Path.Combine(target, "Application Support", "ControlRoom", "server");
+        Directory.CreateDirectory(server);
+        Directory.CreateSymbolicLink(Path.Combine(home.Path, "Library"), target);
+
+        ScriptRun run = home.Run("uninstall");
+
+        Assert.Equal(1, run.ExitCode);
+        Assert.Equal(SymlinkText + Path.Combine(home.Path, "Library") + "\n", run.Error);
+        Assert.True(Directory.Exists(server));
+        Assert.Empty(home.LaunchctlCalls());
+    }
+
+    [Fact]
     public void Uninstall_BootsOutAndRemovesThePlistAndServerButKeepsTheLogAndToken()
     {
         if (OperatingSystem.IsWindows())

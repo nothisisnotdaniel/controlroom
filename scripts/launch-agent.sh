@@ -85,7 +85,9 @@ do_status() {
 }
 
 do_uninstall() {
+    refuse_link "$HOME/Library"
     refuse_link "$AGENTS"
+    refuse_link "$HOME/Library/Application Support"
     refuse_link "$SUPPORT"
     "$LAUNCHCTL" bootout "$SERVICE" >/dev/null 2>&1
     rm -f "$PLIST" || fail "Can't remove $PLIST"
@@ -113,6 +115,7 @@ do_install() {
     refuse_link "$PLIST"
     refuse_link "$HOME/Library/Logs"
     refuse_link "$LOG_DIR"
+    refuse_link "$LOG"
     refuse_link "$HOME/Library/Application Support"
     refuse_link "$SUPPORT"
     refuse_link "$SERVER"
@@ -188,8 +191,8 @@ do_install() {
         fail "Can't write $PLIST"
     }
 
-    "$LAUNCHCTL" bootstrap "$DOMAIN" "$PLIST" >/dev/null 2>&1 \
-        || fail "launchctl bootstrap failed. See the log: $LOG"
+    "$LAUNCHCTL" bootstrap "$DOMAIN" "$PLIST" >/dev/null \
+        || fail "launchctl bootstrap failed. Check: launchctl print $SERVICE"
 
     printf 'Installed: %s\n' "$PLIST"
     printf 'Log: %s\n' "$LOG"
