@@ -9,7 +9,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 
 - [x] Server and backlogs view: set up the stack (see CLAUDE.md) with a server on `127.0.0.1:8100` that finds the projects in the factory root and serves a mobile-first web app showing every project's backlog, read-only: one section per project, its lines grouped as open, waiting for approval (`[?]`), for the user (`[h]`) and done (collapsed), in file order, with the line title in bold and the rest of the line below. A project whose backlog can't be read shows a fixed red line. Tests use a temporary factory root with sample projects, never the real one. → 125-server-backlogs-view
 - [x] [#14](backlog/014-numbered-backlog-stories.md) Numbered backlog stories → 181-numbered-backlog-stories
-- [ ] [#1](backlog/001-installable-web-app.md) Installable web app
+- [x] [#1](backlog/001-installable-web-app.md) Installable web app → 182-installable-web-app
 - [ ] [#2](backlog/002-factory-dashboard.md) Factory dashboard
 - [ ] [#3](backlog/003-access-token.md) Access token
 - [ ] [#4](backlog/004-edit-backlogs.md) Edit backlogs (after: #3)
