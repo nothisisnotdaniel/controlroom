@@ -16,7 +16,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#5](backlog/005-start-at-login.md) Start at login → 186-start-at-login
 - [x] [#6](backlog/006-push-notifications.md) Push notifications (after: #1; #3) → 187-push-notifications
 - [x] [#7](backlog/007-host-header-check.md) Host-header check (after: #3) → 188-host-header-check
-- [ ] [#8](backlog/008-done-group-marker-style.md) Done-group marker style
+- [x] [#8](backlog/008-done-group-marker-style.md) Done-group marker style → 189-done-marker-style
 - [ ] [#9](backlog/009-empty-titles-and-retry-hint.md) Empty titles and retry hint
 - [ ] [#10](backlog/010-ac-1-test-without-reflection.md) AC-1 test without reflection
 - [h] [#11](backlog/011-tailscale.md) Tailscale
