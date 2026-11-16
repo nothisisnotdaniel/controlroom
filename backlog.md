@@ -12,7 +12,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#1](backlog/001-installable-web-app.md) Installable web app → 182-installable-web-app
 - [x] [#2](backlog/002-factory-dashboard.md) Factory dashboard → 183-factory-dashboard
 - [x] [#3](backlog/003-access-token.md) Access token → 184-access-token
-- [ ] [#4](backlog/004-edit-backlogs.md) Edit backlogs (after: #3)
+- [x] [#4](backlog/004-edit-backlogs.md) Edit backlogs (after: #3) → 185-edit-backlogs
 - [ ] [#5](backlog/005-start-at-login.md) Start at login
 - [ ] [#6](backlog/006-push-notifications.md) Push notifications (after: #1; #3)
 - [ ] [#7](backlog/007-host-header-check.md) Host-header check (after: #3)
