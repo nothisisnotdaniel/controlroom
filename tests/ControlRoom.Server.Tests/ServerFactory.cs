@@ -9,13 +9,15 @@ namespace ControlRoom.Server.Tests;
 
 /// <summary>Hosts the server in memory (no real port) with <c>FactoryRoot</c> set to a temporary root and
 /// <c>TokenFile</c> set to a file in the factory's own temp folder (outside the root, never the real one), deleted
-/// on dispose. Push requests go to <see cref="Push"/> (never the network) and the clock is <see cref="Time"/>,
-/// whose timers never fire.</summary>
+/// on dispose. Clients send <c>Host: 127.0.0.1:8100</c>. Push requests go to <see cref="Push"/> (never the
+/// network) and the clock is <see cref="Time"/>, whose timers never fire.</summary>
 internal sealed class ServerFactory : WebApplicationFactory<Program>
 {
     private readonly string factoryRoot;
 
     private readonly string? ownTokenFolder;
+
+    private readonly string? tailnetHost;
 
     public ServerFactory(string factoryRoot)
         : this(factoryRoot, null)
@@ -23,8 +25,18 @@ internal sealed class ServerFactory : WebApplicationFactory<Program>
     }
 
     public ServerFactory(string factoryRoot, string? tokenFile)
+        : this(factoryRoot, tokenFile, null)
+    {
+    }
+
+    /// <summary>Hosts the server; <paramref name="tailnetHost"/> is passed as <c>TailnetHost</c> when not
+    /// null.</summary>
+    public ServerFactory(string factoryRoot, string? tokenFile, string? tailnetHost)
     {
         this.factoryRoot = factoryRoot;
+        this.tailnetHost = tailnetHost;
+        // The in-memory host's default Host is "localhost" with no port, which the Host check refuses.
+        ClientOptions.BaseAddress = new Uri("http://127.0.0.1:8100/");
         if (tokenFile is null)
         {
             ownTokenFolder = Path.Combine(Path.GetTempPath(), "controlroom-token-" + Guid.NewGuid().ToString("N"));
@@ -66,6 +78,11 @@ internal sealed class ServerFactory : WebApplicationFactory<Program>
     {
         builder.UseSetting("FactoryRoot", factoryRoot);
         builder.UseSetting(AccessToken.ConfigKey, TokenFile);
+        if (tailnetHost is not null)
+        {
+            builder.UseSetting(HostCheck.ConfigKey, tailnetHost);
+        }
+
         builder.ConfigureTestServices(services =>
         {
             services.AddSingleton<TimeProvider>(Time);

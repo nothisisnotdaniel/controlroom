@@ -1,6 +1,7 @@
 #!/bin/sh
 # Installs, removes and reports on the macOS LaunchAgent that starts the ControlRoom server at login.
 # Usage: scripts/launch-agent.sh install|uninstall|status
+#        scripts/launch-agent.sh install --tailnet-host <mac>.<tailnet>.ts.net  (adds --TailnetHost <name>)
 # POSIX sh. Runs only dotnet (publish) and launchctl with fixed arguments. Never reads the access token file.
 
 set -u
@@ -33,18 +34,54 @@ refuse_link() {
     fi
 }
 
-case ${1:-} in
-    install | uninstall | status) ;;
-    *)
-        printf '%s\n' "$USAGE" >&2
-        exit 2
-        ;;
-esac
-if [ $# -ne 1 ]; then
+usage() {
     printf '%s\n' "$USAGE" >&2
     exit 2
-fi
+}
+
+# True for a lower-case DNS name of 1-63-character labels (a-z, 0-9, -, no label starting or ending with -)
+# ending in .ts.net with at least two labels before it: the same rule as HostCheck.IsValidTailnetHost.
+valid_tailnet_host() {
+    case $1 in
+        *.ts.net) ;;
+        *) return 1 ;;
+    esac
+    if [ ${#1} -gt 253 ]; then
+        return 1
+    fi
+    rest=${1%.ts.net}
+    labels=0
+    while :; do
+        label=${rest%%.*}
+        if [ -z "$label" ] || [ ${#label} -gt 63 ]; then
+            return 1
+        fi
+        case $label in
+            -* | *- | *[!abcdefghijklmnopqrstuvwxyz0123456789-]*) return 1 ;;
+        esac
+        labels=$((labels + 1))
+        if [ "$label" = "$rest" ]; then
+            break
+        fi
+        rest=${rest#*.}
+    done
+    [ "$labels" -ge 2 ]
+}
+
+case ${1:-} in
+    install | uninstall | status) ;;
+    *) usage ;;
+esac
 COMMAND=$1
+TAILNET_HOST=""
+if [ "$COMMAND" = install ] && [ $# -eq 3 ] && [ "$2" = --tailnet-host ]; then
+    if ! valid_tailnet_host "$3"; then
+        fail "--tailnet-host must be a name like mac.tailnet.ts.net. Nothing was changed."
+    fi
+    TAILNET_HOST=$3
+elif [ $# -ne 1 ]; then
+    usage
+fi
 
 case ${HOME:-} in
     /*) ;;
@@ -158,6 +195,10 @@ do_install() {
         printf '        <string>%s</string>\n' "$(xml_escape "$SERVER/ControlRoom.Server.dll")"
         printf '        <string>--FactoryRoot</string>\n'
         printf '        <string>%s</string>\n' "$(xml_escape "$ROOT")"
+        if [ -n "$TAILNET_HOST" ]; then
+            printf '        <string>--TailnetHost</string>\n'
+            printf '        <string>%s</string>\n' "$TAILNET_HOST"
+        fi
         printf '    </array>\n'
         printf '    <key>WorkingDirectory</key>\n'
         printf '    <string>%s</string>\n' "$(xml_escape "$SERVER")"

@@ -8,6 +8,15 @@ where you can add it to the home screen.
 The server listens on `127.0.0.1:8100` only. To reach it from the iPhone, use `tailscale serve`, which gives
 you HTTPS on your own tailnet and forwards to the local port.
 
+The server answers only requests addressed to `127.0.0.1:8100`, `localhost:8100` or the tailnet name you give
+it, so a web page can't reach it through a borrowed domain name (DNS rebinding). Any other address gets
+`421 {"error":"bad_host"}`. Before the iPhone works through Tailscale, start the server with your Mac's tailnet
+name, the host part of the `https://<mac>.<tailnet>.ts.net` address `tailscale serve` shows (no port):
+
+```sh
+dotnet run --project src/ControlRoom.Server -- --TailnetHost mac.tail1234.ts.net
+```
+
 ## Run it
 
 From `ControlRoom/`:
@@ -37,6 +46,7 @@ again if it stops.
 
 ```sh
 scripts/launch-agent.sh install    # publishes the server and starts it
+scripts/launch-agent.sh install --tailnet-host mac.tail1234.ts.net  # the same, for use through Tailscale
 scripts/launch-agent.sh status     # shows installed: yes|no, running: yes|no and the log path
 scripts/launch-agent.sh uninstall  # stops it and removes the agent and the published server
 ```

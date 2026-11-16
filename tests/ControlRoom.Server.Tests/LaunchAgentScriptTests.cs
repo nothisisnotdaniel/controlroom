@@ -22,6 +22,8 @@ public sealed class LaunchAgentScriptTests
 
     private const string PlutilPath = "/usr/bin/plutil";
 
+    private const string TailnetHostText = "--tailnet-host must be a name like mac.tailnet.ts.net. Nothing was changed.\n";
+
     [Fact]
     public void Install_PublishesThenBootsOutReplacesWritesThePlistAndBootstraps()
     {
@@ -79,6 +81,109 @@ public sealed class LaunchAgentScriptTests
         Assert.Equal(home.Log, Extract(home.Plist, "StandardErrorPath"));
         Assert.Equal(home.Server, Extract(home.Plist, "WorkingDirectory"));
         Assert.Equal(FixedPath, Extract(home.Plist, "EnvironmentVariables.PATH"));
+    }
+
+    [Fact]
+    public void Install_WithATailnetHost_EndsTheProgramArgumentsWithIt()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+
+        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--tailnet-host", "mac.tail1234.ts.net");
+
+        Assert.Equal(0, run.ExitCode);
+        Assert.Equal(
+            ["--FactoryRoot", Directory.GetParent(ScriptHome.RepoFolder())!.FullName, "--TailnetHost",
+                "mac.tail1234.ts.net"],
+            ProgramArguments(home.Plist)[2..]);
+        if (File.Exists(PlutilPath))
+        {
+            Assert.Equal(0, Plutil("-lint", home.Plist).ExitCode);
+            Assert.Equal("6", Extract(home.Plist, "ProgramArguments"));
+            Assert.Equal("--TailnetHost", Extract(home.Plist, "ProgramArguments.4"));
+            Assert.Equal("mac.tail1234.ts.net", Extract(home.Plist, "ProgramArguments.5"));
+        }
+    }
+
+    [Fact]
+    public void Install_WithoutATailnetHost_HasNoTailnetHostArgument()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+
+        Assert.Equal(0, home.Run("install").ExitCode);
+
+        Assert.Equal(4, ProgramArguments(home.Plist).Count);
+        Assert.DoesNotContain("TailnetHost", File.ReadAllText(home.Plist), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("evil.example")]
+    [InlineData("ts.net")]
+    [InlineData("mac.ts.net")]
+    [InlineData("mac.tail.ts.net:443")]
+    [InlineData("*.tail.ts.net")]
+    [InlineData("MAC.tail.ts.net")]
+    [InlineData("mac..tail.ts.net")]
+    [InlineData("-mac.tail.ts.net")]
+    [InlineData("mac-.tail.ts.net")]
+    [InlineData(".mac.tail.ts.net")]
+    [InlineData("mac.tail.ts.net.")]
+    [InlineData("mac.tail.ts.net</string>")]
+    [InlineData("")]
+    public void Install_WithABadTailnetHost_ExitsNonZeroAndChangesNothing(string name)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        IReadOnlyList<string> before = home.Snapshot();
+
+        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--tailnet-host", name);
+
+        Assert.NotEqual(0, run.ExitCode);
+        Assert.Equal(TailnetHostText, run.Error);
+        Assert.Equal("", run.Output);
+        Assert.False(File.Exists(home.Plist));
+        Assert.Empty(home.LaunchctlCalls());
+        Assert.Empty(home.DotnetArguments());
+        Assert.Equal(before, home.Snapshot());
+    }
+
+    [Theory]
+    [InlineData("install --tailnet-host")]
+    [InlineData("install --other mac.tail1234.ts.net")]
+    [InlineData("status --tailnet-host mac.tail1234.ts.net")]
+    [InlineData("uninstall --tailnet-host mac.tail1234.ts.net")]
+    [InlineData("install --tailnet-host mac.tail1234.ts.net extra")]
+    public void BadTailnetHostArguments_PrintUsageExitTwoAndChangeNothing(string joined)
+    {
+        string[] arguments = joined.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        IReadOnlyList<string> before = home.Snapshot();
+
+        ScriptRun run = home.Run(ScriptHome.ScriptPath(), arguments);
+
+        Assert.Equal(2, run.ExitCode);
+        Assert.Equal(Usage, run.Error);
+        Assert.Empty(home.LaunchctlCalls());
+        Assert.Empty(home.DotnetArguments());
+        Assert.Equal(before, home.Snapshot());
     }
 
     [Fact]
@@ -443,6 +548,27 @@ public sealed class LaunchAgentScriptTests
         }
 
         Assert.DoesNotContain("access-token", File.ReadAllText(ScriptHome.ScriptPath()), StringComparison.Ordinal);
+    }
+
+    /// <summary>The <c>&lt;string&gt;</c> values of the plist's <c>ProgramArguments</c> array, read as text (no
+    /// <c>plutil</c> needed).</summary>
+    private static List<string> ProgramArguments(string plist)
+    {
+        string text = File.ReadAllText(plist);
+        int start = text.IndexOf("<key>ProgramArguments</key>", StringComparison.Ordinal);
+        int end = text.IndexOf("</array>", start, StringComparison.Ordinal);
+        Assert.True(start >= 0 && end > start);
+        List<string> values = [];
+        foreach (string line in text[start..end].Split('\n'))
+        {
+            string trimmed = line.Trim();
+            if (trimmed.StartsWith("<string>", StringComparison.Ordinal))
+            {
+                values.Add(trimmed["<string>".Length..^"</string>".Length]);
+            }
+        }
+
+        return values;
     }
 
     private static string Extract(string plist, string keyPath)
