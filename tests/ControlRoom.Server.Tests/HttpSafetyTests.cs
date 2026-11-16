@@ -13,7 +13,11 @@ public sealed class HttpSafetyTests
         TheoryData<string, string> data = [];
         foreach (string method in new[] { "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE" })
         {
-            foreach (string path in new[] { "/", "/api/backlogs", "/index.html", "/Normal/backlog.md", "/x" })
+            foreach (string path in new[]
+                     {
+                         "/", "/api/backlogs", "/api/story?project=Normal&number=1", "/index.html",
+                         "/Normal/backlog.md", "/x",
+                     })
             {
                 data.Add(method, path);
             }

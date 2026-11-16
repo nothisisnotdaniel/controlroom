@@ -48,6 +48,17 @@ internal sealed class TempFactoryRoot : IDisposable
         return folder;
     }
 
+    /// <summary>Writes a story file into the project folder's <c>backlog</c> folder (created when missing) and
+    /// returns its path.</summary>
+    public static string AddStory(string projectFolder, string fileName, string content)
+    {
+        string folder = System.IO.Path.Combine(projectFolder, "backlog");
+        Directory.CreateDirectory(folder);
+        string file = System.IO.Path.Combine(folder, fileName);
+        File.WriteAllText(file, content);
+        return file;
+    }
+
     /// <summary>The full sample set from the spec's test plan.</summary>
     public static TempFactoryRoot WithSamples()
     {
