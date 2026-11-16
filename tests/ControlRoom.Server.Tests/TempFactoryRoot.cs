@@ -59,6 +59,56 @@ internal sealed class TempFactoryRoot : IDisposable
         return file;
     }
 
+    /// <summary>Makes the folder a real git repo on <paramref name="branch"/> with a local identity (no signing,
+    /// hooks from <c>.git/hooks</c>) and commits everything in it.</summary>
+    public static void InitGit(string folder, string branch)
+    {
+        Git(folder, "init", "-q", "-b", branch);
+        Git(folder, "config", "user.name", "Test User");
+        Git(folder, "config", "user.email", "test@example.invalid");
+        Git(folder, "config", "commit.gpgsign", "false");
+        Git(folder, "config", "core.hooksPath", ".git/hooks");
+        Git(folder, "add", "-A");
+        Git(folder, "commit", "-q", "-m", "init");
+    }
+
+    /// <summary>Creates a bare repo under the root's <c>.remotes</c> dot-folder (not a project), adds it as
+    /// <c>origin</c> and pushes the current branch to it; returns its path.</summary>
+    public string AddBareRemote(string folder)
+    {
+        string remote = System.IO.Path.Combine(Path, ".remotes", new DirectoryInfo(folder).Name + ".git");
+        Directory.CreateDirectory(remote);
+        Git(remote, "init", "-q", "--bare");
+        Git(folder, "remote", "add", "origin", remote);
+        Git(folder, "push", "-q", "origin", "HEAD");
+        return remote;
+    }
+
+    /// <summary>Runs git in the folder with a fixed argument list and returns its trimmed output; fails the test
+    /// when git fails.</summary>
+    public static string Git(string folder, params string[] arguments)
+    {
+        ProcessStartInfo start = new("git")
+        {
+            WorkingDirectory = folder,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        foreach (string argument in arguments)
+        {
+            start.ArgumentList.Add(argument);
+        }
+
+        start.Environment["GIT_TERMINAL_PROMPT"] = "0";
+        using Process process = Process.Start(start)!;
+        Task<string> error = process.StandardError.ReadToEndAsync();
+        string output = process.StandardOutput.ReadToEnd();
+        process.WaitForExit();
+        Assert.True(process.ExitCode == 0, "git " + string.Join(" ", arguments) + ": " + error.Result);
+        return output.Trim();
+    }
+
     /// <summary>The jobs folder <c>factory/jobs</c> under the root.</summary>
     public string JobsPath => System.IO.Path.Combine(Path, "factory", "jobs");
 

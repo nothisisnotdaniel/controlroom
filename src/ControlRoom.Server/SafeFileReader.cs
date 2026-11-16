@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
 
@@ -10,6 +11,13 @@ namespace ControlRoom.Server;
 internal static class SafeFileReader
 {
     public static string? ReadText(string path, long maxBytes)
+    {
+        byte[]? bytes = ReadBytes(path, maxBytes);
+        return bytes is null ? null : Decode(bytes);
+    }
+
+    /// <summary>The file's raw bytes with the same refusals as <see cref="ReadText"/>, or <c>null</c>.</summary>
+    public static byte[]? ReadBytes(string path, long maxBytes)
     {
         try
         {
@@ -38,18 +46,30 @@ internal static class SafeFileReader
                 return null;
             }
 
-            string text = new UTF8Encoding(false).GetString(buffer, 0, total);
-            if (text.Length > 0 && text[0] == '\uFEFF')
-            {
-                text = text[1..];
-            }
-
-            return text;
+            return buffer[..total];
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             return null;
         }
+    }
+
+    /// <summary>UTF-8 text of the bytes (invalid sequences become U+FFFD) without a leading BOM.</summary>
+    public static string Decode(byte[] bytes)
+    {
+        string text = new UTF8Encoding(false).GetString(bytes);
+        if (text.Length > 0 && text[0] == '\uFEFF')
+        {
+            text = text[1..];
+        }
+
+        return text;
+    }
+
+    /// <summary>The version of a file's content: lowercase hex SHA-256 of its bytes.</summary>
+    public static string Version(byte[] bytes)
+    {
+        return Convert.ToHexStringLower(SHA256.HashData(bytes));
     }
 
     /// <summary>Opens the file for reading without following a symlink and without blocking (so a FIFO can't

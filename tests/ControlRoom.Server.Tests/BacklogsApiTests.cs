@@ -25,7 +25,7 @@ public sealed class BacklogsApiTests
 
         JsonElement normal = projects[3];
         Assert.Equal(
-            ["name", "readable", "open", "approval", "user", "done"],
+            ["name", "readable", "open", "approval", "user", "done", "version"],
             normal.EnumerateObject().Select(property => property.Name));
         Assert.True(normal.GetProperty("readable").GetBoolean());
         Assert.Equal(

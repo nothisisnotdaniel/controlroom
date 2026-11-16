@@ -98,7 +98,7 @@ function renderDependencies(projectName, after) {
   return line;
 }
 
-function renderNumberedLine(projectName, entry, number) {
+function renderNumberedLine(projectName, version, entry, number) {
   const item = element("li", "numbered");
   const head = element("a", "head");
   head.href = storyHash(projectName, number);
@@ -117,6 +117,7 @@ function renderNumberedLine(projectName, entry, number) {
   if (rest !== "") {
     item.appendChild(element("span", "rest", rest));
   }
+  appendEditRow(item, projectName, version, entry);
   // The whole row opens the story; the head and dependency links navigate on their own.
   item.addEventListener("click", (event) => {
     if (event.target instanceof Element && event.target.closest("a")) {
@@ -128,12 +129,20 @@ function renderNumberedLine(projectName, entry, number) {
   return item;
 }
 
-function renderLines(projectName, entries) {
+// The edit row (edit.js) of a line that is not done; shown only while the project is in edit mode.
+function appendEditRow(item, projectName, version, entry) {
+  const row = editRow(projectName, version, entry);
+  if (row !== null) {
+    item.appendChild(row);
+  }
+}
+
+function renderLines(projectName, version, entries) {
   const list = element("ul", "lines");
   for (const entry of entries) {
     const number = asNumber(entry && entry.number);
     if (number !== null) {
-      list.appendChild(renderNumberedLine(projectName, entry, number));
+      list.appendChild(renderNumberedLine(projectName, version, entry, number));
       continue;
     }
     const item = element("li");
@@ -142,43 +151,54 @@ function renderLines(projectName, entries) {
     if (rest !== "") {
       item.appendChild(element("span", "rest", rest));
     }
+    appendEditRow(item, projectName, version, entry);
     list.appendChild(item);
   }
   return list;
 }
 
-function renderGroup(projectName, group, entries) {
+function renderGroup(projectName, version, group, entries) {
   const heading = group.label + " (" + entries.length + ")";
   if (group.collapsed) {
     const details = element("details", "group");
     details.appendChild(element("summary", null, heading));
-    details.appendChild(renderLines(projectName, entries));
+    details.appendChild(renderLines(projectName, version, entries));
     return details;
   }
   const section = element("section", "group");
   section.appendChild(element("h3", null, heading));
-  section.appendChild(renderLines(projectName, entries));
+  section.appendChild(renderLines(projectName, version, entries));
   return section;
 }
 
 function renderProject(project) {
   const section = element("section", "project");
   const name = asText(project && project.name);
-  section.appendChild(element("h2", null, asText(project && project.name)));
+  const version = asText(project && project.version);
+  const head = element("div", "project-head");
+  head.appendChild(element("h2", null, asText(project && project.name)));
+  section.appendChild(head);
   if (!project || project.readable !== true) {
     section.appendChild(element("p", "error", Texts.unreadable));
     return section;
+  }
+  if (version !== "") {
+    head.appendChild(editToggle(name, section));
   }
   let shown = 0;
   for (const group of Groups) {
     const entries = asList(project[group.key]);
     if (entries.length > 0) {
-      section.appendChild(renderGroup(name, group, entries));
+      section.appendChild(renderGroup(name, version, group, entries));
       shown += 1;
     }
   }
   if (shown === 0) {
     section.appendChild(element("p", "empty", Texts.noLines));
+  }
+  const add = addForm(name, version);
+  if (add !== null) {
+    section.appendChild(add);
   }
   return section;
 }
@@ -291,10 +311,13 @@ function goBack() {
   route();
 }
 
-function showStoryContent(nodes) {
+function showStoryContent(nodes, extra) {
   const main = document.getElementById("story");
   const bar = element("div", "story-bar");
   bar.appendChild(backButton());
+  if (extra) {
+    bar.appendChild(extra);
+  }
   const footer = element("div", "story-footer");
   footer.appendChild(backButton());
   main.replaceChildren(bar, ...nodes, footer);
@@ -331,7 +354,7 @@ async function loadStory(target) {
   for (const block of asList(data && data.blocks)) {
     article.appendChild(renderBlock(block));
   }
-  showStoryContent([article]);
+  showStoryContent([article], storyEditButton(target, data, () => loadStory(target)));
   // Move focus into the story so keyboard and screen-reader users don't stay on the hidden list.
   title.focus({ preventScroll: true });
 }
@@ -382,6 +405,7 @@ function route() {
     rememberBoardScroll();
   }
   currentView = next;
+  hideEditNotice();
   if (next !== "story") {
     storyRequest += 1;
     openedFromList = false;

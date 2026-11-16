@@ -3,7 +3,8 @@ using Microsoft.AspNetCore.StaticFiles;
 
 namespace ControlRoom.Server;
 
-/// <summary>Builds the web app: loopback-only Kestrel, security headers, GET/HEAD only, static files from the
+/// <summary>Builds the web app: loopback-only Kestrel, security headers, GET/HEAD only (plus POST on
+/// the one backlog change route), static files from the
 /// server's own <c>wwwroot</c>, an access token on every <c>/api/</c> request, the backlogs, story, board and job
 /// APIs.</summary>
 internal static class ServerApp
@@ -61,13 +62,14 @@ internal static class ServerApp
         builder.WebHost.PreferHostingUrls(false);
         builder.WebHost.ConfigureKestrel(ConfigureKestrel);
         builder.Services.AddSingleton(new FactoryRoot(root));
+        builder.Services.AddSingleton(new BacklogWriteLock());
 
         WebApplication app = builder.Build();
         app.Use(async (context, next) =>
         {
             context.Response.Headers.ContentSecurityPolicy = ContentSecurityPolicy;
             context.Response.Headers.XContentTypeOptions = "nosniff";
-            if (!HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method))
+            if (!IsAllowedMethod(context.Request))
             {
                 context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
                 return;
@@ -88,7 +90,20 @@ internal static class ServerApp
         StoryEndpoint.Map(app);
         BoardEndpoint.Map(app);
         JobEndpoint.Map(app);
+        BacklogChangeEndpoint.Map(app);
         return app;
+    }
+
+    /// <summary>GET and HEAD everywhere; POST only on exactly <see cref="BacklogChangeEndpoint.Route"/>.</summary>
+    private static bool IsAllowedMethod(HttpRequest request)
+    {
+        if (HttpMethods.IsGet(request.Method) || HttpMethods.IsHead(request.Method))
+        {
+            return true;
+        }
+
+        return HttpMethods.IsPost(request.Method)
+            && string.Equals(request.Path.Value, BacklogChangeEndpoint.Route, StringComparison.Ordinal);
     }
 
     /// <summary>True when the request carries exactly one <c>Authorization: Bearer &lt;token&gt;</c> header that

@@ -3,14 +3,16 @@ namespace ControlRoom.Server;
 /// <summary>The factory root the server reads, fixed at start.</summary>
 internal sealed record FactoryRoot(string Path);
 
-/// <summary>One project in the <c>GET /api/backlogs</c> response.</summary>
+/// <summary>One project in the <c>GET /api/backlogs</c> response. <c>Version</c> is the SHA-256 of the
+/// <c>backlog.md</c> bytes (<c>null</c> when unreadable), sent back with every change.</summary>
 internal sealed record ProjectBacklog(
     string Name,
     bool Readable,
     IReadOnlyList<BacklogEntry> Open,
     IReadOnlyList<BacklogEntry> Approval,
     IReadOnlyList<BacklogEntry> User,
-    IReadOnlyList<BacklogEntry> Done);
+    IReadOnlyList<BacklogEntry> Done,
+    string? Version);
 
 /// <summary>The <c>GET /api/backlogs</c> response.</summary>
 internal sealed record BacklogsResponse(IReadOnlyList<ProjectBacklog> Projects);
@@ -32,29 +34,30 @@ internal static class BacklogsEndpoint
 
     public static BacklogsResponse Build(string factoryRoot)
     {
-        List<(ProjectFolder Project, Backlog? Backlog)> read = ProjectFinder.Find(factoryRoot)
-            .Select(project => (project, BacklogReader.Read(project)))
+        List<(ProjectFolder Project, BacklogFile? File)> read = ProjectFinder.Find(factoryRoot)
+            .Select(project => (project, BacklogReader.ReadFile(project)))
             .ToList();
         Dictionary<string, HashSet<int>> doneNumbers = new(StringComparer.Ordinal);
-        foreach ((ProjectFolder project, Backlog? backlog) in read)
+        foreach ((ProjectFolder project, BacklogFile? file) in read)
         {
-            doneNumbers[project.Name] = (backlog ?? Backlog.Empty).Done
+            doneNumbers[project.Name] = (file?.Backlog ?? Backlog.Empty).Done
                 .Where(entry => entry.Number is not null)
                 .Select(entry => entry.Number!.Value)
                 .ToHashSet();
         }
 
         List<ProjectBacklog> projects = [];
-        foreach ((ProjectFolder project, Backlog? backlog) in read)
+        foreach ((ProjectFolder project, BacklogFile? file) in read)
         {
-            Backlog groups = backlog ?? Backlog.Empty;
+            Backlog groups = file?.Backlog ?? Backlog.Empty;
             projects.Add(new ProjectBacklog(
                 project.Name,
-                backlog is not null,
+                file is not null,
                 WithWaiting(groups.Open, project.Name, doneNumbers),
                 WithWaiting(groups.Approval, project.Name, doneNumbers),
                 WithWaiting(groups.User, project.Name, doneNumbers),
-                WithWaiting(groups.Done, project.Name, doneNumbers)));
+                WithWaiting(groups.Done, project.Name, doneNumbers),
+                file?.Version));
         }
 
         return new BacklogsResponse(projects);

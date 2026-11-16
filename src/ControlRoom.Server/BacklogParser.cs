@@ -11,7 +11,8 @@ internal sealed record BacklogDependency(string? Project, int Number);
 /// <summary>One backlog line. Old free-text lines: the text before the first <c>": "</c> and the text after it,
 /// with no number. Numbered lines (<c>[#N](target) Title (after: …) → job</c>): the number, the story link
 /// target, the title, the dependencies and the <c>→ job</c> tail as <c>Rest</c>. <c>Waiting</c> is filled in by
-/// the backlogs endpoint.</summary>
+/// the backlogs endpoint. <c>Line</c> is the 0-based index of the line in the file (split on <c>\n</c>); it is a
+/// position, not content, so it is left out of equality.</summary>
 internal sealed record BacklogEntry(
     string Title,
     string Rest,
@@ -23,6 +24,8 @@ internal sealed record BacklogEntry(
     public IReadOnlyList<BacklogDependency> After { get; init; } = After ?? [];
 
     public bool Waiting { get; init; }
+
+    public int Line { get; init; }
 
     [JsonIgnore]
     public bool IsDone => Mark == "x";
@@ -71,14 +74,17 @@ internal static partial class BacklogParser
         List<BacklogEntry> user = [];
         List<BacklogEntry> done = [];
 
+        int index = 0;
         foreach (string line in lines)
         {
             List<BacklogEntry>? group = GroupFor(line, open, approval, user, done);
             if (group is not null)
             {
                 string mark = line[3] == 'X' ? "x" : line[3].ToString();
-                group.Add(ToEntry(line[6..], mark));
+                group.Add(ToEntry(line[6..], mark) with { Line = index });
             }
+
+            index += 1;
         }
 
         return new Backlog(open, approval, user, done);
@@ -131,10 +137,45 @@ internal static partial class BacklogParser
         return new BacklogEntry(title, rest, number, mark, link.Groups["target"].Value, after);
     }
 
+    /// <summary>The text after the mark of a numbered line with its title replaced by <paramref name="title"/>; the
+    /// link, the <c>(after: …)</c> and the <c>→ …</c> tail keep their bytes. <c>null</c> for a line that is not
+    /// numbered.</summary>
+    public static string? ReplaceTitle(string text, string title)
+    {
+        Match link = NumberedLink().Match(text);
+        if (!link.Success)
+        {
+            return null;
+        }
+
+        Group bodyGroup = link.Groups["body"];
+        if (!bodyGroup.Success)
+        {
+            return text + " " + title;
+        }
+
+        Group titleGroup = Body().Match(bodyGroup.Value).Groups["title"];
+        string tail = bodyGroup.Value[(titleGroup.Index + titleGroup.Length)..];
+        if (tail.Length > 0 && tail[0] != ' ' && tail[0] != '\t')
+        {
+            tail = " " + tail;
+        }
+
+        return text[..bodyGroup.Index] + title + tail;
+    }
+
     /// <summary>Parses ASCII digits only (no sign, no spaces, no other scripts' digits).</summary>
     public static bool TryParseNumber(string digits, out int number)
     {
         return int.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out number);
+    }
+
+    /// <summary>True for a line the parser counts as an item (<c>- [ ] </c>, <c>- [?] </c>, <c>- [h] </c>,
+    /// <c>- [x] </c> or <c>- [X] </c> at the start).</summary>
+    public static bool IsItem(string line)
+    {
+        return line.Length >= 6 && line.StartsWith("- [", StringComparison.Ordinal) && line[4] == ']' && line[5] == ' '
+            && line[3] is ' ' or '?' or 'h' or 'x' or 'X';
     }
 
     private static List<BacklogEntry>? GroupFor(

@@ -17,7 +17,7 @@ public sealed partial class WebAppTests
         Assert.Contains("<meta name=\"color-scheme\" content=\"light dark\">", html, StringComparison.Ordinal);
         Assert.Contains("<script src=\"/app.js\" defer></script>", html, StringComparison.Ordinal);
         Assert.Contains("<link rel=\"stylesheet\" href=\"/app.css\">", html, StringComparison.Ordinal);
-        Assert.Equal(3, ScriptTag().Matches(html).Count);
+        Assert.Equal(4, ScriptTag().Matches(html).Count);
         Assert.DoesNotContain("<style", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("style=", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(" on", AttributeStarts(html), StringComparison.Ordinal);
@@ -425,6 +425,123 @@ public sealed partial class WebAppTests
         Assert.Contains("textContent", js, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task IndexHtml_LoadsEditJsBeforeAppJsAndHasTheNotice()
+    {
+        string html = await Fetch("/index.html");
+
+        int edit = html.IndexOf("<script src=\"/edit.js\" defer></script>", StringComparison.Ordinal);
+        int board = html.IndexOf("<script src=\"/board.js\" defer></script>", StringComparison.Ordinal);
+        int app = html.IndexOf("<script src=\"/app.js\" defer></script>", StringComparison.Ordinal);
+        Assert.True(board >= 0 && board < edit && edit < app);
+        Assert.Contains("id=\"edit-notice\" role=\"status\"", html, StringComparison.Ordinal);
+        Assert.Contains("<p class=\"edit-notice-text\" id=\"edit-notice-text\"></p>", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"edit-notice-close\" type=\"button\"", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EditJs_PostsChangesThroughAuthFetchWithTheVersionItSaw()
+    {
+        string js = await Fetch("/edit.js");
+
+        Assert.Contains("authFetch(\"/api/backlog/change\", {", js, StringComparison.Ordinal);
+        Assert.Contains("method: \"POST\"", js, StringComparison.Ordinal);
+        Assert.Contains("headers: { \"Content-Type\": \"application/json\" }", js, StringComparison.Ordinal);
+        Assert.Contains("body: JSON.stringify(body)", js, StringComparison.Ordinal);
+        Assert.Contains("project: projectName, version: version, line: line", js, StringComparison.Ordinal);
+        Assert.Contains("storyVersion: storyVersion", js, StringComparison.Ordinal);
+        Assert.Contains("version: found.version", js, StringComparison.Ordinal);
+        foreach (string action in new[] { "approve", "drop", "up", "down", "top", "title", "add", "story" })
+        {
+            Assert.Contains("action: \"" + action + "\"", js, StringComparison.Ordinal);
+        }
+
+        Assert.DoesNotContain("fetch(\"/api", js, StringComparison.Ordinal);
+        Assert.Equal(2, AuthFetchCall().Matches(js).Count);
+    }
+
+    [Fact]
+    public async Task EditJs_HasTheControlsAndConfirmsDrop()
+    {
+        string js = await Fetch("/edit.js");
+        string app = await Fetch("/app.js");
+
+        foreach (string label in new[]
+                 {
+                     "approve: \"Approve\"", "drop: \"Drop\"", "up: \"Up\"", "down: \"Down\"",
+                     "toTop: \"To top\"", "editTitle: \"Edit title\"", "editStory: \"Edit story\"",
+                     "save: \"Save\"", "add: \"Add item\"",
+                 })
+        {
+            Assert.Contains(label, js, StringComparison.Ordinal);
+        }
+
+        Assert.Contains("if (mark === \"?\") {", js, StringComparison.Ordinal);
+        Assert.Contains("if (mark === \"x\" || line === null || version === \"\") {", js, StringComparison.Ordinal);
+        Assert.Contains("if (number !== null) {\n    row.appendChild(editButton(EditTexts.editTitle", js,
+            StringComparison.Ordinal);
+        Assert.Contains("if (confirm(EditTexts.confirmDrop)) {", js, StringComparison.Ordinal);
+        Assert.Contains("element(\"textarea\", \"edit-input edit-story-text\")", js, StringComparison.Ordinal);
+        Assert.Contains("area.value = markdown;", js, StringComparison.Ordinal);
+        Assert.Contains("[[\"top\", EditTexts.top], [\"bottom\", EditTexts.bottom]]", js, StringComparison.Ordinal);
+        Assert.Contains("load();", js, StringComparison.Ordinal);
+        Assert.Contains("reload();", js, StringComparison.Ordinal);
+        Assert.Contains("head.appendChild(editToggle(name, section));", app, StringComparison.Ordinal);
+        Assert.Contains("const row = editRow(projectName, version, entry);", app, StringComparison.Ordinal);
+        Assert.Contains("const add = addForm(name, version);", app, StringComparison.Ordinal);
+        Assert.Contains("storyEditButton(target, data, () => loadStory(target))", app, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EditJs_ShowsOnlyFixedTextsPerErrorCode()
+    {
+        string js = await Fetch("/edit.js");
+
+        Assert.Contains("not_develop: \"Not on develop. Nothing was changed.\"", js, StringComparison.Ordinal);
+        Assert.Contains("dirty: \"Backlog has uncommitted changes.\"", js, StringComparison.Ordinal);
+        Assert.Contains("changed: \"Backlog changed since you loaded it. Reload and try again.\"", js,
+            StringComparison.Ordinal);
+        Assert.Contains("push_failed: \"Committed, but the push failed.\"", js, StringComparison.Ordinal);
+        Assert.Contains("invalid: \"", js, StringComparison.Ordinal);
+        Assert.Contains("commit_failed: \"", js, StringComparison.Ordinal);
+        Assert.Contains("Object.prototype.hasOwnProperty.call(ChangeErrors, code) ? ChangeErrors[code] : ChangeErrors.failed",
+            js, StringComparison.Ordinal);
+        Assert.Contains("catch {", js, StringComparison.Ordinal);
+        Assert.DoesNotContain(".message", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("statusText", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("textContent = data", js, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("innerHTML")]
+    [InlineData("outerHTML")]
+    [InlineData("insertAdjacentHTML")]
+    [InlineData("document.write")]
+    [InlineData("eval(")]
+    [InlineData("new Function")]
+    [InlineData("http://")]
+    [InlineData("https://")]
+    public async Task EditJs_AvoidsHtmlInjectionApis(string forbidden)
+    {
+        string js = await Fetch("/edit.js");
+
+        Assert.DoesNotContain(forbidden, js, StringComparison.Ordinal);
+        Assert.Contains("textContent", js, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AppCss_HidesEditControlsOutsideEditModeAndKeepsThemTapSized()
+    {
+        string css = await Fetch("/app.css");
+
+        Assert.Contains(".project:not(.editing) .edit-only {\n  display: none;\n}", css, StringComparison.Ordinal);
+        int button = css.IndexOf(".edit-button {", StringComparison.Ordinal);
+        Assert.True(button >= 0);
+        Assert.Contains("min-height: 44px;", css[button..css.IndexOf('}', button)], StringComparison.Ordinal);
+        Assert.Contains("--danger:", css, StringComparison.Ordinal);
+        Assert.Contains(".edit-notice {", css, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("innerHTML")]
     [InlineData("outerHTML")]
@@ -473,6 +590,9 @@ public sealed partial class WebAppTests
 
     [GeneratedRegex("\\{ cache: \"no-store\" \\}")]
     private static partial Regex NoStore();
+
+    [GeneratedRegex("authFetch\\(")]
+    private static partial Regex AuthFetchCall();
 
     [GeneratedRegex("<script\\b", RegexOptions.IgnoreCase)]
     private static partial Regex ScriptTag();

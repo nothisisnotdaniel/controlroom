@@ -24,9 +24,12 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     with a fixed argument list (`ProcessStartInfo.ArgumentList`), never through a shell.
   - Paths come only from the discovered project list and the jobs folder, never from a request as a path;
     names from a request are matched against that list.
-  - Writes are limited to a project's `backlog.md`: only on its `develop` branch, only with a clean
-    `backlog.md`, checked against the version the client saw (refused as changed otherwise), then committed
-    in that project's repo with only that file. Nothing else in the factory root is written.
+  - Writes are limited to a project's `backlog.md` and its `backlog/NNN-slug.md` story files: only through
+    `POST /api/backlog/change`, one change at a time, only on its `develop` branch, only with a clean
+    `backlog.md` and `backlog/`, checked against the version (SHA-256) the client saw (refused as changed
+    otherwise), written atomically without following symlinks (`SafeFileWriter`), then committed in that
+    project's repo with only the changed files (and pushed when there is an `origin`). Nothing else in the
+    factory root is written.
   - Text from files (backlog lines, job records) is shown as text, never as raw HTML; Markdown is rendered
     with raw HTML turned off.
 - **Stack:** .NET 10 ASP.NET Core minimal API (`Microsoft.NET.Sdk.Web`, no extra packages) serving a plain
@@ -40,21 +43,28 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
 - **Layout:**
   - `ControlRoom.slnx`, `Directory.Build.props` (nullable, implicit usings, code style in build), `.editorconfig`.
   - `src/ControlRoom.Server/`: `Program.cs` (entry; `token` runs `TokenCommand`), `ServerApp` (builds the app:
-    Kestrel, headers, GET/HEAD only, the `/api/` token gate, static files, endpoints), `AccessToken` (token file
+    Kestrel, headers, GET/HEAD only (POST only on `/api/backlog/change`), the `/api/` token gate, static files, endpoints), `AccessToken` (token file
     path, create, safe read, atomic replace, constant-time check), `TokenCommand` (`token`, `token --new`), `ServerEndpoint` (the one listen address), `FactoryRootLocator`,
-    `ProjectFinder` (project discovery), `SafeFileReader` (no-follow, regular-file, size-capped text read),
+    `ProjectFinder` (project discovery), `SafeFileReader` (no-follow, regular-file, size-capped text or bytes read, SHA-256 version),
+    `SafeFileWriter` (temp file in the same folder, then rename; refuses a symlinked target or folder),
     `BacklogReader` (safe `backlog.md` read), `BacklogParser` (lines to entries, old and numbered `[#N](…)`
-    format), `BacklogsEndpoint` (`GET /api/backlogs`, with `waiting`), `StoryReader` (fenced read of
+    format), `BacklogsEndpoint` (`GET /api/backlogs`, with `waiting`, `line` and
+    the file `version`), `BacklogEditor` (`EditableText` lines that keep their bytes; approve, drop, move, title
+    and add edits, slug, next number and story template like `job.py`), `ProjectGit` (fixed-argument git calls
+    with timeouts and `GIT_TERMINAL_PROMPT=0`), `BacklogChangeEndpoint` (`POST /api/backlog/change`: request
+    checks, `not_develop`/`dirty`/`changed`, write, commit, push), `StoryReader` (fenced read of
     `<project>/backlog/NNN-slug.md`), `StoryMarkdown` (Markdown to a JSON block tree, no HTML),
-    `StoryEndpoint` (`GET /api/story?project=&number=`), `JobReader` (`factory/jobs/<id>/state.json` to a typed
+    `StoryEndpoint` (`GET /api/story?project=&number=`, with `markdown`
+    and `storyVersion`), `JobReader` (`factory/jobs/<id>/state.json` to a typed
     `JobSummary`), `BoardEndpoint` (`GET /api/board`: jobs and `[h]` tasks), `JobEndpoint` (`GET /api/job?id=`:
     a job and its records from a fixed list), `wwwroot/` (`index.html`, `app.css`, `token.js` (stored token under
     `controlroom-token`, `authFetch` for every `/api/` call, the token view), `app.js` (routing, backlogs,
-    story), `board.js` (jobs board and job page, polls every 5 s while visible),
+    story), `edit.js` (per-project edit mode, the Add form, Edit story, fixed texts per error code), `board.js` (jobs board and job page, polls every 5 s while visible),
     `sw.js` (service worker: caches only the fixed app shell, never `/api/`; bump its cache version when the
     shell list changes), `manifest.webmanifest`, `icons/` (opaque RGB PNGs, 180/192/512 px)).
-  - `tests/ControlRoom.Server.Tests/`: one test class per unit or concern; `TempFactoryRoot`, `TempTokenFolder` and
-    `ServerFactory` (own temp token file; `CreateTokenClient()` for API calls) are the shared fixtures.
+  - `tests/ControlRoom.Server.Tests/`: one test class per unit or concern; `TempFactoryRoot` (`InitGit`, `AddBareRemote`
+    and `Git` for a real local repo), `TempTokenFolder` and `ServerFactory` (own temp token file;
+    `CreateTokenClient()` for API calls) are the shared fixtures.
 - **Style:** C# like Context: file-scoped namespaces, `internal sealed` unless a type must be public, no
   primary constructors, no `var`, braces on every body, camelCase private fields without `_`; the build
   stays at 0 warnings. The web app is mobile first (iPhone width), works in light and dark mode and uses
