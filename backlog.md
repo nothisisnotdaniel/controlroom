@@ -50,3 +50,5 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#40](backlog/040-hint-to-run-status-after-installing.md) Hint to run status after installing the LaunchAgent
 - [?] [#41](backlog/041-move-the-notifications-section-higher-on.md) Move the Notifications section higher on the board
 - [?] [#42](backlog/042-do-not-start-the-test-send.md) Do not start the test-send wait when the test send fails
+- [?] [#43](backlog/043-mention-tailnet-host-in-the-launch.md) Mention --tailnet-host in the launch-agent.sh usage text
+- [?] [#44](backlog/044-clearer-refusal-when-the-tailnet-name.md) Clearer refusal when the tailnet name is not configured
