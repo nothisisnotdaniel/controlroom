@@ -120,6 +120,7 @@ main {
   cursor: pointer;
   padding: 4px 0;
 }
+
 .group summary {
   list-style: none;
   display: flex;

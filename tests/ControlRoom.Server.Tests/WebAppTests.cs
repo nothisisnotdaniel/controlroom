@@ -194,21 +194,21 @@ public sealed partial class WebAppTests
     {
         string css = await Fetch("/app.css");
 
-        string summary = Rule(css, ".group summary");
-        Assert.Contains("list-style: none;", css, StringComparison.Ordinal);
+        string summary = string.Concat(Regex.Matches(css, @"(?m)^\.group summary \{([^}]*)\}")
+            .Select(m => m.Groups[1].Value));
+        Assert.Contains("list-style: none;", summary, StringComparison.Ordinal);
+        Assert.Contains("min-height: 44px;", summary, StringComparison.Ordinal);
+        Assert.Contains("cursor: pointer;", summary, StringComparison.Ordinal);
         Assert.Matches(@"\.group summary::-webkit-details-marker\s*\{\s*display: none;", css);
         string before = Rule(css, ".group summary::before");
         Assert.Contains("content: \"\";", before, StringComparison.Ordinal);
         Assert.DoesNotContain("url(", before, StringComparison.Ordinal);
+        Assert.DoesNotContain("http", before, StringComparison.Ordinal);
         Assert.DoesNotContain("#", before, StringComparison.Ordinal);
         Assert.Contains("currentColor", before, StringComparison.Ordinal);
-        Assert.DoesNotContain("http", css.Substring(css.IndexOf(".group summary::before", StringComparison.Ordinal), 300),
-            StringComparison.Ordinal);
-        Assert.NotEqual(before.Trim(), Rule(css, ".group[open] > summary::before").Trim());
-        Assert.Contains("transform:", Rule(css, ".group[open] > summary::before"), StringComparison.Ordinal);
-        Assert.Contains("min-height: 44px;", css, StringComparison.Ordinal);
-        Assert.Contains("cursor: pointer;", css, StringComparison.Ordinal);
-        Assert.NotNull(summary);
+        string open = Rule(css, ".group[open] > summary::before");
+        Assert.Contains("transform:", open, StringComparison.Ordinal);
+        Assert.NotEqual(before.Trim(), open.Trim());
     }
 
     [Fact]
