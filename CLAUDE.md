@@ -36,8 +36,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   - `ControlRoom.slnx`, `Directory.Build.props` (nullable, implicit usings, code style in build), `.editorconfig`.
   - `src/ControlRoom.Server/`: `Program.cs` (entry), `ServerApp` (builds the app: Kestrel, headers, GET/HEAD
     only, static files, endpoints), `ServerEndpoint` (the one listen address), `FactoryRootLocator`,
-    `ProjectFinder` (project discovery), `BacklogReader` (safe `backlog.md` read), `BacklogParser` (lines to
-    entries), `BacklogsEndpoint` (`GET /api/backlogs`), `wwwroot/` (`index.html`, `app.css`, `app.js`).
+    `ProjectFinder` (project discovery), `SafeFileReader` (no-follow, regular-file, size-capped text read),
+    `BacklogReader` (safe `backlog.md` read), `BacklogParser` (lines to entries, old and numbered `[#N](…)`
+    format), `BacklogsEndpoint` (`GET /api/backlogs`, with `waiting`), `StoryReader` (fenced read of
+    `<project>/backlog/NNN-slug.md`), `StoryMarkdown` (Markdown to a JSON block tree, no HTML),
+    `StoryEndpoint` (`GET /api/story?project=&number=`), `wwwroot/` (`index.html`, `app.css`, `app.js`).
   - `tests/ControlRoom.Server.Tests/`: one test class per unit or concern; `TempFactoryRoot` and
     `ServerFactory` are the shared fixtures.
 - **Style:** C# like Context: file-scoped namespaces, `internal sealed` unless a type must be public, no

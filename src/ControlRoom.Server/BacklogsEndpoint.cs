@@ -32,15 +32,46 @@ internal static class BacklogsEndpoint
 
     public static BacklogsResponse Build(string factoryRoot)
     {
-        List<ProjectBacklog> projects = [];
-        foreach (ProjectFolder project in ProjectFinder.Find(factoryRoot))
+        List<(ProjectFolder Project, Backlog? Backlog)> read = ProjectFinder.Find(factoryRoot)
+            .Select(project => (project, BacklogReader.Read(project)))
+            .ToList();
+        Dictionary<string, HashSet<int>> doneNumbers = new(StringComparer.Ordinal);
+        foreach ((ProjectFolder project, Backlog? backlog) in read)
         {
-            Backlog? backlog = BacklogReader.Read(project);
+            doneNumbers[project.Name] = (backlog ?? Backlog.Empty).Done
+                .Where(entry => entry.Number is not null)
+                .Select(entry => entry.Number!.Value)
+                .ToHashSet();
+        }
+
+        List<ProjectBacklog> projects = [];
+        foreach ((ProjectFolder project, Backlog? backlog) in read)
+        {
             Backlog groups = backlog ?? Backlog.Empty;
             projects.Add(new ProjectBacklog(
-                project.Name, backlog is not null, groups.Open, groups.Approval, groups.User, groups.Done));
+                project.Name,
+                backlog is not null,
+                WithWaiting(groups.Open, project.Name, doneNumbers),
+                WithWaiting(groups.Approval, project.Name, doneNumbers),
+                WithWaiting(groups.User, project.Name, doneNumbers),
+                WithWaiting(groups.Done, project.Name, doneNumbers)));
         }
 
         return new BacklogsResponse(projects);
+    }
+
+    /// <summary>Marks an entry waiting when any of its dependencies is not a done line of the named (or the same)
+    /// project; an unknown project or number counts as not done.</summary>
+    private static List<BacklogEntry> WithWaiting(
+        IReadOnlyList<BacklogEntry> entries, string projectName, Dictionary<string, HashSet<int>> doneNumbers)
+    {
+        return entries
+            .Select(entry => entry with
+            {
+                Waiting = entry.After.Any(dependency =>
+                    !doneNumbers.TryGetValue(dependency.Project ?? projectName, out HashSet<int>? done)
+                    || !done.Contains(dependency.Number)),
+            })
+            .ToList();
     }
 }

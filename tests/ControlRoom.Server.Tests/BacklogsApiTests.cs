@@ -151,6 +151,80 @@ public sealed class BacklogsApiTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData("- [ ] [#5](backlog/005-t.md) Times five\n", true)]
+    [InlineData("- [x] [#5](backlog/005-t.md) Times five → 1-x\n", false)]
+    [InlineData("- [X] [#5](backlog/005-t.md) Times five\n", false)]
+    [InlineData("- [x] Times five: old format, no number\n", true)]
+    public async Task Backlogs_EntryIsWaitingWhileADependencyIsOpen(string timesBacklog, bool waiting)
+    {
+        using TempFactoryRoot root = new();
+        root.AddProject(
+            "Alpha",
+            "- [ ] [#4](backlog/004-a.md) Four (after: #3; Times#5)\n"
+            + "- [x] [#3](backlog/003-a.md) Three → 1-y\n");
+        root.AddProject("Times", timesBacklog);
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateClient();
+
+        using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/backlogs"));
+
+        JsonElement four = Project(json, "Alpha").GetProperty("open")[0];
+        Assert.Equal(4, four.GetProperty("number").GetInt32());
+        Assert.Equal(" ", four.GetProperty("mark").GetString());
+        Assert.Equal("backlog/004-a.md", four.GetProperty("story").GetString());
+        Assert.Equal(
+            [(null, 3), ("Times", 5)],
+            four.GetProperty("after").EnumerateArray()
+                .Select(item => (item.GetProperty("project").GetString(), item.GetProperty("number").GetInt32())));
+        Assert.Equal(waiting, four.GetProperty("waiting").GetBoolean());
+        JsonElement three = Project(json, "Alpha").GetProperty("done")[0];
+        Assert.False(three.GetProperty("waiting").GetBoolean());
+        Assert.Equal("x", three.GetProperty("mark").GetString());
+    }
+
+    [Theory]
+    [InlineData("(after: Nope#1)", true)]
+    [InlineData("(after: #99)", true)]
+    [InlineData("(after: alpha#3)", true)]
+    [InlineData("(after: Alpha#3)", false)]
+    [InlineData("(after: #3)", false)]
+    [InlineData("", false)]
+    public async Task Backlogs_UnknownProjectOrNumberCountsAsNotDone(string after, bool waiting)
+    {
+        using TempFactoryRoot root = new();
+        root.AddProject(
+            "Alpha",
+            "- [?] [#4](backlog/004-a.md) Four " + after + "\n"
+            + "- [x] [#3](backlog/003-a.md) Three\n"
+            + "- [ ] Old line: no number\n");
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateClient();
+
+        using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/backlogs"));
+
+        JsonElement alpha = Project(json, "Alpha");
+        Assert.Equal(waiting, alpha.GetProperty("approval")[0].GetProperty("waiting").GetBoolean());
+        JsonElement old = alpha.GetProperty("open")[0];
+        Assert.Equal(JsonValueKind.Null, old.GetProperty("number").ValueKind);
+        Assert.Empty(old.GetProperty("after").EnumerateArray());
+        Assert.False(old.GetProperty("waiting").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Backlogs_DependencyOnAnUnreadableBacklogIsWaiting()
+    {
+        using TempFactoryRoot root = new();
+        root.AddProject("Alpha", "- [ ] [#4](backlog/004-a.md) Four (after: Missing#1)\n");
+        root.AddProject("Missing", null);
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateClient();
+
+        using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/backlogs"));
+
+        Assert.True(Project(json, "Alpha").GetProperty("open")[0].GetProperty("waiting").GetBoolean());
+    }
+
     private static JsonElement Project(JsonDocument json, string name)
     {
         return json.RootElement.GetProperty("projects").EnumerateArray()

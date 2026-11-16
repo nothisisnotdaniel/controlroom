@@ -59,6 +59,78 @@ public sealed partial class WebAppTests
         Assert.DoesNotContain("statusText", js, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task AppJs_RendersNumberedItemsWithMarkWaitingAndDependencyLinks()
+    {
+        string js = await Fetch("/app.js");
+
+        Assert.Contains("const Marks = { \" \": \"[ ]\", \"?\": \"[?]\", h: \"[h]\", x: \"[x]\" };", js,
+            StringComparison.Ordinal);
+        Assert.Contains("waiting: \"Waiting\"", js, StringComparison.Ordinal);
+        Assert.Contains("if (entry.waiting === true)", js, StringComparison.Ordinal);
+        Assert.Contains("element(\"span\", \"badge badge-waiting\", Texts.waiting)", js, StringComparison.Ordinal);
+        Assert.Contains("element(\"span\", \"number\", \"#\" + number)", js, StringComparison.Ordinal);
+        Assert.Contains("element(\"strong\", \"title\", asText(entry.title))", js, StringComparison.Ordinal);
+        Assert.Contains("const StoryRoute = \"#story/\";", js, StringComparison.Ordinal);
+        Assert.Contains("return StoryRoute + encodeURIComponent(project) + \"/\" + number;", js,
+            StringComparison.Ordinal);
+        Assert.Contains("link.href = storyHash(target, number);", js, StringComparison.Ordinal);
+        Assert.Contains("const target = asText(dependency.project) || projectName;", js, StringComparison.Ordinal);
+        Assert.Contains("head.href = storyHash(projectName, number);", js, StringComparison.Ordinal);
+        // Lines without a number keep the old rendering and get no story link.
+        Assert.Contains("if (number !== null) {", js, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AppJs_ShowsTheStoryViewWithBackAndAFixedErrorText()
+    {
+        string js = await Fetch("/app.js");
+
+        Assert.Contains("storyFailed: \"Can't load this story.\"", js, StringComparison.Ordinal);
+        Assert.Contains("element(\"p\", \"error\", Texts.storyFailed)", js, StringComparison.Ordinal);
+        Assert.Contains(
+            "\"/api/story?project=\" + encodeURIComponent(target.project) + \"&number=\" + "
+            + "encodeURIComponent(target.number)",
+            js,
+            StringComparison.Ordinal);
+        Assert.Contains("window.addEventListener(\"hashchange\", route);", js, StringComparison.Ordinal);
+        Assert.Contains("element(\"button\", \"back\", Texts.back)", js, StringComparison.Ordinal);
+        Assert.Contains("history.back();", js, StringComparison.Ordinal);
+        Assert.Contains(
+            "asText(data && data.project) + \" #\" + asNumber(data && data.number) + \" \" + "
+            + "asText(data && data.title)",
+            js,
+            StringComparison.Ordinal);
+        Assert.Contains("parent.appendChild(element(\"code\", null, text));", js, StringComparison.Ordinal);
+        Assert.Contains("parent.appendChild(element(\"span\", null, text));", js, StringComparison.Ordinal);
+        Assert.Contains(
+            "pre.appendChild(element(\"code\", null, asText(block.text)));", js, StringComparison.Ordinal);
+        Assert.Contains("title.focus({ preventScroll: true });", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("createTextNode", js, StringComparison.Ordinal);
+        Assert.DoesNotContain(".href = asText", js, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task IndexHtml_HasAHiddenStoryView()
+    {
+        string html = await Fetch("/index.html");
+
+        Assert.Contains("<main id=\"story\" hidden></main>", html, StringComparison.Ordinal);
+        Assert.Contains("<header class=\"top\" id=\"top\">", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AppCss_StylesBadgesStoryAndAThumbSizedBack()
+    {
+        string css = await Fetch("/app.css");
+
+        Assert.Contains("--waiting-bg:", css, StringComparison.Ordinal);
+        Assert.Contains(".badge-waiting {", css, StringComparison.Ordinal);
+        Assert.Contains(".story-bar {", css, StringComparison.Ordinal);
+        Assert.Contains("min-height: 44px;", css, StringComparison.Ordinal);
+        Assert.Contains("[hidden] {", css, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("innerHTML")]
     [InlineData("outerHTML")]
