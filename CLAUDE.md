@@ -12,7 +12,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   and `develop` branch. Jobs are `factory/jobs/<id>/state.json` plus their Markdown records.
 - **Access:** the server listens on `127.0.0.1` only, never on `0.0.0.0` or a LAN address. The user reaches
   it from the iPhone through Tailscale (`tailscale serve` gives HTTPS on the user's own tailnet and proxies to
-  the local port), so nothing is reachable from the internet. Every `/api/` request (read or write) needs
+  the local port), so nothing is reachable from the internet. Every request is first checked by `HostCheck`
+  (DNS-rebinding defence): the whole `Host` must be exactly `127.0.0.1:8100`, `localhost:8100` or the
+  `--TailnetHost <mac>.<tailnet>.ts.net` name (no port, ignoring case), else `421 {"error":"bad_host"}` before the
+  method check and token gate; an invalid `TailnetHost` stops the server; the request log category
+  (`Microsoft.AspNetCore.Hosting.Diagnostics`) is at `Warning` so a `Host` is never logged. Every `/api/` request (read or write) needs
   `Authorization: Bearer <token>` (else `401 {"error":"unauthorized"}`); the static app shell stays public. The
   one token (32 random bytes, base64url, 43 chars) lives in `~/Library/Application Support/ControlRoom/access-token`
   (folder `0700`, file `0600`, outside the factory root; `--TokenFile <path>` overrides it) and is read on every
@@ -49,7 +53,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   Run: `dotnet run --project src/ControlRoom.Server` (listens on `127.0.0.1:8100` only; the factory root is the
   parent of the folder holding `ControlRoom.slnx`, or `--FactoryRoot <path>`).
   `--PushSubject <mailto:…>` sets the VAPID `sub` (default `mailto:controlroom@localhost`).
-  Start at login: `scripts/launch-agent.sh install|status|uninstall` (LaunchAgent `local.controlroom.server`,
+  `--TailnetHost <mac>.<tailnet>.ts.net` is needed before the iPhone works through Tailscale.
+  Start at login: `scripts/launch-agent.sh install [--tailnet-host <name>]|status|uninstall` (LaunchAgent `local.controlroom.server`,
   published server in `~/Library/Application Support/ControlRoom/server/`, log `~/Library/Logs/ControlRoom/server.log`).
 - **Test command:** `dotnet test` (from `ControlRoom/`; `dotnet build` must stay at 0 warnings). Tests build a
   temporary factory root (`TempFactoryRoot`) and host the server with `ServerFactory`; no test reads the real
@@ -57,8 +62,9 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
 - **Layout:**
   - `ControlRoom.slnx`, `Directory.Build.props` (nullable, implicit usings, code style in build), `.editorconfig`.
   - `src/ControlRoom.Server/`: `Program.cs` (entry; `token` runs `TokenCommand`), `ServerApp` (builds the app:
-    Kestrel, headers, GET/HEAD only (POST only on `/api/backlog/change` and the four `/api/push/*` POST routes), the `/api/` token gate, static files, endpoints, push services), `AccessToken` (token file
-    path, create, safe read, atomic replace, constant-time check), `TokenCommand` (`token`, `token --new`), `ServerEndpoint` (the one listen address), `FactoryRootLocator`,
+    Kestrel, headers, the `HostCheck`, GET/HEAD only (POST only on `/api/backlog/change` and the four `/api/push/*` POST routes), the `/api/` token gate, static files, endpoints, push services), `AccessToken` (token file
+    path, create, safe read, atomic replace, constant-time check), `TokenCommand` (`token`, `token --new`), `HostCheck` (allowed `Host` values, `TailnetHost` rule, fixed
+    `421` body), `ServerEndpoint` (the one listen address), `FactoryRootLocator`,
     `ProjectFinder` (project discovery), `SafeFileReader` (no-follow, regular-file, size-capped text or bytes read, SHA-256 version),
     `SafeFileWriter` (temp file in the same folder, then rename; refuses a symlinked target or folder),
     `BacklogReader` (safe `backlog.md` read), `BacklogParser` (lines to entries, old and numbered `[#N](…)`
@@ -88,7 +94,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `bootstrap`; refuses symlinks; never reads the token). Not part of the server.
   - `tests/ControlRoom.Server.Tests/`: one test class per unit or concern (`LaunchAgentScriptTests` runs the script with fake
     `launchctl`/`dotnet` in a temp `HOME`); `TempFactoryRoot` (`InitGit`, `AddBareRemote`
-    and `Git` for a real local repo), `TempTokenFolder` and `ServerFactory` (own temp token file;
+    and `Git` for a real local repo), `TempTokenFolder` and `ServerFactory` (own temp token file; clients send `Host: 127.0.0.1:8100`; optional tailnet name;
     `CreateTokenClient()` for API calls; `Push` fake push service, `Time` fixed clock whose timers never fire,
     `Logs`) are the shared fixtures; `PushFakes` holds `FakeTime`, `FakePushHandler`, `PushReceiver` (test-side
     decrypt) and `LogCapture`.

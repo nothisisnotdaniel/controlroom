@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.StaticFiles;
 
 namespace ControlRoom.Server;
 
-/// <summary>Builds the web app: loopback-only Kestrel, security headers, GET/HEAD only (plus POST on
+/// <summary>Builds the web app: loopback-only Kestrel, security headers, the <c>Host</c> check, GET/HEAD only (plus POST on
 /// the backlog change route and the push routes), static files from the
 /// server's own <c>wwwroot</c>, an access token on every <c>/api/</c> request, the backlogs, story, board, job
 /// and push APIs, and the push watcher.</summary>
@@ -17,11 +17,14 @@ internal static class ServerApp
     /// up.</summary>
     public const string ServiceWorkerPath = "/sw.js";
 
+    /// <summary>The ASP.NET category that logs every request with its URL (and so its <c>Host</c>).</summary>
+    private const string RequestLogCategory = "Microsoft.AspNetCore.Hosting.Diagnostics";
+
     /// <summary>The fixed body of a refused API request.</summary>
     public const string UnauthorizedBody = "{\"error\":\"unauthorized\"}";
 
     /// <summary>Builds the app, or returns <c>null</c> after writing a fixed error text when there is no
-    /// factory root or the access token file is not safe. A missing token file is created (the token itself is
+    /// factory root, the <c>TailnetHost</c> name is not valid or the access token file is not safe. A missing token file is created (the token itself is
     /// never written to <paramref name="error"/>).</summary>
     public static WebApplication? Create(string[] args, TextWriter error)
     {
@@ -37,6 +40,13 @@ internal static class ServerApp
         if (root is null)
         {
             error.WriteLine(FactoryRootLocator.NotFoundText);
+            return null;
+        }
+
+        string? tailnetHost = builder.Configuration[HostCheck.ConfigKey];
+        if (tailnetHost is not null && !HostCheck.IsValidTailnetHost(tailnetHost))
+        {
+            error.WriteLine(HostCheck.InvalidTailnetText);
             return null;
         }
 
@@ -59,6 +69,9 @@ internal static class ServerApp
             error.WriteLine(AccessToken.CreatedText);
         }
 
+        // The per-request "Request starting/finished" lines hold the Host header; a refused Host is never logged.
+        // Set in code on purpose: this filter wins over any Logging:LogLevel setting for the same category.
+        builder.Logging.AddFilter(RequestLogCategory, LogLevel.Warning);
         builder.WebHost.PreferHostingUrls(false);
         builder.WebHost.ConfigureKestrel(ConfigureKestrel);
         builder.Services.AddSingleton(new FactoryRoot(root));
@@ -70,6 +83,12 @@ internal static class ServerApp
         {
             context.Response.Headers.ContentSecurityPolicy = ContentSecurityPolicy;
             context.Response.Headers.XContentTypeOptions = "nosniff";
+            if (!IsAllowedHost(context.Request, tailnetHost))
+            {
+                await HostCheck.WriteRefused(context.Response);
+                return;
+            }
+
             if (!IsAllowedMethod(context.Request))
             {
                 context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
@@ -111,6 +130,14 @@ internal static class ServerApp
         builder.Services.AddSingleton<PushTestLimiter>();
         builder.Services.AddSingleton<PushWatcher>();
         builder.Services.AddHostedService(services => services.GetRequiredService<PushWatcher>());
+    }
+
+    /// <summary>True when the request has exactly one <c>Host</c> value and <see cref="HostCheck.IsAllowed"/>
+    /// accepts it. The value is never logged.</summary>
+    private static bool IsAllowedHost(HttpRequest request, string? tailnetHost)
+    {
+        Microsoft.Extensions.Primitives.StringValues values = request.Headers.Host;
+        return values.Count == 1 && HostCheck.IsAllowed(values[0], tailnetHost);
     }
 
     /// <summary>GET and HEAD everywhere; POST only on exactly <see cref="BacklogChangeEndpoint.Route"/> and the
