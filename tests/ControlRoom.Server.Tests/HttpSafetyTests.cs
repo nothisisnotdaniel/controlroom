@@ -37,7 +37,7 @@ public sealed class HttpSafetyTests
         root.AddRecord("1-a", "round-1/review-ux.md", "VERDICT: PASS\n");
         IReadOnlyList<string> before = root.Snapshot();
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
         using HttpRequestMessage request = new(new HttpMethod(method), path)
         {
             Content = new StringContent("- [ ] Injected: line\n"),
@@ -63,7 +63,7 @@ public sealed class HttpSafetyTests
         using TempFactoryRoot root = TempFactoryRoot.WithSamples();
         root.AddProject("Times", "- [ ] Times: line\n");
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpResponseMessage response = await client.GetAsync(path);
 
@@ -75,7 +75,7 @@ public sealed class HttpSafetyTests
     {
         using TempFactoryRoot root = new();
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpResponseMessage response = await client.GetAsync("/");
 
@@ -112,7 +112,7 @@ public sealed class HttpSafetyTests
     {
         using TempFactoryRoot root = new();
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpRequestMessage request = new(new HttpMethod(method), path);
         using HttpResponseMessage response = await client.SendAsync(request);
@@ -126,7 +126,7 @@ public sealed class HttpSafetyTests
     {
         using TempFactoryRoot root = new();
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpResponseMessage response = await client.GetAsync("/sw.js");
         string policy = string.Join(",", response.Headers.GetValues("Content-Security-Policy"));
@@ -151,7 +151,7 @@ public sealed class HttpSafetyTests
     {
         using TempFactoryRoot root = new();
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpResponseMessage response = await client.PostAsync(path, new StringContent("x"));
 
@@ -163,7 +163,7 @@ public sealed class HttpSafetyTests
     {
         using TempFactoryRoot root = new();
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpResponseMessage response = await client.GetAsync("/sw.js");
 

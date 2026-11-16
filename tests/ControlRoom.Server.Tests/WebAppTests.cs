@@ -17,7 +17,7 @@ public sealed partial class WebAppTests
         Assert.Contains("<meta name=\"color-scheme\" content=\"light dark\">", html, StringComparison.Ordinal);
         Assert.Contains("<script src=\"/app.js\" defer></script>", html, StringComparison.Ordinal);
         Assert.Contains("<link rel=\"stylesheet\" href=\"/app.css\">", html, StringComparison.Ordinal);
-        Assert.Equal(2, ScriptTag().Matches(html).Count);
+        Assert.Equal(3, ScriptTag().Matches(html).Count);
         Assert.DoesNotContain("<style", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("style=", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(" on", AttributeStarts(html), StringComparison.Ordinal);
@@ -30,7 +30,7 @@ public sealed partial class WebAppTests
     {
         string js = await Fetch("/app.js");
 
-        Assert.Contains("fetch(\"/api/backlogs\"", js, StringComparison.Ordinal);
+        Assert.Contains("authFetch(\"/api/backlogs\"", js, StringComparison.Ordinal);
         int open = js.IndexOf("label: \"Open\"", StringComparison.Ordinal);
         int approval = js.IndexOf("label: \"Waiting for approval\"", StringComparison.Ordinal);
         int user = js.IndexOf("label: \"For you\"", StringComparison.Ordinal);
@@ -191,7 +191,7 @@ public sealed partial class WebAppTests
         Assert.Contains("navigator.serviceWorker.register(\"/sw.js\").catch(() => undefined);", js,
             StringComparison.Ordinal);
         Assert.DoesNotContain("caches", js, StringComparison.Ordinal);
-        Assert.Contains("fetch(\"/api/backlogs\", { cache: \"no-store\" })", js, StringComparison.Ordinal);
+        Assert.Contains("authFetch(\"/api/backlogs\", { cache: \"no-store\" })", js, StringComparison.Ordinal);
         Assert.Equal(2, NoStore().Matches(js).Count);
         Assert.Contains("unreachable: \"Can't reach the server.\"", js, StringComparison.Ordinal);
         Assert.Contains("storyFailed: \"Can't load this story.\"", js, StringComparison.Ordinal);
@@ -253,7 +253,7 @@ public sealed partial class WebAppTests
         Assert.Contains("window.scrollTo(0, listScroll);", js, StringComparison.Ordinal);
         Assert.Contains("link.setAttribute(\"aria-current\", \"page\");", js, StringComparison.Ordinal);
         Assert.Contains("startBoardPolling();", js, StringComparison.Ordinal);
-        Assert.Contains("document.body.classList.toggle(\"view-board\", name === \"board\");", js,
+        Assert.Contains("document.body.classList.toggle(\"view-board\", !blocked && name === \"board\");", js,
             StringComparison.Ordinal);
         Assert.Contains("if (kind === \"table\") {", js, StringComparison.Ordinal);
         Assert.Contains("headRow.appendChild(renderInlines(element(\"th\"), cell));", js, StringComparison.Ordinal);
@@ -350,9 +350,9 @@ public sealed partial class WebAppTests
         Assert.Contains("const PollInterval = 5000;", js, StringComparison.Ordinal);
         Assert.Contains("setInterval(pollBoard, PollInterval);", js, StringComparison.Ordinal);
         Assert.Contains(
-            "if (document.visibilityState !== \"visible\" || !boardViewsVisible() || boardPolling) {", js,
+            "if (document.visibilityState !== \"visible\" || tokenViewShown() || !boardViewsVisible() || boardPolling) {", js,
             StringComparison.Ordinal);
-        Assert.Contains("fetch(\"/api/board\", { cache: \"no-store\" })", js, StringComparison.Ordinal);
+        Assert.Contains("authFetch(\"/api/board\", { cache: \"no-store\" })", js, StringComparison.Ordinal);
         Assert.Contains("if (text === boardText) {", js, StringComparison.Ordinal);
         Assert.Contains("window.scrollTo(0, scroll);", js, StringComparison.Ordinal);
         Assert.Contains("JSON.stringify(entry) !== openJobEntry", js, StringComparison.Ordinal);

@@ -30,7 +30,7 @@ public sealed class StoryApiTests
     {
         using TempFactoryRoot root = Sample();
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpResponseMessage response = await client.GetAsync("/api/story?project=Alpha&number=4");
         string body = await response.Content.ReadAsStringAsync();
@@ -58,7 +58,7 @@ public sealed class StoryApiTests
     {
         using TempFactoryRoot root = Sample();
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpResponseMessage response = await client.GetAsync(url);
 
@@ -72,7 +72,7 @@ public sealed class StoryApiTests
         using TempFactoryRoot root = Sample();
         IReadOnlyList<string> before = root.Snapshot();
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpRequestMessage request = new(HttpMethod.Head, "/api/story?project=Alpha&number=4");
         using HttpResponseMessage response = await client.SendAsync(request);
@@ -89,7 +89,7 @@ public sealed class StoryApiTests
         string head = "Edge text\n";
         TempFactoryRoot.AddStory(alpha, "005-edge.md", head + new string('a', (int)StoryReader.MaxBytes - head.Length));
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpResponseMessage response = await client.GetAsync("/api/story?project=Alpha&number=5");
 
@@ -138,7 +138,7 @@ public sealed class StoryApiTests
     {
         using TempFactoryRoot root = Sample();
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         await AssertNotFound(client, "/api/story?" + query, root.Path);
     }
@@ -155,7 +155,7 @@ public sealed class StoryApiTests
         string alpha = root.AddProject("Alpha", "- [ ] [#5](backlog/005-locked.md) Locked\n");
         root.Lock(TempFactoryRoot.AddStory(alpha, "005-locked.md", "secret\n"));
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         await AssertNotFound(client, "/api/story?project=Alpha&number=5", root.Path);
     }
@@ -173,7 +173,7 @@ public sealed class StoryApiTests
         Directory.CreateDirectory(Path.Combine(alpha, "backlog"));
         TempFactoryRoot.MakeFifo(Path.Combine(alpha, "backlog", "005-fifo.md"));
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpResponseMessage response = await client.GetAsync("/api/story?project=Alpha&number=5")
             .WaitAsync(TimeSpan.FromSeconds(10));
@@ -191,7 +191,7 @@ public sealed class StoryApiTests
         TempFactoryRoot.AddStory(
             alpha, "005-deep.md", new string('[', depth) + "a" + string.Concat(Enumerable.Repeat("](x)", depth)));
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpResponseMessage story = await client.GetAsync("/api/story?project=Alpha&number=5")
             .WaitAsync(TimeSpan.FromSeconds(20));

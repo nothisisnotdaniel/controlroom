@@ -354,7 +354,7 @@ function boardViewsVisible() {
 }
 
 async function pollBoard() {
-  if (document.visibilityState !== "visible" || !boardViewsVisible() || boardPolling) {
+  if (document.visibilityState !== "visible" || tokenViewShown() || !boardViewsVisible() || boardPolling) {
     return;
   }
   boardPolling = true;
@@ -362,7 +362,7 @@ async function pollBoard() {
     let text;
     let data;
     try {
-      const response = await fetch("/api/board", { cache: "no-store" });
+      const response = await authFetch("/api/board", { cache: "no-store" });
       if (!response.ok) {
         throw new Error("status");
       }
@@ -573,7 +573,7 @@ async function loadJob(id, refresh) {
   }
   let data;
   try {
-    const response = await fetch("/api/job?id=" + encodeURIComponent(id), { cache: "no-store" });
+    const response = await authFetch("/api/job?id=" + encodeURIComponent(id), { cache: "no-store" });
     if (!response.ok) {
       throw new Error("status");
     }

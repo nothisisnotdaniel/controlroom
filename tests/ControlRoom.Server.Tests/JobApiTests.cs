@@ -29,7 +29,7 @@ public sealed class JobApiTests
         root.AddRecord(Id, "spec.md", "# Spec\n\n| a | b |\n|---|---|\n| 1 | 2 |\n");
         root.AddRecord(Id, "notes.md", "not listed\n");
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpResponseMessage response = await client.GetAsync("/api/job?id=" + Id);
         string body = await response.Content.ReadAsStringAsync();
@@ -70,7 +70,7 @@ public sealed class JobApiTests
         root.AddRecord(Id, "round-20/review-ui.md", "twenty\n");
         root.AddRecord(Id, "round-21/review-ui.md", "twenty-one\n");
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/job?id=" + Id));
 
@@ -88,7 +88,7 @@ public sealed class JobApiTests
         root.AddRecord(Id, "round-1/review-ui.md", "early\n");
         root.AddRecord(Id, "spec.md", "Spec\n");
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/job?id=" + Id));
 
@@ -120,7 +120,7 @@ public sealed class JobApiTests
         Directory.CreateSymbolicLink(Path.Combine(job, "round-2"), outside);
         root.AddRecord(Id, "decision.md", "APPROVE\n");
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpResponseMessage response = await client.GetAsync("/api/job?id=" + Id)
             .WaitAsync(TimeSpan.FromSeconds(10));
@@ -154,7 +154,7 @@ public sealed class JobApiTests
         root.AddJob(Id, "{}");
         root.AddRecord(Id, "build.md", "x" + new string('a', (int)JobEndpoint.MaxRecordBytes - 1));
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/job?id=" + Id));
 
@@ -194,7 +194,7 @@ public sealed class JobApiTests
         root.AddJob("10-broken", "{");
         root.AddJob("11-missing", null);
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpResponseMessage response = await client.GetAsync(url);
         string body = await response.Content.ReadAsStringAsync();
@@ -216,7 +216,7 @@ public sealed class JobApiTests
         string job = root.AddJob(Id, JobSamples.State("Alpha", "build", 1));
         root.Lock(Path.Combine(job, "state.json"));
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpResponseMessage response = await client.GetAsync("/api/job?id=" + Id);
 
@@ -233,7 +233,7 @@ public sealed class JobApiTests
         root.AddRecord(Id, "round-1/review-ux.md", "VERDICT: PASS\n");
         IReadOnlyList<string> before = root.Snapshot();
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpRequestMessage request = new(HttpMethod.Head, "/api/job?id=" + Id);
         using HttpResponseMessage response = await client.SendAsync(request);

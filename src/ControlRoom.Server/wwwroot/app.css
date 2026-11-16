@@ -664,3 +664,70 @@ a.card:focus-visible {
   vertical-align: top;
   overflow-wrap: normal;
 }
+
+/* Token view: one labelled field and a thumb-sized Save button, mobile first. */
+#token {
+  max-width: 480px;
+  margin: 0 auto;
+  padding-top: max(24px, env(safe-area-inset-top));
+}
+
+.token-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--card);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.token-title {
+  margin: 0;
+}
+
+.token-help {
+  margin: 0;
+  color: var(--muted);
+}
+
+.token-help code {
+  font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--code-bg);
+  color: var(--fg);
+  border-radius: 4px;
+  padding: 0 3px;
+}
+
+.token-label {
+  font-weight: 600;
+}
+
+.token-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+  /* 16px or more keeps iOS Safari from zooming in on focus. */
+  font: 16px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.token-input:focus-visible,
+.token-save:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.token-save {
+  min-height: 48px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--bg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
