@@ -225,6 +225,20 @@ public sealed class BacklogsApiTests
         Assert.True(Project(json, "Alpha").GetProperty("open")[0].GetProperty("waiting").GetBoolean());
     }
 
+    [Fact]
+    public async Task Backlogs_EmptyTitleIsStillReturnedAsEmpty()
+    {
+        using TempFactoryRoot root = new();
+        root.AddProject("Alpha", "- [ ] [#1](backlog/001-a.md) \n- [ ] [#2](backlog/002-b.md) Named\n");
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+
+        string body = await client.GetStringAsync("/api/backlogs");
+
+        using JsonDocument json = JsonDocument.Parse(body);
+        Assert.Equal(["", "Named"], Entries(Project(json, "Alpha"), "open").Select(entry => entry.Item1));
+    }
+
     private static JsonElement Project(JsonDocument json, string name)
     {
         return json.RootElement.GetProperty("projects").EnumerateArray()

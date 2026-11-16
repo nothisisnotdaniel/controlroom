@@ -153,7 +153,7 @@ function editRow(projectName, version, entry) {
   }
   const number = asNumber(entry.number);
   // Screen readers hear which item each button acts on, not the same names on every line.
-  const subject = number !== null ? "#" + number : asText(entry.title);
+  const subject = number !== null ? "#" + number : titleText(entry.title);
   const named = (button) => {
     button.setAttribute("aria-label", button.textContent + " " + subject);
     return button;
