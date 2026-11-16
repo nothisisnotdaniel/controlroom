@@ -26,7 +26,11 @@ internal static class ServerApp
     /// <summary>Builds the app, or returns <c>null</c> after writing a fixed error text when there is no
     /// factory root, the <c>TailnetHost</c> name is not valid or the access token file is not safe. A missing token file is created (the token itself is
     /// never written to <paramref name="error"/>).</summary>
-    public static WebApplication? Create(string[] args, TextWriter error)
+    public static WebApplication? Create(string[] args, TextWriter error) => Create(args, error, null);
+
+    /// <summary>Test seam: <paramref name="onListen"/> is called for every endpoint the Kestrel setup listens on
+    /// (through the public <c>ConfigureEndpointDefaults</c>); <c>null</c> in production.</summary>
+    internal static WebApplication? Create(string[] args, TextWriter error, Action<ListenOptions>? onListen)
     {
         // Content root (and so wwwroot) is the server's own output folder, never the current directory.
         WebApplicationBuilder builder = WebApplication.CreateBuilder(new WebApplicationOptions
@@ -73,7 +77,15 @@ internal static class ServerApp
         // Set in code on purpose: this filter wins over any Logging:LogLevel setting for the same category.
         builder.Logging.AddFilter(RequestLogCategory, LogLevel.Warning);
         builder.WebHost.PreferHostingUrls(false);
-        builder.WebHost.ConfigureKestrel(ConfigureKestrel);
+        builder.WebHost.ConfigureKestrel(options =>
+        {
+            if (onListen is not null)
+            {
+                options.ConfigureEndpointDefaults(onListen);
+            }
+
+            ConfigureKestrel(options);
+        });
         builder.Services.AddSingleton(new FactoryRoot(root));
         builder.Services.AddSingleton(new BacklogWriteLock());
         AddPush(builder, tokenPath);

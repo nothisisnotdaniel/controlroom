@@ -1,5 +1,4 @@
 using System.Net;
-using System.Reflection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,6 +20,7 @@ public sealed class ServerEndpointTests
     {
         using TempFactoryRoot root = new();
         using TempTokenFolder tokens = new();
+        List<IPEndPoint?> listening = [];
         WebApplication? app = ServerApp.Create(
             [
                 "--FactoryRoot", root.Path,
@@ -28,22 +28,15 @@ public sealed class ServerEndpointTests
                 "--urls", "http://0.0.0.0:5999",
                 "--Kestrel:Endpoints:Other:Url", "http://0.0.0.0:5998",
             ],
-            TextWriter.Null);
+            TextWriter.Null,
+            listen => listening.Add(listen.IPEndPoint));
         Assert.NotNull(app);
         await using WebApplication built = app;
 
         KestrelServerOptions options = built.Services.GetRequiredService<IOptions<KestrelServerOptions>>().Value;
 
-        Assert.Equal([ServerEndpoint.Address], CodeEndpoints(options));
+        Assert.Equal([ServerEndpoint.Address], listening);
         Assert.NotNull(options.ConfigurationLoader);
         Assert.Empty(options.ConfigurationLoader.Configuration.GetChildren());
-    }
-
-    private static List<IPEndPoint?> CodeEndpoints(KestrelServerOptions options)
-    {
-        PropertyInfo property = typeof(KestrelServerOptions).GetProperty(
-            "CodeBackedListenOptions", BindingFlags.Instance | BindingFlags.NonPublic)!;
-        IEnumerable<ListenOptions> listen = (IEnumerable<ListenOptions>)property.GetValue(options)!;
-        return listen.Select(item => item.IPEndPoint).ToList();
     }
 }
