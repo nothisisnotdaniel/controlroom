@@ -110,6 +110,17 @@ public sealed partial class PushWebAppTests
     }
 
     [Fact]
+    public async Task PushJs_ShowsAFixedTextWhenTheTestIsRateLimited()
+    {
+        string js = await Fetch("/push.js");
+
+        Assert.Contains("tooSoon: \"Wait a few seconds before sending another test.\"", js, StringComparison.Ordinal);
+        Assert.Contains("error.status = response.status;", js, StringComparison.Ordinal);
+        Assert.Contains("if (error.status === 429) {", js, StringComparison.Ordinal);
+        Assert.Contains("pushNote = PushTexts.tooSoon;", js, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task BoardJs_ShowsTheSectionWithTheBoard()
     {
         string js = await Fetch("/board.js");

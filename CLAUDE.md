@@ -34,8 +34,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     with raw HTML turned off.
   - Push files live next to the token file (never in the factory root): `push-keys.json` (VAPID P-256 key pair,
     a secret like the token) and `push.json` (subscriptions, `notifyDone`). Both `0600`, written atomically
-    (`0600` temp file, then rename); a symlinked, loose-mode or invalid one makes every `/api/push*` route return
-    `500 {"error":"push_store"}` and is never overwritten.
+    (`0600` temp file, then rename); their folder must be `0700` and owned by the current user (created `0700`
+    when missing; owner read with `lstat` in `UnixOwner`). A symlinked, loose-mode or invalid file or folder (or
+    one owned by someone else) makes every `/api/push*` route return `500 {"error":"push_store"}` and is never
+    overwritten. `POST /api/push/test` sends at most once per 10 s server-wide (`PushTestLimiter` on
+    `TimeProvider`); a call inside that window returns `429 {"error":"too_many_requests"}` and sends nothing.
   - The only outbound calls are Web Push POSTs to subscription endpoints, allowed only as `https`, port 443, no
     userinfo, on `*.push.apple.com`, `fcm.googleapis.com` or `updates.push.services.mozilla.com`; no redirects,
     10 s timeout. Endpoints, keys and the token are never logged (status codes only). A payload holds only
@@ -73,7 +76,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `PushSubscriptionRules`: endpoint host allowlist and key checks), `PushSender` (`PushPayload` with the fixed
     reason table, `PushTransport` (the injectable `HttpMessageHandler`), one POST per subscription, `404`/`410`
     removes it), `PushWatcher` (hosted service, `Scan()` every 30 s on `TimeProvider`; first scan is the baseline),
-    `PushEndpoint` (`GET /api/push`, `POST /api/push/subscribe|unsubscribe|settings|test`), `wwwroot/` (`index.html`, `app.css`, `token.js` (stored token under
+    `PushEndpoint` (`GET /api/push`, `POST /api/push/subscribe|unsubscribe|settings|test`), `PushTestLimiter`
+    (one test send per 10 s), `UnixOwner` (`geteuid`, `lstat` uid via P/Invoke), `wwwroot/` (`index.html`, `app.css`, `token.js` (stored token under
     `controlroom-token`, `authFetch` for every `/api/` call, the token view), `app.js` (routing, backlogs,
     story), `edit.js` (per-project edit mode, the Add form, Edit story, fixed texts per error code), `board.js` (jobs board and job page, polls every 5 s while visible), `push.js` (Notifications section on the
     board: state texts, Turn on (permission only from the tap), done switch, Send test, Turn off),

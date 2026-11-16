@@ -127,7 +127,8 @@ public sealed class PushStoreTests
     public void Store_KeepsSubscriptionsAndSettingsWithPrivateWrites()
     {
         using TempTokenFolder tokens = new();
-        PushStore store = new(tokens.Path);
+        string folder = Path.Combine(tokens.Path, "push");
+        PushStore store = new(folder);
         using PushReceiver receiver = new();
         PushSubscription subscription = new(
             PushTestData.AppleEndpoint, Base64Url.Encode(receiver.PublicKey), Base64Url.Encode(receiver.Auth));
@@ -135,17 +136,110 @@ public sealed class PushStoreTests
         Assert.True(store.Subscribe(subscription));
         store.SetNotifyDone(true);
 
-        PushSettings settings = new PushStore(tokens.Path).Settings();
+        PushSettings settings = new PushStore(folder).Settings();
         Assert.True(settings.NotifyDone);
         Assert.Equal([subscription], settings.Subscriptions);
         Assert.Equal(1, store.Remove([PushTestData.AppleEndpoint]));
         Assert.Empty(store.Settings().Subscriptions);
-        string[] files = Directory.GetFiles(tokens.Path).Select(path => Path.GetFileName(path)).ToArray();
+        string[] files = Directory.GetFiles(folder).Select(path => Path.GetFileName(path)).ToArray();
         Assert.Equal(new[] { PushStore.SettingsFileName }, files);
         if (!OperatingSystem.IsWindows())
         {
             Assert.Equal(Private, File.GetUnixFileMode(store.SettingsPath));
         }
+    }
+
+    [Theory]
+    [InlineData(UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute)]
+    [InlineData(UnixFileMode.GroupRead | UnixFileMode.GroupExecute)]
+    [InlineData(UnixFileMode.OtherExecute)]
+    public async Task LooseModeFolder_FailsEveryRouteAndLeavesTheFiles(UnixFileMode extra)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TempFactoryRoot root = new();
+        using TempTokenFolder tokens = new();
+        using ServerFactory factory = new(root.Path, tokens.TokenFile);
+        using HttpClient client = factory.CreateTokenClient();
+        await PushTestData.Info(client);
+        string folder = Path.GetDirectoryName(tokens.TokenFile)!;
+        string keys = Path.Combine(folder, PushStore.KeysFileName);
+        string settings = Path.Combine(folder, PushStore.SettingsFileName);
+        byte[] keyBytes = File.ReadAllBytes(keys);
+        byte[] settingsBytes = File.ReadAllBytes(settings);
+        File.SetUnixFileMode(folder, AccessToken.FolderMode | extra);
+
+        try
+        {
+            await AssertEveryRouteFails(client);
+
+            Assert.Equal(keyBytes, File.ReadAllBytes(keys));
+            Assert.Equal(settingsBytes, File.ReadAllBytes(settings));
+            Assert.Equal(AccessToken.FolderMode | extra, File.GetUnixFileMode(folder));
+        }
+        finally
+        {
+            File.SetUnixFileMode(folder, AccessToken.FolderMode);
+        }
+    }
+
+    [Fact]
+    public void FolderOwnedBySomeoneElse_IsRefusedAndNothingIsWritten()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TempTokenFolder tokens = new();
+        string folder = Path.Combine(tokens.Path, "push");
+        new PushStore(folder).Load();
+        string[] before = Directory.GetFiles(folder);
+        byte[] settingsBytes = File.ReadAllBytes(Path.Combine(folder, PushStore.SettingsFileName));
+        uint other = UnixOwner.CurrentUser()!.Value + 1;
+        PushStore store = new(folder, other);
+
+        Assert.Throws<PushStoreException>(() => store.Load());
+        Assert.Throws<PushStoreException>(() => store.Keys());
+        Assert.Throws<PushStoreException>(() => store.SetNotifyDone(true));
+
+        Assert.Equal(before, Directory.GetFiles(folder));
+        Assert.Equal(settingsBytes, File.ReadAllBytes(Path.Combine(folder, PushStore.SettingsFileName)));
+    }
+
+    [Fact]
+    public void MissingFolder_IsCreatedPrivate()
+    {
+        using TempTokenFolder tokens = new();
+        string folder = Path.Combine(tokens.Path, "push");
+
+        new PushStore(folder).Load();
+
+        Assert.True(Directory.Exists(folder));
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Equal(AccessToken.FolderMode, File.GetUnixFileMode(folder));
+        }
+    }
+
+    [Fact]
+    public void UnixOwner_ReadsTheCurrentUserAsOwnerOfANewFolder()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TempTokenFolder tokens = new();
+        string folder = Path.Combine(tokens.Path, "mine");
+        Directory.CreateDirectory(folder);
+
+        Assert.NotNull(UnixOwner.CurrentUser());
+        Assert.Equal(UnixOwner.CurrentUser(), UnixOwner.OwnerOf(folder));
+        Assert.Null(UnixOwner.OwnerOf(Path.Combine(tokens.Path, "missing")));
     }
 
     private static async Task AssertEveryRouteFails(HttpClient client)

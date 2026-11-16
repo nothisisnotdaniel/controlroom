@@ -208,6 +208,30 @@ public sealed class PushApiTests
     }
 
     [Fact]
+    public async Task Test_SecondCallInsideTenSeconds_Returns429AndSendsNothing()
+    {
+        using TempFactoryRoot root = new();
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+        using PushReceiver apple = new();
+        (await PushTestData.Subscribe(client, apple, PushTestData.AppleEndpoint)).Dispose();
+
+        using HttpResponseMessage first = await client.PostAsync(PushEndpoint.TestRoute, null);
+        factory.Time.Now += TimeSpan.FromSeconds(9.999);
+        using HttpResponseMessage tooSoon = await client.PostAsync(PushEndpoint.TestRoute, null);
+        int sentBeforeWindowEnds = factory.Push.Requests.Count;
+        factory.Time.Now += TimeSpan.FromMilliseconds(1);
+        using HttpResponseMessage again = await client.PostAsync(PushEndpoint.TestRoute, null);
+
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal((HttpStatusCode)429, tooSoon.StatusCode);
+        Assert.Equal("{\"error\":\"too_many_requests\"}", await tooSoon.Content.ReadAsStringAsync());
+        Assert.Equal(1, sentBeforeWindowEnds);
+        Assert.Equal(HttpStatusCode.OK, again.StatusCode);
+        Assert.Equal(2, factory.Push.Requests.Count);
+    }
+
+    [Fact]
     public async Task Test_VapidJwtVerifiesWithThePublicKeyFromGet()
     {
         using TempFactoryRoot root = new();

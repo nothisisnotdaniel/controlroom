@@ -19,6 +19,7 @@ const PushTexts = {
   notAllowed: "Permission was not given.",
   testSent: "Test sent.",
   testNone: "No device got the test.",
+  tooSoon: "Wait a few seconds before sending another test.",
 };
 
 let pushBusy = false;
@@ -69,7 +70,9 @@ async function pushJson(path, body) {
     };
   const response = await authFetch(path, options);
   if (!response.ok) {
-    throw new Error("status");
+    const error = new Error("status");
+    error.status = response.status;
+    throw error;
   }
   return response.json();
 }
@@ -219,7 +222,16 @@ function turnOffPush() {
 
 function sendTestPush() {
   withPushBusy(async () => {
-    const result = await pushJson("/api/push/test");
+    let result;
+    try {
+      result = await pushJson("/api/push/test");
+    } catch (error) {
+      if (error.status === 429) {
+        pushNote = PushTexts.tooSoon;
+        return;
+      }
+      throw error;
+    }
     pushNote = result && result.sent > 0 ? PushTexts.testSent : PushTexts.testNone;
   });
 }

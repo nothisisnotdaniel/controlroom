@@ -20,7 +20,7 @@ public sealed class PushSenderTests : IDisposable
 
     public PushSenderTests()
     {
-        store = new PushStore(folder.Path);
+        store = new PushStore(System.IO.Path.Combine(folder.Path, "push"));
         PushCrypto crypto = new(new FakeTime(), PushCrypto.SystemEphemeralKey, AccessToken.SystemRandom, null);
         sender = new PushSender(store, crypto, new PushTransport(handler), logs.For<PushSender>());
         Assert.True(store.Subscribe(new PushSubscription(

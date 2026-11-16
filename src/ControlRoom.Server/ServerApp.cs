@@ -108,6 +108,7 @@ internal static class ServerApp
         builder.Services.AddSingleton(services => new PushCrypto(
             services.GetRequiredService<TimeProvider>(), PushCrypto.SystemEphemeralKey, AccessToken.SystemRandom, subject));
         builder.Services.AddSingleton<PushSender>();
+        builder.Services.AddSingleton<PushTestLimiter>();
         builder.Services.AddSingleton<PushWatcher>();
         builder.Services.AddHostedService(services => services.GetRequiredService<PushWatcher>());
     }

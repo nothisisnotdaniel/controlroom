@@ -34,7 +34,8 @@ internal sealed class PushStoreException : Exception
 
 /// <summary>The push files next to the token file (outside the factory root): <c>push-keys.json</c> (the VAPID key
 /// pair, created on first use) and <c>push.json</c> (subscriptions and <c>notifyDone</c>). Both are <c>0600</c> and
-/// written atomically (a <c>0600</c> temp file, then rename). A symlinked, loose-mode or invalid file throws
+/// written atomically (a <c>0600</c> temp file, then rename). The folder must be <c>0700</c> and owned by the current
+/// user (it is created so when missing). A symlinked, loose-mode or invalid file or folder throws
 /// <see cref="PushStoreException"/> and is left as it is. All access is serialized.</summary>
 internal sealed class PushStore
 {
@@ -52,9 +53,19 @@ internal sealed class PushStore
 
     private readonly object gate = new();
 
+    private readonly uint? owner;
+
     public PushStore(string folder)
+        : this(folder, UnixOwner.CurrentUser())
+    {
+    }
+
+    /// <summary>A store whose folder must be owned by <paramref name="owner"/> (tests pass another uid to check the
+    /// refusal).</summary>
+    public PushStore(string folder, uint? owner)
     {
         Folder = Path.GetFullPath(folder);
+        this.owner = owner;
     }
 
     public string Folder { get; }
@@ -196,10 +207,37 @@ internal sealed class PushStore
         }
     }
 
+    /// <summary>The folder must be a real folder (not a symlink) with mode <c>0700</c>, owned by the current user;
+    /// a missing folder is created <c>0700</c>.</summary>
     private void CheckFolder()
     {
         DirectoryInfo folder = new(Folder);
-        if (!folder.Exists || folder.LinkTarget is not null)
+        if (folder.LinkTarget is not null || File.Exists(Folder))
+        {
+            throw new PushStoreException();
+        }
+
+        if (!folder.Exists)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                Directory.CreateDirectory(Folder);
+                return;
+            }
+
+            Directory.CreateDirectory(Folder, AccessToken.FolderMode);
+            File.SetUnixFileMode(Folder, AccessToken.FolderMode);
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        const UnixFileMode Permissions = AccessToken.FolderMode | GroupOrOther;
+        if ((File.GetUnixFileMode(Folder) & Permissions) != AccessToken.FolderMode
+            || owner is null
+            || UnixOwner.OwnerOf(Folder) != owner)
         {
             throw new PushStoreException();
         }

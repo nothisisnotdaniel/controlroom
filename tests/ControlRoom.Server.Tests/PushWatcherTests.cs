@@ -28,7 +28,7 @@ public sealed class PushWatcherTests : IDisposable
     public PushWatcherTests()
     {
         root.AddProject("Times", "- [ ] [#1](backlog/001-a.md) Open one\n- [?] [#2](backlog/002-b.md) Proposal\n");
-        store = new PushStore(folder.Path);
+        store = new PushStore(System.IO.Path.Combine(folder.Path, "push"));
         Assert.True(store.Subscribe(new PushSubscription(
             PushTestData.AppleEndpoint, Base64Url.Encode(receiver.PublicKey), Base64Url.Encode(receiver.Auth))));
         LogCapture logs = new();

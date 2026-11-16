@@ -27,6 +27,8 @@ internal static class PushEndpoint
 
     public const string TooMany = "too_many";
 
+    public const string TooManyRequests = "too_many_requests";
+
     public const string Invalid = "invalid";
 
     /// <summary>The routes that take POST.</summary>
@@ -96,12 +98,17 @@ internal static class PushEndpoint
             });
         });
 
-        app.MapPost(TestRoute, async (PushStore store, PushSender sender, HttpContext context) =>
+        app.MapPost(TestRoute, async (PushStore store, PushSender sender, PushTestLimiter limiter, HttpContext context) =>
         {
             context.Response.Headers.CacheControl = "no-store";
             try
             {
                 store.Load();
+                if (!limiter.TryStart())
+                {
+                    return Error(StatusCodes.Status429TooManyRequests, TooManyRequests);
+                }
+
                 int sent = await sender.Send(new PushPayload(PushPayload.Test, null, null, null), context.RequestAborted);
                 return Results.Json(new { sent });
             }
