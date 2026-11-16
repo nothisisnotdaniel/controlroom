@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.StaticFiles;
 namespace ControlRoom.Server;
 
 /// <summary>Builds the web app: loopback-only Kestrel, security headers, GET/HEAD only, static files from the
-/// server's own <c>wwwroot</c>, the backlogs API and the story API.</summary>
+/// server's own <c>wwwroot</c>, the backlogs, story, board and job APIs.</summary>
 internal static class ServerApp
 {
     public const string ContentSecurityPolicy =
@@ -55,6 +55,8 @@ internal static class ServerApp
         app.UseStaticFiles(CreateStaticFileOptions());
         BacklogsEndpoint.Map(app);
         StoryEndpoint.Map(app);
+        BoardEndpoint.Map(app);
+        JobEndpoint.Map(app);
         return app;
     }
 

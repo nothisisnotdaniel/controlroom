@@ -9,8 +9,9 @@ namespace ControlRoom.Server;
 internal sealed record StoryInline(string Kind, string Text);
 
 /// <summary>One block of a story: <c>heading</c> (with <c>Level</c> 1-3 and <c>Inlines</c>), <c>paragraph</c>
-/// (<c>Inlines</c>), <c>list</c> (<c>Ordered</c> and <c>Items</c>, each a list of inlines) or <c>code</c>
-/// (<c>Text</c>, verbatim). Fields a kind doesn't use are left out of the JSON.</summary>
+/// (<c>Inlines</c>), <c>list</c> (<c>Ordered</c> and <c>Items</c>, each a list of inlines), <c>code</c>
+/// (<c>Text</c>, verbatim) or <c>table</c> (<c>Header</c>, a list of cells, and <c>Rows</c>, each a list of cells;
+/// a cell is a list of inlines). Fields a kind doesn't use are left out of the JSON.</summary>
 internal sealed record StoryBlock(
     string Kind,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Level = null,
@@ -18,11 +19,15 @@ internal sealed record StoryBlock(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Text = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<StoryInline>? Inlines = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    IReadOnlyList<IReadOnlyList<StoryInline>>? Items = null);
+    IReadOnlyList<IReadOnlyList<StoryInline>>? Items = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<IReadOnlyList<StoryInline>>? Header = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<IReadOnlyList<IReadOnlyList<StoryInline>>>? Rows = null);
 
 /// <summary>Turns a story's Markdown into a block tree of plain texts: headings (levels 4-6 shown as 3),
-/// paragraphs, flat lists, fenced code, and inline code, strong and em. A link keeps only its text. Raw HTML is
-/// never interpreted: it stays literal text. The output holds no markup made by the renderer.</summary>
+/// paragraphs, flat lists, fenced code, pipe tables, and inline code, strong and em. A link keeps only its text.
+/// Raw HTML is never interpreted: it stays literal text. The output holds no markup made by the renderer.</summary>
 internal static partial class StoryMarkdown
 {
     /// <summary>Deepest inline nesting (link text, emphasis content) that is still parsed.</summary>
@@ -109,6 +114,14 @@ internal static partial class StoryMarkdown
                 continue;
             }
 
+            if (index < lines.Length && IsTableStart(line, lines[index].TrimEnd('\r')))
+            {
+                FlushParagraph();
+                FlushList();
+                index = ParseTable(lines, index - 1, blocks);
+                continue;
+            }
+
             Match item = ListItem().Match(line);
             if (item.Success)
             {
@@ -137,6 +150,88 @@ internal static partial class StoryMarkdown
         FlushParagraph();
         FlushList();
         return blocks;
+    }
+
+    /// <summary>A table starts with a header row holding a <c>|</c>, followed by a separator row with the same
+    /// number of cells.</summary>
+    private static bool IsTableStart(string header, string separator)
+    {
+        return header.Contains('|', StringComparison.Ordinal)
+            && TableSeparator().IsMatch(separator)
+            && separator.Contains('|', StringComparison.Ordinal)
+            && SplitRow(header).Count == SplitRow(separator).Count;
+    }
+
+    /// <summary>Adds a <c>table</c> block from the header at <paramref name="start"/>, its separator and the body
+    /// rows up to the first blank line or line without <c>|</c>. Extra cells in a body row are dropped and missing
+    /// ones are not filled in, so the cell count never exceeds the input's pipes. Returns the next line's
+    /// index.</summary>
+    private static int ParseTable(string[] lines, int start, List<StoryBlock> blocks)
+    {
+        List<string> headerCells = SplitRow(lines[start].TrimEnd('\r'));
+        int columns = headerCells.Count;
+        List<IReadOnlyList<StoryInline>> header = headerCells.Select(Cell).ToList();
+        List<IReadOnlyList<IReadOnlyList<StoryInline>>> rows = [];
+        int index = start + 2;
+        while (index < lines.Length)
+        {
+            string line = lines[index].TrimEnd('\r');
+            if (string.IsNullOrWhiteSpace(line) || !line.Contains('|', StringComparison.Ordinal))
+            {
+                break;
+            }
+
+            rows.Add(SplitRow(line).Take(columns).Select(Cell).ToList());
+            index++;
+        }
+
+        blocks.Add(new StoryBlock("table", Header: header, Rows: rows));
+        return index;
+    }
+
+    private static IReadOnlyList<StoryInline> Cell(string text)
+    {
+        return ParseInlines(text.Trim());
+    }
+
+    /// <summary>Splits a row at every <c>|</c> not escaped by a backslash; one leading and one trailing pipe are
+    /// dropped.</summary>
+    private static List<string> SplitRow(string line)
+    {
+        string row = line.Trim();
+        if (row.StartsWith('|'))
+        {
+            row = row[1..];
+        }
+
+        if (row.EndsWith('|') && !row.EndsWith("\\|", StringComparison.Ordinal))
+        {
+            row = row[..^1];
+        }
+
+        List<string> cells = [];
+        StringBuilder cell = new();
+        for (int i = 0; i < row.Length; i++)
+        {
+            if (row[i] == '\\' && i + 1 < row.Length)
+            {
+                cell.Append(row[i]).Append(row[i + 1]);
+                i++;
+                continue;
+            }
+
+            if (row[i] == '|')
+            {
+                cells.Add(cell.ToString());
+                cell.Clear();
+                continue;
+            }
+
+            cell.Append(row[i]);
+        }
+
+        cells.Add(cell.ToString());
+        return cells;
     }
 
     /// <summary>Splits text into inline runs; adjacent text runs are merged.</summary>
@@ -462,6 +557,11 @@ internal static partial class StoryMarkdown
 
     [GeneratedRegex(@"\A {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*\z", RegexOptions.CultureInvariant)]
     private static partial Regex ThematicBreak();
+
+    // Non-backtracking: the space runs around the optional pipes would backtrack quadratically.
+    [GeneratedRegex(@"\A[ \t]*\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*\z",
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
+    private static partial Regex TableSeparator();
 
     [GeneratedRegex(@"\A[ \t]*(?:[-*+]|(?<ordered>[0-9]{1,9})[.)])[ \t]+(?<text>.*)\z", RegexOptions.CultureInvariant)]
     private static partial Regex ListItem();
