@@ -197,7 +197,7 @@ do_install() {
         printf '        <string>%s</string>\n' "$(xml_escape "$ROOT")"
         if [ -n "$TAILNET_HOST" ]; then
             printf '        <string>--TailnetHost</string>\n'
-            printf '        <string>%s</string>\n' "$TAILNET_HOST"
+            printf '        <string>%s</string>\n' "$(xml_escape "$TAILNET_HOST")"
         fi
         printf '    </array>\n'
         printf '    <key>WorkingDirectory</key>\n'

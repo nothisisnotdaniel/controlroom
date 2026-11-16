@@ -70,6 +70,7 @@ internal static class ServerApp
         }
 
         // The per-request "Request starting/finished" lines hold the Host header; a refused Host is never logged.
+        // Set in code on purpose: this filter wins over any Logging:LogLevel setting for the same category.
         builder.Logging.AddFilter(RequestLogCategory, LogLevel.Warning);
         builder.WebHost.PreferHostingUrls(false);
         builder.WebHost.ConfigureKestrel(ConfigureKestrel);
