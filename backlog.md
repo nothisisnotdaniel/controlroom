@@ -47,3 +47,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#37](backlog/037-refuse-after-in-titles-regardless-of.md) Refuse (after: in titles regardless of case and spacing
 - [?] [#38](backlog/038-clearer-validation-messages-in-the-backlog.md) Clearer validation messages in the backlog edit forms
 - [?] [#39](backlog/039-keep-focus-and-the-open-add.md) Keep focus and the open Add form after an edit reloads the backlog
+- [?] [#40](backlog/040-hint-to-run-status-after-installing.md) Hint to run status after installing the LaunchAgent
