@@ -20,9 +20,11 @@ public sealed class ServerEndpointTests
     public async Task Kestrel_ListensOnlyOnTheEndpointWhatever_UrlsOrKestrelConfigSay()
     {
         using TempFactoryRoot root = new();
+        using TempTokenFolder tokens = new();
         WebApplication? app = ServerApp.Create(
             [
                 "--FactoryRoot", root.Path,
+                "--TokenFile", tokens.TokenFile,
                 "--urls", "http://0.0.0.0:5999",
                 "--Kestrel:Endpoints:Other:Url", "http://0.0.0.0:5998",
             ],

@@ -4,7 +4,8 @@ using Microsoft.AspNetCore.StaticFiles;
 namespace ControlRoom.Server;
 
 /// <summary>Builds the web app: loopback-only Kestrel, security headers, GET/HEAD only, static files from the
-/// server's own <c>wwwroot</c>, the backlogs, story, board and job APIs.</summary>
+/// server's own <c>wwwroot</c>, an access token on every <c>/api/</c> request, the backlogs, story, board and job
+/// APIs.</summary>
 internal static class ServerApp
 {
     public const string ContentSecurityPolicy =
@@ -15,8 +16,12 @@ internal static class ServerApp
     /// up.</summary>
     public const string ServiceWorkerPath = "/sw.js";
 
+    /// <summary>The fixed body of a refused API request.</summary>
+    public const string UnauthorizedBody = "{\"error\":\"unauthorized\"}";
+
     /// <summary>Builds the app, or returns <c>null</c> after writing a fixed error text when there is no
-    /// factory root.</summary>
+    /// factory root or the access token file is not safe. A missing token file is created (the token itself is
+    /// never written to <paramref name="error"/>).</summary>
     public static WebApplication? Create(string[] args, TextWriter error)
     {
         // Content root (and so wwwroot) is the server's own output folder, never the current directory.
@@ -34,6 +39,25 @@ internal static class ServerApp
             return null;
         }
 
+        string tokenPath = AccessToken.ResolvePath(builder.Configuration[AccessToken.ConfigKey]);
+        TokenFileRead token = AccessToken.Read(tokenPath);
+        if (token.State == TokenFileState.Invalid)
+        {
+            error.WriteLine(AccessToken.InvalidText);
+            return null;
+        }
+
+        if (token.State == TokenFileState.Missing)
+        {
+            if (AccessToken.Replace(tokenPath, AccessToken.SystemRandom) is null)
+            {
+                error.WriteLine(AccessToken.WriteFailedText);
+                return null;
+            }
+
+            error.WriteLine(AccessToken.CreatedText);
+        }
+
         builder.WebHost.PreferHostingUrls(false);
         builder.WebHost.ConfigureKestrel(ConfigureKestrel);
         builder.Services.AddSingleton(new FactoryRoot(root));
@@ -49,6 +73,13 @@ internal static class ServerApp
                 return;
             }
 
+            if (context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase)
+                && !IsAuthorized(context.Request, tokenPath))
+            {
+                await WriteUnauthorized(context.Response);
+                return;
+            }
+
             await next(context);
         });
         app.UseDefaultFiles();
@@ -58,6 +89,42 @@ internal static class ServerApp
         BoardEndpoint.Map(app);
         JobEndpoint.Map(app);
         return app;
+    }
+
+    /// <summary>True when the request carries exactly one <c>Authorization: Bearer &lt;token&gt;</c> header that
+    /// matches the stored token. The file is read on every request, so a replaced token counts at once; an
+    /// unsafe or missing file refuses everything. A token in the query string is never looked at.</summary>
+    private static bool IsAuthorized(HttpRequest request, string tokenPath)
+    {
+        Microsoft.Extensions.Primitives.StringValues values = request.Headers.Authorization;
+        if (values.Count != 1)
+        {
+            return false;
+        }
+
+        string value = values[0] ?? "";
+        const string Scheme = "Bearer ";
+        if (!value.StartsWith(Scheme, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        TokenFileRead stored = AccessToken.Read(tokenPath);
+        if (stored.State != TokenFileState.Valid || stored.Token is null)
+        {
+            return false;
+        }
+
+        return AccessToken.Matches(stored.Token, value[Scheme.Length..]);
+    }
+
+    private static async Task WriteUnauthorized(HttpResponse response)
+    {
+        response.StatusCode = StatusCodes.Status401Unauthorized;
+        response.Headers.WWWAuthenticate = "Bearer";
+        response.Headers.CacheControl = "no-store";
+        response.ContentType = "application/json; charset=utf-8";
+        await response.WriteAsync(UnauthorizedBody);
     }
 
     /// <summary>Static files: <c>.webmanifest</c> as <c>application/manifest+json</c>, and the service worker

@@ -191,7 +191,7 @@ function show(nodes) {
 async function load() {
   let data;
   try {
-    const response = await fetch("/api/backlogs", { cache: "no-store" });
+    const response = await authFetch("/api/backlogs", { cache: "no-store" });
     if (!response.ok) {
       throw new Error("status");
     }
@@ -306,7 +306,7 @@ async function loadStory(target) {
   showStoryContent([element("p", "status", Texts.loading)]);
   let data;
   try {
-    const response = await fetch(
+    const response = await authFetch(
       "/api/story?project=" + encodeURIComponent(target.project) + "&number=" + encodeURIComponent(target.number),
       { cache: "no-store" });
     if (!response.ok) {
@@ -351,13 +351,15 @@ function viewFor(hash) {
 }
 
 function showView(name) {
+  // While the token view is shown, no data view or header is.
+  const blocked = tokenViewShown();
   for (const view of Views) {
-    document.getElementById(view).hidden = view !== name;
+    document.getElementById(view).hidden = blocked || view !== name;
   }
   // The wide board view widens the header too, so the nav lines up with the board's left edge.
-  document.body.classList.toggle("view-board", name === "board");
+  document.body.classList.toggle("view-board", !blocked && name === "board");
   const top = document.getElementById("top");
-  top.hidden = !(name in ViewTitles);
+  top.hidden = blocked || !(name in ViewTitles);
   if (!top.hidden) {
     document.getElementById("top-title").textContent = ViewTitles[name];
     for (const link of document.querySelectorAll(".nav a")) {
@@ -413,6 +415,14 @@ function registerServiceWorker() {
   navigator.serviceWorker.register("/sw.js").catch(() => undefined);
 }
 
+// After Save: show the current view again and reload its data and the backlogs.
+onTokenSaved(() => {
+  route();
+  load();
+});
+if (!hasToken()) {
+  showTokenView(false);
+}
 window.addEventListener("hashchange", route);
 route();
 load();

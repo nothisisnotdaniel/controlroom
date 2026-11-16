@@ -17,7 +17,7 @@ public sealed class BoardApiTests
         using TempFactoryRoot root = new();
         root.AddJob("007-board", JobSamples.FullState);
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpResponseMessage response = await client.GetAsync("/api/board");
         string body = await response.Content.ReadAsStringAsync();
@@ -53,7 +53,7 @@ public sealed class BoardApiTests
         using TempFactoryRoot root = new();
         root.AddJob("1-wrong", JobSamples.WrongTypes);
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/board"));
         JsonElement job = Assert.Single(json.RootElement.GetProperty("jobs").EnumerateArray());
@@ -102,7 +102,7 @@ public sealed class BoardApiTests
         }
 
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpResponseMessage response = await client.GetAsync("/api/board").WaitAsync(TimeSpan.FromSeconds(10));
         string body = await response.Content.ReadAsStringAsync();
@@ -125,7 +125,7 @@ public sealed class BoardApiTests
         }
 
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/board"));
 
@@ -139,7 +139,7 @@ public sealed class BoardApiTests
     {
         using TempFactoryRoot root = new();
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         Assert.Equal("{\"jobs\":[],\"tasks\":[]}", await client.GetStringAsync("/api/board"));
     }
@@ -154,7 +154,7 @@ public sealed class BoardApiTests
         Directory.CreateDirectory(Path.Combine(root.Path, "factory"));
         Directory.CreateSymbolicLink(root.JobsPath, real);
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         Assert.Equal("{\"jobs\":[],\"tasks\":[]}", await client.GetStringAsync("/api/board"));
     }
@@ -173,7 +173,7 @@ public sealed class BoardApiTests
         root.AddProject("Missing", null);
         root.AddProject("Oversized", new string('a', (int)BacklogReader.MaxBytes) + "\n- [h] Big: no\n");
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/board"));
         JsonElement[] tasks = json.RootElement.GetProperty("tasks").EnumerateArray().ToArray();
@@ -199,7 +199,7 @@ public sealed class BoardApiTests
         root.AddJob("1-a", JobSamples.FullState);
         IReadOnlyList<string> before = root.Snapshot();
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpRequestMessage request = new(HttpMethod.Head, "/api/board");
         using HttpResponseMessage response = await client.SendAsync(request);

@@ -12,8 +12,13 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   and `develop` branch. Jobs are `factory/jobs/<id>/state.json` plus their Markdown records.
 - **Access:** the server listens on `127.0.0.1` only, never on `0.0.0.0` or a LAN address. The user reaches
   it from the iPhone through Tailscale (`tailscale serve` gives HTTPS on the user's own tailnet and proxies to
-  the local port), so nothing is reachable from the internet. Every request that changes something needs
-  the app's access token; reads may need it too (the spec that adds it decides).
+  the local port), so nothing is reachable from the internet. Every `/api/` request (read or write) needs
+  `Authorization: Bearer <token>` (else `401 {"error":"unauthorized"}`); the static app shell stays public. The
+  one token (32 random bytes, base64url, 43 chars) lives in `~/Library/Application Support/ControlRoom/access-token`
+  (folder `0700`, file `0600`, outside the factory root; `--TokenFile <path>` overrides it) and is read on every
+  request. `dotnet run --project src/ControlRoom.Server -- token` prints it (creating it when missing),
+  `-- token --new` replaces it; a symlinked, loose-mode or invalid file stops the server until `token --new`.
+  The token is never logged, put in a URL or cached by the service worker.
 - **Safety rules:**
   - The server never runs a shell command, `claude` or any program built from request input. Git is called
     with a fixed argument list (`ProcessStartInfo.ArgumentList`), never through a shell.
@@ -34,20 +39,22 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   factory root or opens a real port.
 - **Layout:**
   - `ControlRoom.slnx`, `Directory.Build.props` (nullable, implicit usings, code style in build), `.editorconfig`.
-  - `src/ControlRoom.Server/`: `Program.cs` (entry), `ServerApp` (builds the app: Kestrel, headers, GET/HEAD
-    only, static files, endpoints), `ServerEndpoint` (the one listen address), `FactoryRootLocator`,
+  - `src/ControlRoom.Server/`: `Program.cs` (entry; `token` runs `TokenCommand`), `ServerApp` (builds the app:
+    Kestrel, headers, GET/HEAD only, the `/api/` token gate, static files, endpoints), `AccessToken` (token file
+    path, create, safe read, atomic replace, constant-time check), `TokenCommand` (`token`, `token --new`), `ServerEndpoint` (the one listen address), `FactoryRootLocator`,
     `ProjectFinder` (project discovery), `SafeFileReader` (no-follow, regular-file, size-capped text read),
     `BacklogReader` (safe `backlog.md` read), `BacklogParser` (lines to entries, old and numbered `[#N](…)`
     format), `BacklogsEndpoint` (`GET /api/backlogs`, with `waiting`), `StoryReader` (fenced read of
     `<project>/backlog/NNN-slug.md`), `StoryMarkdown` (Markdown to a JSON block tree, no HTML),
     `StoryEndpoint` (`GET /api/story?project=&number=`), `JobReader` (`factory/jobs/<id>/state.json` to a typed
     `JobSummary`), `BoardEndpoint` (`GET /api/board`: jobs and `[h]` tasks), `JobEndpoint` (`GET /api/job?id=`:
-    a job and its records from a fixed list), `wwwroot/` (`index.html`, `app.css`, `app.js` (routing, backlogs,
+    a job and its records from a fixed list), `wwwroot/` (`index.html`, `app.css`, `token.js` (stored token under
+    `controlroom-token`, `authFetch` for every `/api/` call, the token view), `app.js` (routing, backlogs,
     story), `board.js` (jobs board and job page, polls every 5 s while visible),
     `sw.js` (service worker: caches only the fixed app shell, never `/api/`; bump its cache version when the
     shell list changes), `manifest.webmanifest`, `icons/` (opaque RGB PNGs, 180/192/512 px)).
-  - `tests/ControlRoom.Server.Tests/`: one test class per unit or concern; `TempFactoryRoot` and
-    `ServerFactory` are the shared fixtures.
+  - `tests/ControlRoom.Server.Tests/`: one test class per unit or concern; `TempFactoryRoot`, `TempTokenFolder` and
+    `ServerFactory` (own temp token file; `CreateTokenClient()` for API calls) are the shared fixtures.
 - **Style:** C# like Context: file-scoped namespaces, `internal sealed` unless a type must be public, no
   primary constructors, no `var`, braces on every body, camelCase private fields without `_`; the build
   stays at 0 warnings. The web app is mobile first (iPhone width), works in light and dark mode and uses

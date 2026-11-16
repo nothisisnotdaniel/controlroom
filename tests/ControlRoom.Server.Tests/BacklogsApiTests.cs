@@ -10,7 +10,7 @@ public sealed class BacklogsApiTests
     {
         using TempFactoryRoot root = TempFactoryRoot.WithSamples();
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpResponseMessage response = await client.GetAsync("/api/backlogs");
         string body = await response.Content.ReadAsStringAsync();
@@ -51,7 +51,7 @@ public sealed class BacklogsApiTests
     {
         using TempFactoryRoot root = TempFactoryRoot.WithSamples();
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         string body = await client.GetStringAsync("/api/backlogs");
 
@@ -76,7 +76,7 @@ public sealed class BacklogsApiTests
         root.AddProject("Open", "- [ ] Fine: line\n");
         root.Lock(Path.Combine(folder, "backlog.md"));
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         string body = await client.GetStringAsync("/api/backlogs");
 
@@ -99,7 +99,7 @@ public sealed class BacklogsApiTests
         root.AddProject("Open", "- [ ] Fine: line\n");
         TempFactoryRoot.MakeFifo(Path.Combine(folder, "backlog.md"));
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         string body = await client.GetStringAsync("/api/backlogs").WaitAsync(TimeSpan.FromSeconds(10));
 
@@ -117,7 +117,7 @@ public sealed class BacklogsApiTests
         string line = "- [ ] Edge: line\n";
         root.AddProject("Edge", line + new string('#', (int)BacklogReader.MaxBytes - line.Length));
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/backlogs"));
 
@@ -129,7 +129,7 @@ public sealed class BacklogsApiTests
     {
         using TempFactoryRoot root = new();
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpResponseMessage response = await client.GetAsync("/api/backlogs");
 
@@ -143,7 +143,7 @@ public sealed class BacklogsApiTests
     {
         using TempFactoryRoot root = new();
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using HttpRequestMessage request = new(HttpMethod.Head, "/api/backlogs");
         using HttpResponseMessage response = await client.SendAsync(request);
@@ -165,7 +165,7 @@ public sealed class BacklogsApiTests
             + "- [x] [#3](backlog/003-a.md) Three → 1-y\n");
         root.AddProject("Times", timesBacklog);
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/backlogs"));
 
@@ -199,7 +199,7 @@ public sealed class BacklogsApiTests
             + "- [x] [#3](backlog/003-a.md) Three\n"
             + "- [ ] Old line: no number\n");
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/backlogs"));
 
@@ -218,7 +218,7 @@ public sealed class BacklogsApiTests
         root.AddProject("Alpha", "- [ ] [#4](backlog/004-a.md) Four (after: Missing#1)\n");
         root.AddProject("Missing", null);
         using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
 
         using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/backlogs"));
 
