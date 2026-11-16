@@ -14,7 +14,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#3](backlog/003-access-token.md) Access token → 184-access-token
 - [x] [#4](backlog/004-edit-backlogs.md) Edit backlogs (after: #3) → 185-edit-backlogs
 - [x] [#5](backlog/005-start-at-login.md) Start at login → 186-start-at-login
-- [ ] [#6](backlog/006-push-notifications.md) Push notifications (after: #1; #3)
+- [x] [#6](backlog/006-push-notifications.md) Push notifications (after: #1; #3) → 187-push-notifications
 - [ ] [#7](backlog/007-host-header-check.md) Host-header check (after: #3)
 - [ ] [#8](backlog/008-done-group-marker-style.md) Done-group marker style
 - [ ] [#9](backlog/009-empty-titles-and-retry-hint.md) Empty titles and retry hint
