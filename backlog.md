@@ -37,3 +37,6 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#26](backlog/026-usage-view-spike.md) Usage view spike
 - [?] [#28](backlog/028-close-the-symlink-race-when-reading.md) Close the symlink race when reading story files
 - [?] [#29](backlog/029-drop-the-hand-written-equality-on.md) Drop the hand-written equality on BacklogEntry
+- [?] [#30](backlog/030-cap-the-bytes-read-per-board.md) Cap the bytes read per board and job response
+- [?] [#31](backlog/031-show-pending-reviewer-chips-with-a.md) Show pending reviewer chips with a text marker
+- [?] [#32](backlog/032-show-the-live-status-line-on.md) Show the live status line on the job page
