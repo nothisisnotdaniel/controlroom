@@ -115,7 +115,7 @@ internal static class ServerApp
             return false;
         }
 
-        return AccessToken.Matches(stored.Token, value[Scheme.Length..].Trim());
+        return AccessToken.Matches(stored.Token, value[Scheme.Length..]);
     }
 
     private static async Task WriteUnauthorized(HttpResponse response)

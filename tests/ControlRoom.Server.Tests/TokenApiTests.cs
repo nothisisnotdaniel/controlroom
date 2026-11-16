@@ -129,6 +129,27 @@ public sealed class TokenApiTests
     }
 
     [Theory]
+    [InlineData("//api/board")]
+    [InlineData("/api/./board")]
+    [InlineData("/api/x/../board")]
+    [InlineData("/%61pi/board")]
+    [InlineData("/api%2Fboard")]
+    [InlineData("/api/board/")]
+    public async Task Api_OddPathFormsNeverGiveDataWithoutAToken(string path)
+    {
+        using TempFactoryRoot root = Samples();
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateClient();
+
+        using HttpResponseMessage response = await client.GetAsync(path);
+        string body = await response.Content.ReadAsStringAsync();
+
+        Assert.NotEqual(HttpStatusCode.OK, response.StatusCode);
+        Assert.DoesNotContain("\"jobs\"", body, StringComparison.Ordinal);
+        Assert.DoesNotContain(factory.ReadToken(), body, StringComparison.Ordinal);
+    }
+
+    [Theory]
     [MemberData(nameof(Shell))]
     public async Task Shell_LoadsWithoutAToken(string path)
     {
