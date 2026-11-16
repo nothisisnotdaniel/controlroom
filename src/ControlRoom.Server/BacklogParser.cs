@@ -163,8 +163,9 @@ internal static partial class BacklogParser
         RegexOptions.CultureInvariant | RegexOptions.Singleline)]
     private static partial Regex NumberedLink();
 
+    // Non-backtracking: a lazy title followed by optional space runs would backtrack quadratically.
     [GeneratedRegex(@"\A(?<title>.*?)(?:[ \t]*\(after:[ \t]*(?<after>[^()]*)\))?(?:[ \t]*(?<rest>→.*))?\z",
-        RegexOptions.CultureInvariant | RegexOptions.Singleline)]
+        RegexOptions.CultureInvariant | RegexOptions.Singleline | RegexOptions.NonBacktracking)]
     private static partial Regex Body();
 
     [GeneratedRegex(@"\A(?<project>[A-Za-z0-9._-]*)#(?<number>[0-9]{1,9})\z", RegexOptions.CultureInvariant)]

@@ -182,6 +182,25 @@ public sealed class StoryApiTests
         Assert.Equal(NotFound, await response.Content.ReadAsStringAsync());
     }
 
+    [Fact]
+    public async Task Story_DeeplyNestedLinksDoNotCrashTheServer()
+    {
+        using TempFactoryRoot root = new();
+        string alpha = root.AddProject("Alpha", "- [ ] [#5](backlog/005-deep.md) Deep\n");
+        int depth = ((int)StoryReader.MaxBytes - 1) / 5;
+        TempFactoryRoot.AddStory(
+            alpha, "005-deep.md", new string('[', depth) + "a" + string.Concat(Enumerable.Repeat("](x)", depth)));
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateClient();
+
+        using HttpResponseMessage story = await client.GetAsync("/api/story?project=Alpha&number=5")
+            .WaitAsync(TimeSpan.FromSeconds(20));
+        using HttpResponseMessage after = await client.GetAsync("/api/backlogs").WaitAsync(TimeSpan.FromSeconds(20));
+
+        Assert.Equal(HttpStatusCode.OK, story.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, after.StatusCode);
+    }
+
     private static async Task AssertNotFound(HttpClient client, string url, string rootPath)
     {
         using HttpResponseMessage response = await client.GetAsync(url);

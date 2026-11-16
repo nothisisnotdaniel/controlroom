@@ -139,4 +139,17 @@ public sealed class BacklogParserTests
         Assert.Equal(4, entry.Number);
         Assert.Empty(entry.After);
     }
+
+    [Fact]
+    public async Task Parse_LongSpaceRunInANumberedLineStaysFast()
+    {
+        string line = "- [ ] [#4](backlog/004-x.md) A" + new string(' ', 1024 * 1024) + "B (after: #3) → 1-x";
+
+        BacklogEntry entry = await Task.Run(() => Assert.Single(BacklogParser.Parse([line]).Open))
+            .WaitAsync(TimeSpan.FromSeconds(20));
+
+        Assert.Equal([new BacklogDependency(null, 3)], entry.After);
+        Assert.Equal("→ 1-x", entry.Rest);
+        Assert.EndsWith("B", entry.Title, StringComparison.Ordinal);
+    }
 }

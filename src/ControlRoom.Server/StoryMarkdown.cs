@@ -25,6 +25,9 @@ internal sealed record StoryBlock(
 /// never interpreted: it stays literal text. The output holds no markup made by the renderer.</summary>
 internal static partial class StoryMarkdown
 {
+    /// <summary>Deepest inline nesting (link text, emphasis content) that is still parsed.</summary>
+    private const int MaxDepth = 2;
+
     private const string EscapableCharacters = "\\`*_{}[]()#+-.!<>|~\"'";
 
     public static IReadOnlyList<StoryBlock> Parse(string markdown)
@@ -139,8 +142,18 @@ internal static partial class StoryMarkdown
     /// <summary>Splits text into inline runs; adjacent text runs are merged.</summary>
     public static List<StoryInline> ParseInlines(string text)
     {
+        return ParseInlines(text, 0);
+    }
+
+    /// <summary>Link text and emphasis content are parsed one level deeper; at <see cref="MaxDepth"/> brackets,
+    /// <c>*</c> and <c>_</c> stay literal, so nesting never grows the stack. Every match is looked up in tables
+    /// built once per call (<see cref="InlineScan"/>), so the work stays near linear in the text length.</summary>
+    private static List<StoryInline> ParseInlines(string text, int depth)
+    {
         List<StoryInline> inlines = [];
         StringBuilder plain = new();
+        InlineScan scan = new(text, links: depth < MaxDepth);
+        bool nested = depth < MaxDepth;
 
         void FlushText()
         {
@@ -181,7 +194,7 @@ internal static partial class StoryMarkdown
             if (c == '`')
             {
                 int run = CountRun(text, i, '`');
-                int close = FindRun(text, i + run, '`', run);
+                int close = scan.CodeClose(i);
                 if (close >= 0)
                 {
                     string code = text[(i + run)..close];
@@ -201,16 +214,16 @@ internal static partial class StoryMarkdown
                 continue;
             }
 
-            if (c == '[' || (c == '!' && i + 1 < text.Length && text[i + 1] == '['))
+            if (nested && (c == '[' || (c == '!' && i + 1 < text.Length && text[i + 1] == '[')))
             {
                 int open = c == '!' ? i + 1 : i;
-                int closeBracket = FindClosingBracket(text, open);
+                int closeBracket = scan.BracketClose(open);
                 if (closeBracket > open && closeBracket + 1 < text.Length && text[closeBracket + 1] == '(')
                 {
-                    int closeParen = FindClosingParen(text, closeBracket + 1);
+                    int closeParen = scan.ParenClose(closeBracket + 1);
                     if (closeParen > 0)
                     {
-                        AddRuns(ParseInlines(text[(open + 1)..closeBracket]));
+                        AddRuns(ParseInlines(text[(open + 1)..closeBracket], depth + 1));
                         i = closeParen + 1;
                         continue;
                     }
@@ -219,18 +232,18 @@ internal static partial class StoryMarkdown
 
             if (c == '*' || c == '_')
             {
-                int run = Math.Min(CountRun(text, i, c), 2);
-                int close = FindEmphasisClose(text, i, c, run);
+                int literal = CountRun(text, i, c);
+                int run = Math.Min(literal, 2);
+                int close = nested ? scan.EmphasisClose(i, c, run) : -1;
                 if (close >= 0)
                 {
-                    string inner = PlainText(ParseInlines(text[(i + run)..close]));
+                    string inner = PlainText(ParseInlines(text[(i + run)..close], depth + 1));
                     FlushText();
                     inlines.Add(new StoryInline(run == 2 ? "strong" : "em", inner));
                     i = close + run;
                     continue;
                 }
 
-                int literal = CountRun(text, i, c);
                 plain.Append(text, i, literal);
                 i += literal;
                 continue;
@@ -266,122 +279,183 @@ internal static partial class StoryMarkdown
         return end - start;
     }
 
-    private static int FindRun(string text, int start, char ch, int length)
+    /// <summary>Match tables for one inline text, each built in one pass: the closing run of every backtick run,
+    /// the closing <c>]</c> of every <c>[</c>, the closing <c>)</c> of every <c>(</c> (a link destination ends at
+    /// whitespace) and, per emphasis delimiter, the sorted positions that can close it outside code spans.</summary>
+    private sealed class InlineScan
     {
-        int i = start;
-        while (i < text.Length)
+        private readonly string text;
+        private readonly Dictionary<int, int> codeClose = [];
+        private readonly Dictionary<int, int> bracketClose = [];
+        private readonly Dictionary<int, int> parenClose = [];
+        private readonly Dictionary<(char, int), List<int>> closers = [];
+
+        public InlineScan(string text, bool links)
         {
-            if (text[i] == ch)
+            this.text = text;
+            MatchCodeRuns();
+            if (links)
             {
-                int run = CountRun(text, i, ch);
-                if (run == length)
+                MatchPairs('[', ']', bracketClose, stopAtWhitespace: false);
+                MatchPairs('(', ')', parenClose, stopAtWhitespace: true);
+                FindEmphasisClosers();
+            }
+        }
+
+        public int CodeClose(int start)
+        {
+            return codeClose.TryGetValue(start, out int close) ? close : -1;
+        }
+
+        public int BracketClose(int open)
+        {
+            return bracketClose.TryGetValue(open, out int close) ? close : -1;
+        }
+
+        public int ParenClose(int open)
+        {
+            return parenClose.TryGetValue(open, out int close) ? close : -1;
+        }
+
+        /// <summary>The first closer after the opener's first content character, or -1. The opener must be
+        /// followed by a non-space and, for <c>_</c>, not stand inside a word.</summary>
+        public int EmphasisClose(int start, char ch, int run)
+        {
+            int contentStart = start + run;
+            if (contentStart >= text.Length || char.IsWhiteSpace(text[contentStart]))
+            {
+                return -1;
+            }
+
+            if (ch == '_' && start > 0 && char.IsLetterOrDigit(text[start - 1]))
+            {
+                return -1;
+            }
+
+            if (!closers.TryGetValue((ch, run), out List<int>? positions))
+            {
+                return -1;
+            }
+
+            int index = positions.BinarySearch(contentStart + 1);
+            if (index < 0)
+            {
+                index = ~index;
+            }
+
+            return index < positions.Count ? positions[index] : -1;
+        }
+
+        /// <summary>Pairs each backtick run with the next run of the same length (found right to left).</summary>
+        private void MatchCodeRuns()
+        {
+            List<(int Start, int Length)> runs = [];
+            int i = 0;
+            while (i < text.Length)
+            {
+                if (text[i] == '`')
                 {
-                    return i;
+                    int length = CountRun(text, i, '`');
+                    runs.Add((i, length));
+                    i += length;
+                    continue;
                 }
 
-                i += run;
-                continue;
+                i++;
             }
 
-            i++;
+            Dictionary<int, int> nextOfLength = [];
+            for (int index = runs.Count - 1; index >= 0; index--)
+            {
+                (int start, int length) = runs[index];
+                if (nextOfLength.TryGetValue(length, out int next))
+                {
+                    codeClose[start] = next;
+                }
+
+                nextOfLength[length] = start;
+            }
         }
 
-        return -1;
-    }
-
-    private static int FindClosingBracket(string text, int open)
-    {
-        int depth = 0;
-        for (int i = open; i < text.Length; i++)
+        private void MatchPairs(char open, char close, Dictionary<int, int> pairs, bool stopAtWhitespace)
         {
-            if (text[i] == '[')
+            Stack<int> openers = new();
+            for (int i = 0; i < text.Length; i++)
             {
-                depth++;
-            }
-            else if (text[i] == ']')
-            {
-                depth--;
-                if (depth == 0)
+                if (text[i] == open)
                 {
-                    return i;
+                    openers.Push(i);
+                }
+                else if (text[i] == close && openers.Count > 0)
+                {
+                    pairs[openers.Pop()] = i;
+                }
+                else if (stopAtWhitespace && char.IsWhiteSpace(text[i]))
+                {
+                    openers.Clear();
                 }
             }
         }
 
-        return -1;
-    }
-
-    /// <summary>Finds the <c>)</c> that closes the link destination opened at <paramref name="open"/>, allowing
-    /// balanced parentheses inside it.</summary>
-    private static int FindClosingParen(string text, int open)
-    {
-        int depth = 0;
-        for (int i = open; i < text.Length; i++)
+        /// <summary>A closer follows a non-space, is not inside a code span, for <c>_</c> is not followed by a
+        /// letter or digit, and for a single delimiter is not followed by another one.</summary>
+        private void FindEmphasisClosers()
         {
-            if (text[i] == '(')
+            int i = 1;
+            while (i < text.Length)
             {
-                depth++;
-            }
-            else if (text[i] == ')')
-            {
-                depth--;
-                if (depth == 0)
+                char ch = text[i];
+                if (ch == '`')
                 {
-                    return i;
+                    int run = CountRun(text, i, '`');
+                    int close = CodeClose(i);
+                    i = close >= 0 ? close + run : i + run;
+                    continue;
                 }
+
+                if ((ch == '*' || ch == '_') && !char.IsWhiteSpace(text[i - 1]))
+                {
+                    foreach (int run in new[] { 1, 2 })
+                    {
+                        if (IsCloser(i, ch, run))
+                        {
+                            if (!closers.TryGetValue((ch, run), out List<int>? positions))
+                            {
+                                positions = [];
+                                closers[(ch, run)] = positions;
+                            }
+
+                            positions.Add(i);
+                        }
+                    }
+                }
+
+                i++;
             }
         }
 
-        return -1;
-    }
-
-    /// <summary>Finds the closing delimiter of an emphasis run: the opener must be followed by a non-space and,
-    /// for <c>_</c>, not stand inside a word; the closer must follow a non-space and, for <c>_</c>, not be
-    /// followed by a letter or digit.</summary>
-    private static int FindEmphasisClose(string text, int start, char ch, int run)
-    {
-        int contentStart = start + run;
-        if (contentStart >= text.Length || char.IsWhiteSpace(text[contentStart]))
+        private bool IsCloser(int i, char ch, int run)
         {
-            return -1;
-        }
-
-        if (ch == '_' && start > 0 && char.IsLetterOrDigit(text[start - 1]))
-        {
-            return -1;
-        }
-
-        string delimiter = new(ch, run);
-        int i = contentStart + 1;
-        while (i <= text.Length - run)
-        {
-            if (text[i] == '`')
+            if (i + run > text.Length || (run == 2 && text[i + 1] != ch))
             {
-                int ticks = CountRun(text, i, '`');
-                int close = FindRun(text, i + ticks, '`', ticks);
-                i = close >= 0 ? close + ticks : i + ticks;
-                continue;
+                return false;
             }
 
-            if (string.CompareOrdinal(text, i, delimiter, 0, run) == 0
-                && !char.IsWhiteSpace(text[i - 1])
-                && (ch != '_' || i + run >= text.Length || !char.IsLetterOrDigit(text[i + run]))
-                && (run == 2 || i + 1 >= text.Length || text[i + 1] != ch))
+            if (ch == '_' && i + run < text.Length && char.IsLetterOrDigit(text[i + run]))
             {
-                return i;
+                return false;
             }
 
-            i++;
+            return run == 2 || i + 1 >= text.Length || text[i + 1] != ch;
         }
-
-        return -1;
     }
 
     [GeneratedRegex(@"\A {0,3}(?<fence>`{3,}|~{3,})", RegexOptions.CultureInvariant)]
     private static partial Regex Fence();
 
+    // Non-backtracking: a lazy title followed by optional space runs would backtrack quadratically.
     [GeneratedRegex(@"\A {0,3}(?<hashes>#{1,6})(?:[ \t]+(?<text>.*?))?(?:[ \t]+#+)?[ \t]*\z",
-        RegexOptions.CultureInvariant)]
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
     private static partial Regex Heading();
 
     [GeneratedRegex(@"\A {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*\z", RegexOptions.CultureInvariant)]
