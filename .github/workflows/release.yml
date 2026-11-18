@@ -141,6 +141,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Left unquoted below on purpose: when empty it must add no argument at all.
           PRERELEASE=""
           case "$VERSION" in
             *-*) PRERELEASE="--prerelease" ;;

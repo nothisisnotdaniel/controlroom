@@ -65,7 +65,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   runner it re-checks the PR, runs `dotnet test -c Release`, publishes `-r osx-arm64 --self-contained
   -p:Version=X.Y.Z`, smoke-checks `ControlRoom.Server version`, packs `controlroom-X.Y.Z-osx-arm64.tar.gz` (one top
   folder), writes `SHA256SUMS`, attests build provenance and runs `gh release create vX.Y.Z` on the merge commit
-  (`--prerelease` for a prerelease version). Top-level `permissions: {}`; the job has only `contents: write`,
+  (`--title "ControlRoom X.Y.Z" --generate-notes`, plus `--prerelease` for a prerelease version). Top-level `permissions: {}`; the job has only `contents: write`,
   `id-token: write`, `attestations: write`; every action pinned to a commit SHA; PR fields only through `env:`.
   Check a tarball with `gh attestation verify <tarball> --repo nothisisnotdaniel/controlroom`. The repo slug is fixed
   in `launch-agent.sh`; renaming the repo breaks `--release`.
