@@ -139,8 +139,10 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `<UTC> <word>[ <tags>]` (`off`, `not_release`, `busy`, `job_running`, `current`, `latest_failed`,
     `download_failed`, `check_failed`, `skipped_failed`, `updated`, `rolled_back`, `swap_failed`,
     `rollback_failed`). Lock `<support>/.update.lock` (stale after 1 h); swap: bootout, `server` to
-    `server.previous`, new folder to `server`, bootstrap, poll `/health` up to 15 times; rolls back when it does
-    not answer. `valid_tag`, `latest_tag`, `download` and `check_and_extract` are byte-identical to
+    `server.previous`, new folder to `server`, bootstrap, poll `/health` up to 15 times (an answer counts only while
+    `launchctl print` shows the server running and its pid is the only listener `lsof` shows on port 8100); rolls
+    back when it does not answer, and (as `swap_failed`) when the marker can't be updated. A `state.json` over
+    64 KiB counts as a running job. `valid_tag`, `latest_tag`, `download` and `check_and_extract` are byte-identical to
     `launch-agent.sh` (a test compares them).
   - `.github/workflows/release.yml` and `.github/scripts/release-version.sh` (title `release vX.Y.Z` to `X.Y.Z`;
     existing tags on stdin).

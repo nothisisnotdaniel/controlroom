@@ -4,10 +4,11 @@
 # where <support> is ~/Library/Application Support/ControlRoom. When the user turned on "Install updates
 # automatically" (settings.json is exactly {"autoUpdate":true}), the install is a release (installed-release holds
 # its tag) and no factory job is running, it installs a newer GitHub release with the same download and checks as
-# `launch-agent.sh install --release`, swaps it in, confirms it through the public GET /health route and rolls back
-# when it doesn't answer. It writes update-result.json for the server's push and prints exactly one line,
+# `launch-agent.sh install --release`, swaps it in, confirms it through the public GET /health route (counted only
+# while launchd runs the server and its pid is the one listening on the port) and rolls back when it doesn't
+# answer or the marker can't be updated. It writes update-result.json for the server's push and prints exactly one line,
 # "<UTC ISO-8601> <word>[ <tags>]", which launchd appends to ~/Library/Logs/ControlRoom/updater.log.
-# POSIX sh. Runs only launchctl, curl, tar and shasum (plus standard tools), all with fixed arguments.
+# POSIX sh. Runs only launchctl, curl, lsof, tar and shasum (plus standard tools), all with fixed arguments.
 # Never reads, copies or sends the access token. Nothing from the download runs here.
 
 set -u
@@ -32,6 +33,10 @@ HEALTH_URL="http://127.0.0.1:8100/health"
 HEALTH_TRIES=15
 # A lock older than this (minutes) is left over from a run that died, and is removed.
 LOCK_MINUTES=60
+# launchctl print indents the service's own fields with one tab (nested ones with more).
+TAB=$(printf '\t')
+# A job's state.json larger than this counts as a running job (it is never read).
+MAX_STATE_BYTES=65536
 
 INSTALLED=""
 TAG=""
@@ -160,8 +165,9 @@ is_newer() {
     [ "$core" != "$installed" ]
 }
 
-# True when no job is in an active stage. A missing jobs folder or an unreadable state.json counts as a running
-# job, so the updater never swaps the server under one.
+# True when no job is in an active stage. A missing jobs folder, or a state.json that is not a regular file, is
+# larger than MAX_STATE_BYTES or can't be read, counts as a running job, so the updater never swaps the server
+# under one.
 jobs_idle() {
     if [ ! -d "$ROOT/factory/jobs" ]; then
         return 1
@@ -173,6 +179,8 @@ jobs_idle() {
         if [ ! -f "$state" ] || [ -L "$state" ]; then
             return 1
         fi
+        size=$(wc -c <"$state") || return 1
+        [ $((size + 0)) -le "$MAX_STATE_BYTES" ] || return 1
         LC_ALL=C grep -Eq '"stage"[[:space:]]*:[[:space:]]*"(spike|spec|build|review)"' "$state"
         case $? in
             1) ;;
@@ -190,14 +198,28 @@ last_skipped_version() {
         "$RESULT"
 }
 
-# True when GET /health answers exactly {"version":"$1"} within HEALTH_TRIES tries. No Authorization header and
-# no curl config file (-q): the route is public.
+# True when launchd runs the server (top-level "state = running" in launchctl print) and its pid is the only
+# process listening on port 8100 that lsof shows, so an answer from another local process that took the port
+# after the bootout is never counted. Fails closed on anything else.
+server_owns_port() {
+    printed=$("$LAUNCHCTL" print "$SERVICE") || return 1
+    printf '%s\n' "$printed" | LC_ALL=C grep -qx "${TAB}state = running" || return 1
+    pid=$(printf '%s\n' "$printed" | LC_ALL=C sed -n "s/^${TAB}pid = \([1-9][0-9]*\)\$/\1/p")
+    case $pid in
+        "" | *[!0-9]*) return 1 ;;
+    esac
+    listeners=$("$LSOF" -nP -iTCP:8100 -sTCP:LISTEN -t) || return 1
+    [ "$listeners" = "$pid" ]
+}
+
+# True when GET /health answers exactly {"version":"$1"} from the launchd server within HEALTH_TRIES tries. No
+# Authorization header and no curl config file (-q): the route is public.
 health_is() {
     tries=0
     while :; do
         tries=$((tries + 1))
         body=$("$CURL" -q -fsS --max-time 2 --noproxy '*' "$HEALTH_URL" && printf x) && body=${body%x} \
-            && [ "$body" = "{\"version\":\"$1\"}" ] && return 0
+            && [ "$body" = "{\"version\":\"$1\"}" ] && server_owns_port && return 0
         if [ "$tries" -ge "$HEALTH_TRIES" ]; then
             return 1
         fi
@@ -249,11 +271,20 @@ swap() {
     fi
     bootstrap_server
     if health_is "${TAG#v}"; then
-        write_private "$MARKER" "$TAG"
-        write_result updated
-        finish updated
+        # The marker must name the running release, else the next run installs it again: when it can't be
+        # written, the old version (which the marker still names) is put back as for a failed swap.
+        if write_private "$MARKER" "$TAG"; then
+            write_result updated
+            finish updated
+        fi
+        roll_back swap_failed swap
     fi
+    roll_back rolled_back no_answer
+}
 
+# Puts server.previous back in place of the new server and confirms the old version; logs $1 and writes result
+# reason $2, or rollback_failed when the rename fails or the old version does not answer.
+roll_back() {
     bootout_server
     rm -rf "$SERVER"
     if [ -e "$SERVER" ] || [ -L "$SERVER" ] || ! mv "$PREVIOUS" "$SERVER"; then
@@ -262,8 +293,8 @@ swap() {
     fi
     bootstrap_server
     if health_is "${INSTALLED#v}"; then
-        write_result update_failed no_answer
-        finish rolled_back
+        write_result update_failed "$2"
+        finish "$1"
     fi
     end_rollback_failed
 }
@@ -409,6 +440,7 @@ if [ ! -d "$SERVER" ] || [ -L "$SERVER" ] || [ -L "$PREVIOUS" ] || [ -L "$AGENTS
     finish not_release
 fi
 LAUNCHCTL=$(find_program launchctl) || finish not_release
+LSOF=$(find_program lsof) || finish not_release
 DOMAIN="gui/$USER_ID"
 SERVICE="$DOMAIN/$LABEL"
 

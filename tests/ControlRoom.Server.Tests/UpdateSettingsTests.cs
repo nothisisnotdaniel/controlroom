@@ -1,4 +1,5 @@
 using System.Net;
+using System.Runtime.Versioning;
 using System.Text;
 
 namespace ControlRoom.Server.Tests;
@@ -205,6 +206,8 @@ public sealed class UpdateSettingsTests
         }
     }
 
+    /// <summary>Called only after the Windows guard in the bad-store test.</summary>
+    [UnsupportedOSPlatform("windows")]
     private static List<string> Snapshot(string folder, string target)
     {
         List<string> entries = [];

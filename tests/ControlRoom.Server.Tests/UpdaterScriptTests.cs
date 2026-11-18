@@ -52,7 +52,10 @@ public sealed partial class UpdaterScriptTests
         string line = home.RunOnce();
 
         Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), line);
-        Assert.Equal(["bootout " + home.Service, "bootstrap " + home.Domain + " " + home.ServerPlist], home.LaunchctlCalls());
+        Assert.Equal(
+            ["bootout " + home.Service, "bootstrap " + home.Domain + " " + home.ServerPlist, "print " + home.Service],
+            home.AllLaunchctlCalls());
+        Assert.Equal(["-nP -iTCP:8100 -sTCP:LISTEN -t"], home.LsofCalls());
         Assert.Equal("{\"version\":\"1.3.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
         Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Previous, "health")));
         Assert.Equal("v1.3.0\n", File.ReadAllText(home.Marker));
@@ -225,6 +228,149 @@ public sealed partial class UpdaterScriptTests
 
         Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
         AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
+    }
+
+    [Theory]
+    [InlineData("other-listener")]
+    [InlineData("two-listeners")]
+    [InlineData("no-listener")]
+    [InlineData("not-running")]
+    public void HealthAnswerNotFromTheLaunchdServer_IsNeverCountedAsUpdated(string fault)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        switch (fault)
+        {
+            case "other-listener":
+                home.SetListeners("999\n");
+                break;
+            case "two-listeners":
+                home.SetListeners("4242\n999\n");
+                break;
+            case "no-listener":
+                home.SetListeners("");
+                break;
+            default:
+                home.ServerNotRunning();
+                break;
+        }
+
+        Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
+        Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
+        Assert.Equal(30, home.CurlCalls().Count(call => call == HealthCall));
+        Assert.Equal(28, home.SleepCalls().Count);
+        Assert.Equal(30, home.AllLaunchctlCalls().Count(call => call == "print " + home.Service));
+    }
+
+    [Fact]
+    public void OnlyTheServerPidListening_IsConfirmed()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.SetListeners("4242\n");
+
+        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
+        Assert.Equal("v1.3.0\n", File.ReadAllText(home.Marker));
+    }
+
+    [Fact]
+    public void FailedMarkerWrite_PutsTheOldVersionBackAsSwapFailed()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.FailMoveTo("/installed-release");
+
+        Assert.Matches(LinePattern("swap_failed v1.2.0 v1.3.0"), home.RunOnce());
+        Assert.Equal(
+            ["bootout " + home.Service, "bootstrap " + home.Domain + " " + home.ServerPlist,
+                "bootout " + home.Service, "bootstrap " + home.Domain + " " + home.ServerPlist],
+            home.LaunchctlCalls());
+        Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
+        Assert.False(Directory.Exists(home.Previous));
+        Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"swap\"");
+        Assert.Equal(2, home.CurlCalls().Count(call => call == HealthCall));
+        Assert.Empty(home.Leftovers());
+    }
+
+    [Fact]
+    public void FailedMarkerWriteAndNoOldAnswer_IsRollbackFailed()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        File.Delete(Path.Combine(home.Server, "health"));
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.FailMoveTo("/installed-release");
+
+        Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
+        Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
+    }
+
+    [Theory]
+    [InlineData(65536, false)]
+    [InlineData(65537, true)]
+    public void StateFileOverTheCap_CountsAsARunningJob(int size, bool running)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        string content = "{\"stage\": \"done\"}\n";
+        home.AddRawJob("1-big", content + new string(' ', size - content.Length));
+        home.SetRedirect(Releases + "/tag/v1.2.0");
+
+        if (running)
+        {
+            AssertNothingDone(home, "job_running", " v1.2.0");
+        }
+        else
+        {
+            Assert.Matches(LinePattern("current v1.2.0 v1.2.0"), home.RunOnce());
+        }
+    }
+
+    [Fact]
+    public void UnreadableStateFile_CountsAsARunningJob()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddJob("1-done", "done");
+        string state = Path.Combine(home.Root, "factory", "jobs", "1-done", "state.json");
+        File.SetUnixFileMode(state, UnixFileMode.None);
+
+        AssertNothingDone(home, "job_running", " v1.2.0");
+        File.SetUnixFileMode(state, UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }
 
     [Theory]
@@ -543,17 +689,38 @@ public sealed partial class UpdaterScriptTests
             "#!/bin/sh\n"
             + "printf '%s\\n' \"$*\" >> \"$HOME/calls.log\"\n"
             + "case $1 in bootstrap) : > \"$HOME/loaded\" ;; bootout) rm -f \"$HOME/loaded\" ;; esac\n"
+            + "if [ \"$1\" = print ]; then\n"
+            + "  if [ -f \"$HOME/loaded\" ] && [ ! -f \"$HOME/not-running\" ]; then\n"
+            + "    printf '\\tstate = running\\n\\tpid = 4242\\n\\tendpoints = {\\n\\t\\tpid = 7\\n\\t}\\n'; exit 0\n"
+            + "  fi\n"
+            + "  if [ -f \"$HOME/loaded\" ]; then printf '\\tstate = waiting\\n'; exit 0; fi\n"
+            + "  exit 113\n"
+            + "fi\n"
             + "exit 0\n";
+
+        /// <summary>Logs its arguments; prints <c>$HOME/lsof-out</c> when set, else the fake server pid 4242 while
+        /// loaded, else nothing with exit 1 (like the real <c>lsof</c>).</summary>
+        private const string FakeLsof =
+            "#!/bin/sh\n"
+            + "printf '%s\\n' \"$*\" >> \"$HOME/lsof.log\"\n"
+            + "if [ -f \"$HOME/lsof-out\" ]; then cat \"$HOME/lsof-out\"; exit 0; fi\n"
+            + "if [ -f \"$HOME/loaded\" ]; then echo 4242; exit 0; fi\n"
+            + "exit 1\n";
 
         private const string FakeSleep =
             "#!/bin/sh\n"
             + "printf '%s\\n' \"$*\" >> \"$HOME/sleep.log\"\n"
             + "exit 0\n";
 
-        /// <summary>Fails (exit 1) when the source ends with the text in <c>$HOME/mv-fail</c>, else runs the real
-        /// <c>mv</c>.</summary>
+        /// <summary>Fails (exit 1) when the source ends with the text in <c>$HOME/mv-fail</c> or the target with the
+        /// text in <c>$HOME/mv-fail-to</c>, else runs the real <c>mv</c>.</summary>
         private const string FakeMv =
             "#!/bin/sh\n"
+            + "if [ -f \"$HOME/mv-fail-to\" ]; then\n"
+            + "  suffix=$(cat \"$HOME/mv-fail-to\")\n"
+            + "  for a in \"$@\"; do last=$a; done\n"
+            + "  case $last in *\"$suffix\") exit 1 ;; esac\n"
+            + "fi\n"
             + "if [ -f \"$HOME/mv-fail\" ]; then\n"
             + "  suffix=$(cat \"$HOME/mv-fail\")\n"
             + "  for a in \"$@\"; do case $a in *\"$suffix\") exit 1 ;; esac; break; done\n"
@@ -592,7 +759,8 @@ public sealed partial class UpdaterScriptTests
             + "exit 22\n";
 
         private static readonly string[] HarnessFiles =
-            ["calls.log", "curl.log", "curl-stdin.log", "sleep.log", "loaded", "redirect", "mv-fail"];
+            ["calls.log", "curl.log", "curl-stdin.log", "sleep.log", "lsof.log", "loaded", "redirect", "mv-fail",
+                "mv-fail-to", "lsof-out", "not-running"];
 
         public UpdaterHome()
             : this("v1.2.0")
@@ -609,6 +777,7 @@ public sealed partial class UpdaterScriptTests
             WriteExecutable(System.IO.Path.Combine(bin, "curl"), FakeCurl);
             WriteExecutable(System.IO.Path.Combine(bin, "sleep"), FakeSleep);
             WriteExecutable(System.IO.Path.Combine(bin, "mv"), FakeMv);
+            WriteExecutable(System.IO.Path.Combine(bin, "lsof"), FakeLsof);
             Directory.CreateDirectory(System.IO.Path.Combine(Root, "factory", "jobs"));
 
             Directory.CreateDirectory(Support);
@@ -721,6 +890,30 @@ public sealed partial class UpdaterScriptTests
             File.WriteAllText(System.IO.Path.Combine(Path, "mv-fail"), suffix);
         }
 
+        public void FailMoveTo(string suffix)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "mv-fail-to"), suffix);
+        }
+
+        /// <summary>launchd reports the server loaded but not running (<c>state = waiting</c>).</summary>
+        public void ServerNotRunning()
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "not-running"), "");
+        }
+
+        /// <summary>What the fake <c>lsof</c> prints as the listening pids.</summary>
+        public void SetListeners(string pids)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "lsof-out"), pids);
+        }
+
+        public void AddRawJob(string id, string content)
+        {
+            string folder = System.IO.Path.Combine(Root, "factory", "jobs", id);
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(System.IO.Path.Combine(folder, "state.json"), content);
+        }
+
         public void AddJob(string id, string stage)
         {
             string folder = System.IO.Path.Combine(Root, "factory", "jobs", id);
@@ -763,9 +956,20 @@ public sealed partial class UpdaterScriptTests
             File.WriteAllText(System.IO.Path.Combine(release, "SHA256SUMS"), hash + "  " + top + ".tar.gz\n");
         }
 
+        /// <summary>The launchctl calls that change state (<c>print</c> only reads and is left out).</summary>
         public IReadOnlyList<string> LaunchctlCalls()
         {
+            return [.. ReadLines("calls.log").Where(call => !call.StartsWith("print ", StringComparison.Ordinal))];
+        }
+
+        public IReadOnlyList<string> AllLaunchctlCalls()
+        {
             return ReadLines("calls.log");
+        }
+
+        public IReadOnlyList<string> LsofCalls()
+        {
+            return ReadLines("lsof.log");
         }
 
         public IReadOnlyList<string> CurlCalls()
