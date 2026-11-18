@@ -58,3 +58,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#48](backlog/048-strict-semver-prerelease-identifiers-in-release.md) Strict SemVer prerelease identifiers in release tags
 - [?] [#49](backlog/049-verify-release-signatures-in-the-updater.md) Verify release signatures in the updater without gh
 - [?] [#50](backlog/050-updater-port-check-when-another-user.md) Updater port check when another user holds the port
+- [ ] [#51](backlog/051-develop-prerelease-builds-and-an-opt.md) Develop prerelease builds and an opt-in develop update channel
