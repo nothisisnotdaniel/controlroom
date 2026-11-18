@@ -24,7 +24,7 @@ public sealed class UpdateApiTests
         Assert.Equal(
             "{\"current\":\"1.0.0\",\"available\":true,\"latest\":\"1.2.0\","
             + "\"url\":\"https://github.com/nothisisnotdaniel/controlroom/releases/tag/v1.2.0\","
-            + "\"command\":\"scripts/launch-agent.sh install --release v1.2.0\"}",
+            + "\"command\":\"scripts/launch-agent.sh install --release v1.2.0\",\"autoUpdate\":false}",
             await response.Content.ReadAsStringAsync());
     }
 
@@ -42,7 +42,7 @@ public sealed class UpdateApiTests
         Assert.Equal(
             "{\"current\":\"1.0.0-rc.1\",\"available\":true,\"latest\":\"1.0.0\","
             + "\"url\":\"https://github.com/nothisisnotdaniel/controlroom/releases/tag/v1.0.0\","
-            + "\"command\":\"scripts/launch-agent.sh install --release v1.0.0 --tailnet-host mac.tail1234.ts.net\"}",
+            + "\"command\":\"scripts/launch-agent.sh install --release v1.0.0 --tailnet-host mac.tail1234.ts.net\",\"autoUpdate\":false}",
             json);
     }
 
@@ -62,7 +62,7 @@ public sealed class UpdateApiTests
         string json = await client.GetStringAsync(UpdateEndpoint.Route);
 
         Assert.Equal(
-            "{\"current\":\"" + current + "\",\"available\":false,\"latest\":null,\"url\":null,\"command\":null}", json);
+            "{\"current\":\"" + current + "\",\"available\":false,\"latest\":null,\"url\":null,\"command\":null,\"autoUpdate\":false}", json);
     }
 
     [Fact]

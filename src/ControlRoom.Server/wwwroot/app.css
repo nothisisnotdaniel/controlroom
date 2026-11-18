@@ -993,6 +993,19 @@ body:has(#edit-notice:not([hidden])) {
   overflow-wrap: anywhere;
 }
 
+/* "Install updates automatically" under the version line. */
+.auto-update {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.auto-update-text,
+.auto-update-note {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
 /* Update banner under the board heading. */
 .update {
   max-width: 640px;

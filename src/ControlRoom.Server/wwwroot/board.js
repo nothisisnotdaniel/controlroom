@@ -24,7 +24,12 @@ const BoardTexts = {
   copy: "Copy",
   copied: "Copied.",
   releaseNotes: "Release notes",
+  autoUpdate: "Install updates automatically",
+  autoUpdateUnreadable: "Can't read the update setting.",
+  autoUpdateFailed: "Can't change the update setting. Try again.",
 };
+
+const AutoUpdateRoute = "/api/update/settings";
 
 // Only a link to this repo's release page is shown.
 const UpdateReleasePrefix = "https://github.com/nothisisnotdaniel/controlroom/releases/tag/";
@@ -469,6 +474,7 @@ async function loadUpdate() {
       return;
     }
     const data = await response.json();
+    renderAutoUpdate(asText(data && data.current), data && typeof data.autoUpdate === "boolean" ? data.autoUpdate : null);
     const latest = asText(data && data.latest);
     const command = asText(data && data.command);
     if (!data || data.available !== true || latest === "" || command === "") {
@@ -511,6 +517,63 @@ function renderUpdate(section, latest, current, command, url) {
   }
   section.replaceChildren(...parts);
   section.hidden = false;
+}
+
+// The "Install updates automatically" switch under the version line, only for a release (never on dev). It shows
+// the stored setting; null (a refused settings file) shows a fixed text and no switch.
+function renderAutoUpdate(current, autoUpdate) {
+  const box = document.getElementById("auto-update");
+  if (current === "" || current === "dev") {
+    box.replaceChildren();
+    box.hidden = true;
+    return;
+  }
+  if (autoUpdate === null) {
+    box.replaceChildren(element("p", "auto-update-text", BoardTexts.autoUpdateUnreadable));
+    box.hidden = false;
+    return;
+  }
+  const label = element("label", "push-switch");
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.setAttribute("role", "switch");
+  input.checked = autoUpdate;
+  const note = element("p", "auto-update-note");
+  note.setAttribute("role", "status");
+  note.setAttribute("aria-live", "polite");
+  note.hidden = true;
+  input.addEventListener("change", () => setAutoUpdate(input, note));
+  label.append(input, element("span", null, BoardTexts.autoUpdate));
+  box.replaceChildren(label, note);
+  box.hidden = false;
+}
+
+// Sends the tapped value; on any error the switch goes back to its old state and a fixed text is shown.
+async function setAutoUpdate(input, note) {
+  const wanted = input.checked;
+  input.disabled = true;
+  note.hidden = true;
+  try {
+    const response = await authFetch(AutoUpdateRoute, {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ autoUpdate: wanted }),
+    });
+    if (!response.ok) {
+      throw new Error("status");
+    }
+    const data = await response.json();
+    if (!data || data.autoUpdate !== wanted) {
+      throw new Error("data");
+    }
+  } catch {
+    input.checked = !wanted;
+    note.textContent = BoardTexts.autoUpdateFailed;
+    note.hidden = false;
+  } finally {
+    input.disabled = false;
+  }
 }
 
 function rememberBoardScroll() {

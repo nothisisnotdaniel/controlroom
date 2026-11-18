@@ -135,7 +135,7 @@ internal static class PushEndpoint
     }
 
     /// <summary>The body when it is JSON (UTF-8) and at most <see cref="MaxBodyBytes"/>, else <c>null</c>.</summary>
-    private static async Task<byte[]?> ReadJsonBody(HttpRequest request)
+    internal static async Task<byte[]?> ReadJsonBody(HttpRequest request)
     {
         if (request.ContentType is null
             || !MediaTypeHeaderValue.TryParse(request.ContentType, out MediaTypeHeaderValue? media)
@@ -216,7 +216,7 @@ internal static class PushEndpoint
         }
     }
 
-    private static IResult Error(int status, string error)
+    internal static IResult Error(int status, string error)
     {
         return Results.Content("{\"error\":\"" + error + "\"}", "application/json", statusCode: status);
     }

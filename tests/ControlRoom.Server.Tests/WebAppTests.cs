@@ -322,7 +322,8 @@ public sealed partial class WebAppTests
         int version = html.IndexOf("<p class=\"app-version\" id=\"app-version\" hidden></p>", StringComparison.Ordinal);
         int end = html.IndexOf("</main>", board, StringComparison.Ordinal);
         Assert.True(board >= 0 && board < push && push < version && version < end);
-        Assert.Equal("\n  ", html[(version + "<p class=\"app-version\" id=\"app-version\" hidden></p>".Length)..end]);
+        Assert.Equal("\n    <div class=\"auto-update\" id=\"auto-update\" hidden></div>\n  ",
+            html[(version + "<p class=\"app-version\" id=\"app-version\" hidden></p>".Length)..end]);
     }
 
     [Fact]

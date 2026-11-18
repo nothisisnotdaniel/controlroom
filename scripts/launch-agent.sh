@@ -3,13 +3,18 @@
 # Usage: scripts/launch-agent.sh install|uninstall|status
 #        scripts/launch-agent.sh install --tailnet-host <mac>.<tailnet>.ts.net  (adds --TailnetHost <name>)
 #        scripts/launch-agent.sh install --release [vX.Y.Z] [--tailnet-host <name>]
-#          (installs the ready-built release from GitHub instead of publishing: the latest one, or vX.Y.Z)
+#          (installs the ready-built release from GitHub instead of publishing: the latest one, or vX.Y.Z,
+#          plus the updater LaunchAgent local.controlroom.updater that runs <support>/updater.sh every 6 h)
 # POSIX sh. Runs only dotnet (publish), launchctl and, with --release, curl, tar and shasum, all with fixed
 # arguments. Never reads the access token file.
 
 set -u
 
 LABEL="local.controlroom.server"
+UPDATER_LABEL="local.controlroom.updater"
+# Every 6 h; launchd never starts it at load.
+UPDATER_INTERVAL=21600
+UPDATE_RUNNING="An update is running. Try again in a few minutes."
 USAGE="usage: scripts/launch-agent.sh install [--release [vX.Y.Z]] [--tailnet-host <name>]|uninstall|status"
 # The one repository releases come from (renaming it breaks --release).
 RELEASES="https://github.com/nothisisnotdaniel/controlroom/releases"
@@ -152,6 +157,12 @@ LOG="$LOG_DIR/server.log"
 SUPPORT="$HOME/Library/Application Support/ControlRoom"
 SERVER="$SUPPORT/server"
 SERVER_NEW="$SUPPORT/server.new"
+PREVIOUS="$SUPPORT/server.previous"
+UPDATER_PLIST="$AGENTS/$UPDATER_LABEL.plist"
+UPDATER_SCRIPT="$SUPPORT/updater.sh"
+UPDATER_LOG="$LOG_DIR/updater.log"
+MARKER="$SUPPORT/installed-release"
+UPDATE_LOCK="$SUPPORT/.update.lock"
 
 LAUNCHCTL=$(command -v launchctl) || fail "launchctl not found on PATH."
 case $LAUNCHCTL in
@@ -161,6 +172,35 @@ esac
 USER_ID=$(id -u) || fail "Can't read the user id."
 DOMAIN="gui/$USER_ID"
 SERVICE="$DOMAIN/$LABEL"
+UPDATER_SERVICE="$DOMAIN/$UPDATER_LABEL"
+
+# Stops while the updater holds its lock (a lock older than 1 h is left over and does not count).
+refuse_while_updating() {
+    if [ -e "$UPDATE_LOCK" ] || [ -L "$UPDATE_LOCK" ]; then
+        if [ -z "$(find "$UPDATE_LOCK" -prune -mmin +60 2>/dev/null)" ]; then
+            fail "$UPDATE_RUNNING"
+        fi
+    fi
+}
+
+# Writes stdin into $1 with mode $2 through a temp file in the same folder, then rename; refuses a symlink.
+put_file() {
+    if [ -L "$1" ] || [ -d "$1" ]; then
+        return 1
+    fi
+    put_temp=$(mktemp "$(dirname "$1")/.controlroom.XXXXXX") || return 1
+    if cat >"$put_temp" && chmod "$2" "$put_temp" && mv -f "$put_temp" "$1"; then
+        return 0
+    fi
+    rm -f "$put_temp"
+    return 1
+}
+
+# Boots out the updater and removes its plist, the copied script and the release marker.
+remove_updater() {
+    "$LAUNCHCTL" bootout "$UPDATER_SERVICE" >/dev/null 2>&1
+    rm -f "$UPDATER_PLIST" "$UPDATER_SCRIPT" "$MARKER" || fail "Can't remove the updater."
+}
 
 do_status() {
     if [ -e "$PLIST" ] || [ -L "$PLIST" ]; then
@@ -173,6 +213,11 @@ do_status() {
     else
         printf 'running: no\n'
     fi
+    if [ -e "$UPDATER_PLIST" ] || [ -L "$UPDATER_PLIST" ]; then
+        printf 'updater: yes\n'
+    else
+        printf 'updater: no\n'
+    fi
     printf 'log: %s\n' "$LOG"
     exit 0
 }
@@ -182,9 +227,12 @@ do_uninstall() {
     refuse_link "$AGENTS"
     refuse_link "$HOME/Library/Application Support"
     refuse_link "$SUPPORT"
+    refuse_link "$UPDATER_PLIST"
+    refuse_while_updating
+    remove_updater
     "$LAUNCHCTL" bootout "$SERVICE" >/dev/null 2>&1
     rm -f "$PLIST" || fail "Can't remove $PLIST"
-    rm -rf "$SERVER" "$SERVER_NEW" || fail "Can't remove $SERVER"
+    rm -rf "$SERVER" "$SERVER_NEW" "$PREVIOUS" || fail "Can't remove $SERVER"
     printf 'Uninstalled. The log stays at %s\n' "$LOG"
     exit 0
 }
@@ -336,6 +384,10 @@ do_install() {
     check_text "$ROOT" "The factory root path contains a control character."
 
     if [ "$RELEASE" = yes ]; then
+        UPDATER_SOURCE="$SCRIPT_DIR/updater.sh"
+        if [ ! -f "$UPDATER_SOURCE" ] || [ -L "$UPDATER_SOURCE" ]; then
+            fail "Can't find scripts/updater.sh. Nothing was changed."
+        fi
         CURL=$(find_program curl) || exit 1
         TAR=$(find_program tar) || exit 1
         SHASUM=$(find_program shasum) || exit 1
@@ -358,6 +410,12 @@ do_install() {
     refuse_link "$SUPPORT"
     refuse_link "$SERVER"
     refuse_link "$SERVER_NEW"
+    refuse_link "$PREVIOUS"
+    refuse_link "$UPDATER_PLIST"
+    refuse_link "$UPDATER_SCRIPT"
+    refuse_link "$UPDATER_LOG"
+    refuse_link "$MARKER"
+    refuse_while_updating
 
     mkdir -p "$AGENTS" || fail "Can't create $AGENTS"
     mkdir -p "$LOG_DIR" || fail "Can't create $LOG_DIR"
@@ -374,6 +432,10 @@ do_install() {
         publish_server
     fi
 
+    # The updater is stopped first: a release install installs it again below, a source install has none.
+    if [ "$RELEASE" = yes ] || [ -e "$UPDATER_PLIST" ]; then
+        remove_updater
+    fi
     # Not loaded is fine: the agent may not be installed yet.
     "$LAUNCHCTL" bootout "$SERVICE" >/dev/null 2>&1
 
@@ -439,12 +501,53 @@ do_install() {
         || fail "launchctl bootstrap failed. Check: launchctl print $SERVICE"
 
     if [ "$RELEASE" = yes ]; then
+        install_updater
         printf 'Installed %s: %s\n' "$TAG" "$PLIST"
     else
         printf 'Installed: %s\n' "$PLIST"
     fi
     printf 'Log: %s\n' "$LOG"
+    if [ "$RELEASE" = yes ]; then
+        printf 'Updater: %s\n' "$UPDATER_PLIST"
+    fi
     exit 0
+}
+
+# Copies updater.sh (0700) and writes the release marker (the tag, 0600) and the updater plist (0644), then
+# bootstraps it. The updater runs only when "Install updates automatically" is on in the app.
+install_updater() {
+    put_file "$UPDATER_SCRIPT" 700 <"$UPDATER_SOURCE" || fail "Can't write $UPDATER_SCRIPT"
+    printf '%s\n' "$TAG" | put_file "$MARKER" 600 || fail "Can't write $MARKER"
+    {
+        printf '<?xml version="1.0" encoding="UTF-8"?>\n'
+        printf '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+        printf '<plist version="1.0">\n'
+        printf '<dict>\n'
+        printf '    <key>Label</key>\n'
+        printf '    <string>%s</string>\n' "$UPDATER_LABEL"
+        printf '    <key>ProgramArguments</key>\n'
+        printf '    <array>\n'
+        printf '        <string>/bin/sh</string>\n'
+        printf '        <string>%s</string>\n' "$(xml_escape "$UPDATER_SCRIPT")"
+        printf '        <string>--factory-root</string>\n'
+        printf '        <string>%s</string>\n' "$(xml_escape "$ROOT")"
+        printf '    </array>\n'
+        printf '    <key>EnvironmentVariables</key>\n'
+        printf '    <dict>\n'
+        printf '        <key>PATH</key>\n'
+        printf '        <string>%s</string>\n' "$FIXED_PATH"
+        printf '    </dict>\n'
+        printf '    <key>StartInterval</key>\n'
+        printf '    <integer>%s</integer>\n' "$UPDATER_INTERVAL"
+        printf '    <key>StandardOutPath</key>\n'
+        printf '    <string>%s</string>\n' "$(xml_escape "$UPDATER_LOG")"
+        printf '    <key>StandardErrorPath</key>\n'
+        printf '    <string>%s</string>\n' "$(xml_escape "$UPDATER_LOG")"
+        printf '</dict>\n'
+        printf '</plist>\n'
+    } | put_file "$UPDATER_PLIST" 644 || fail "Can't write $UPDATER_PLIST"
+    "$LAUNCHCTL" bootstrap "$DOMAIN" "$UPDATER_PLIST" >/dev/null \
+        || fail "launchctl bootstrap failed. Check: launchctl print $UPDATER_SERVICE"
 }
 
 case $COMMAND in
