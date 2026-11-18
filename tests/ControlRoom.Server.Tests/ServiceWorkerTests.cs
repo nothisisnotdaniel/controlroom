@@ -61,7 +61,7 @@ public sealed partial class ServiceWorkerTests
 
         Assert.Contains("if (request.method !== \"GET\") {", js, StringComparison.Ordinal);
         Assert.Contains("if (url.origin !== self.location.origin) {", js, StringComparison.Ordinal);
-        Assert.Contains("if (url.pathname.startsWith(\"/api/\")) {", js, StringComparison.Ordinal);
+        Assert.Contains("if (url.pathname.startsWith(\"/api/\") || url.pathname === \"/health\") {", js, StringComparison.Ordinal);
         Assert.Contains("return Shell.includes(url.pathname);", js, StringComparison.Ordinal);
         Assert.Single(ApiString().Matches(js));
         // respondWith is reached only after the shell check; anything else falls through to the network.

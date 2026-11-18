@@ -8,7 +8,14 @@ namespace ControlRoom.Server;
 /// <summary>What a notification is about. Only these fields go into the payload; the reason comes from a fixed
 /// table keyed by kind, never from record text.</summary>
 internal sealed record PushPayload(
-    string Kind, string? Project, string? Job, string? Stage, int? Count = null, string? Version = null)
+    string Kind,
+    string? Project,
+    string? Job,
+    string? Stage,
+    int? Count = null,
+    string? Version = null,
+    string? Previous = null,
+    string? Code = null)
 {
     public const string NeedsHuman = "needs-human";
 
@@ -24,6 +31,10 @@ internal sealed record PushPayload(
 
     public const string Update = "update";
 
+    public const string Updated = "updated";
+
+    public const string UpdateFailed = "update_failed";
+
     public static readonly IReadOnlyDictionary<string, string> Reasons = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         [NeedsHuman] = "Needs you",
@@ -33,14 +44,25 @@ internal sealed record PushPayload(
         [Approval] = "New items to approve",
         [Test] = "Test notification",
         [Update] = "Update available",
+        [Updated] = "Updated",
     };
+
+    /// <summary>The payload for an updater result: <c>updated</c> with both versions, or <c>update_failed</c> with
+    /// the result's fixed code as its reason.</summary>
+    public static PushPayload From(UpdateResult result)
+    {
+        return result.Result == UpdateResult.Updated
+            ? new PushPayload(Updated, null, null, null, Version: result.Version, Previous: result.Previous)
+            : new PushPayload(UpdateFailed, null, null, null, Version: result.Version, Code: result.Reason);
+    }
 
     /// <summary>The kinds that need the user: sent with <c>Urgency: high</c>.</summary>
     public bool NeedsYou => Kind is NeedsHuman or MergeConflict or CiFailed;
 
     /// <summary>The JSON body: <c>kind</c>, <c>project</c>, <c>job</c>, <c>stage</c> (each left out when
     /// unknown), <c>reason</c> and, for approvals, <c>count</c>. An update is exactly <c>kind</c>, <c>version</c> and
-    /// <c>reason</c>.</summary>
+    /// <c>reason</c>; <c>updated</c> is exactly <c>kind</c>, <c>version</c>, <c>previous</c> and <c>reason</c>;
+    /// <c>update_failed</c> is exactly <c>kind</c>, <c>version</c> and the code as <c>reason</c>.</summary>
     public byte[] ToJson()
     {
         using MemoryStream stream = new();
@@ -48,6 +70,24 @@ internal sealed record PushPayload(
         {
             writer.WriteStartObject();
             writer.WriteString("kind", Kind);
+            if (Kind == Updated || Kind == UpdateFailed)
+            {
+                writer.WriteString("version", Version);
+                if (Kind == Updated)
+                {
+                    writer.WriteString("previous", Previous);
+                    writer.WriteString("reason", Reasons[Kind]);
+                }
+                else
+                {
+                    writer.WriteString("reason", Code);
+                }
+
+                writer.WriteEndObject();
+                writer.Flush();
+                return stream.ToArray();
+            }
+
             if (Kind == Update)
             {
                 writer.WriteString("version", Version);

@@ -6,10 +6,15 @@ namespace ControlRoom.Server;
 /// receiver keys.</summary>
 internal sealed record PushSubscription(string Endpoint, string P256dh, string Auth);
 
-/// <summary>The content of <c>push.json</c>. <c>notifyUpdate</c> (default on) and <c>updateNotified</c> (the last
-/// announced release version, default <c>null</c>) may be missing in an older file.</summary>
+/// <summary>The content of <c>push.json</c>. <c>notifyUpdate</c> (default on), <c>updateNotified</c> (the last
+/// announced release version, default <c>null</c>) and <c>updateResultNotified</c> (the <c>run</c> of the last
+/// updater result seen, default <c>null</c>) may be missing in an older file.</summary>
 internal sealed record PushSettings(
-    bool NotifyDone, IReadOnlyList<PushSubscription> Subscriptions, bool NotifyUpdate = true, string? UpdateNotified = null)
+    bool NotifyDone,
+    IReadOnlyList<PushSubscription> Subscriptions,
+    bool NotifyUpdate = true,
+    string? UpdateNotified = null,
+    string? UpdateResultNotified = null)
 {
     public static readonly PushSettings Default = new(false, []);
 }
@@ -50,13 +55,9 @@ internal sealed class PushStore
 
     public const long MaxFileBytes = 64 * 1024;
 
-    private const UnixFileMode GroupOrOther =
-        UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute
-        | UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute;
-
     private readonly object gate = new();
 
-    private readonly uint? owner;
+    private readonly PrivateFolder folder;
 
     public PushStore(string folder)
         : this(folder, UnixOwner.CurrentUser())
@@ -67,11 +68,13 @@ internal sealed class PushStore
     /// refusal).</summary>
     public PushStore(string folder, uint? owner)
     {
-        Folder = Path.GetFullPath(folder);
-        this.owner = owner;
+        this.folder = new PrivateFolder(folder, owner);
     }
 
-    public string Folder { get; }
+    public string Folder => folder.Path;
+
+    /// <summary>The uid the folder must be owned by.</summary>
+    public uint? Owner => folder.Owner;
 
     public string KeysPath => Path.Combine(Folder, KeysFileName);
 
@@ -184,6 +187,16 @@ internal sealed class PushStore
         }
     }
 
+    /// <summary>Stores the <c>run</c> of the updater result the watcher last handled.</summary>
+    public void SetUpdateResultNotified(string run)
+    {
+        lock (gate)
+        {
+            PushSettings settings = LoadSettings();
+            SaveSettings(settings with { UpdateResultNotified = run });
+        }
+    }
+
     private PushSettings LoadSettings()
     {
         byte[]? bytes = ReadChecked(SettingsPath);
@@ -202,120 +215,29 @@ internal sealed class PushStore
     }
 
     /// <summary>The file's bytes, <c>null</c> when there is nothing at the path; throws when the path is a symlink,
-    /// a folder, a non-regular or loose-mode file, or can't be read.</summary>
+    /// a folder, a non-regular or loose-mode file, or can't be read (the folder is created when missing).</summary>
     private byte[]? ReadChecked(string path)
     {
         try
         {
-            CheckFolder();
-            FileInfo file = new(path);
-            if (file.LinkTarget is not null || Directory.Exists(path))
-            {
-                throw new PushStoreException();
-            }
-
-            if (!file.Exists)
-            {
-                return null;
-            }
-
-            if (!OperatingSystem.IsWindows() && (File.GetUnixFileMode(path) & GroupOrOther) != 0)
-            {
-                throw new PushStoreException();
-            }
-
-            return SafeFileReader.ReadBytes(path, MaxFileBytes) ?? throw new PushStoreException();
+            return folder.Read(Path.GetFileName(path), MaxFileBytes, checkFileOwner: false, createFolder: true);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (PrivateFileException exception)
         {
-            throw new PushStoreException("push store unreadable", exception);
+            throw new PushStoreException("push store refused", exception);
         }
     }
 
-    /// <summary>The folder must be a real folder (not a symlink) with mode <c>0700</c>, owned by the current user;
-    /// a missing folder is created <c>0700</c>.</summary>
-    private void CheckFolder()
-    {
-        DirectoryInfo folder = new(Folder);
-        if (folder.LinkTarget is not null || File.Exists(Folder))
-        {
-            throw new PushStoreException();
-        }
-
-        if (!folder.Exists)
-        {
-            if (OperatingSystem.IsWindows())
-            {
-                Directory.CreateDirectory(Folder);
-                return;
-            }
-
-            Directory.CreateDirectory(Folder, AccessToken.FolderMode);
-            File.SetUnixFileMode(Folder, AccessToken.FolderMode);
-        }
-
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        const UnixFileMode Permissions = AccessToken.FolderMode | GroupOrOther;
-        if ((File.GetUnixFileMode(Folder) & Permissions) != AccessToken.FolderMode
-            || owner is null
-            || UnixOwner.OwnerOf(Folder) != owner)
-        {
-            throw new PushStoreException();
-        }
-    }
-
-    /// <summary>Writes a new <c>0600</c> temp file in the folder, then renames it over the path (re-checked first,
-    /// so a symlink or loose-mode file that appeared is still refused).</summary>
+    /// <summary>Writes the file atomically through <see cref="PrivateFolder.Write"/>.</summary>
     private void WriteAtomic(string path, byte[] bytes)
     {
-        string temp = Path.Combine(Folder, "." + Path.GetFileName(path) + "-" + Guid.NewGuid().ToString("N") + ".tmp");
         try
         {
-            CheckFolder();
-            FileInfo target = new(path);
-            if (target.LinkTarget is not null || Directory.Exists(path)
-                || (target.Exists && !OperatingSystem.IsWindows() && (File.GetUnixFileMode(path) & GroupOrOther) != 0))
-            {
-                throw new PushStoreException();
-            }
-
-            FileStreamOptions options = new()
-            {
-                Mode = FileMode.CreateNew,
-                Access = FileAccess.Write,
-                Share = FileShare.None,
-            };
-            if (!OperatingSystem.IsWindows())
-            {
-                options.UnixCreateMode = AccessToken.FileMode;
-            }
-
-            using (FileStream stream = new(temp, options))
-            {
-                stream.Write(bytes);
-                stream.Flush(flushToDisk: true);
-            }
-
-            if (!OperatingSystem.IsWindows())
-            {
-                File.SetUnixFileMode(temp, AccessToken.FileMode);
-            }
-
-            File.Move(temp, path, overwrite: true);
+            folder.Write(Path.GetFileName(path), bytes);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (PrivateFileException exception)
         {
-            TryDelete(temp);
             throw new PushStoreException("push store unwritable", exception);
-        }
-        catch (PushStoreException)
-        {
-            TryDelete(temp);
-            throw;
         }
     }
 
@@ -363,6 +285,15 @@ internal sealed class PushStore
             else
             {
                 writer.WriteString("updateNotified", settings.UpdateNotified);
+            }
+
+            if (settings.UpdateResultNotified is null)
+            {
+                writer.WriteNull("updateResultNotified");
+            }
+            else
+            {
+                writer.WriteString("updateResultNotified", settings.UpdateResultNotified);
             }
 
             writer.WriteStartArray("subscriptions");
@@ -421,6 +352,18 @@ internal sealed class PushStore
             updateNotified = notified.GetString();
         }
 
+        string? updateResultNotified = null;
+        if (root.TryGetProperty("updateResultNotified", out JsonElement resultRun)
+            && resultRun.ValueKind != JsonValueKind.Null)
+        {
+            if (resultRun.ValueKind != JsonValueKind.String || !UpdateResult.IsRun(resultRun.GetString()))
+            {
+                return null;
+            }
+
+            updateResultNotified = resultRun.GetString();
+        }
+
         List<PushSubscription> subscriptions = [];
         foreach (JsonElement item in list.EnumerateArray())
         {
@@ -433,7 +376,7 @@ internal sealed class PushStore
             subscriptions.Add(subscription);
         }
 
-        return new PushSettings(done.GetBoolean(), subscriptions, notifyUpdate, updateNotified);
+        return new PushSettings(done.GetBoolean(), subscriptions, notifyUpdate, updateNotified, updateResultNotified);
     }
 
     private static JsonDocument? Parse(byte[] bytes)
@@ -465,18 +408,6 @@ internal sealed class PushStore
 
         stream.WriteByte((byte)'\n');
         return stream.ToArray();
-    }
-
-    private static void TryDelete(string path)
-    {
-        try
-        {
-            File.Delete(path);
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            // Left over only when the folder itself went away.
-        }
     }
 }
 

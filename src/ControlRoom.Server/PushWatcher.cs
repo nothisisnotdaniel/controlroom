@@ -2,10 +2,12 @@ namespace ControlRoom.Server;
 
 /// <summary>Watches the factory root for things the user should hear about and sends a push for each: a job that
 /// becomes <c>needs-human</c> (<c>merge-conflict</c> when its note starts with "merge conflict"), <c>ci.status</c>
-/// becoming <c>failure</c>, a job becoming <c>done</c> (only with <c>notifyDone</c>) and new <c>[?]</c> lines in a
-/// project. <see cref="Scan"/> runs every 30 s on the <see cref="TimeProvider"/>; the first scan only records a
-/// baseline. A job or backlog that can't be read keeps its last known state, and <c>[?]</c> lines once seen stay
-/// seen, so no event is sent twice.</summary>
+/// becoming <c>failure</c>, a job becoming <c>done</c> (only with <c>notifyDone</c>), new <c>[?]</c> lines in a
+/// project and a new updater result (<c>updated</c>/<c>update_failed</c>, only with <c>notifyUpdate</c>).
+/// <see cref="Scan"/> runs every 30 s on the <see cref="TimeProvider"/>; the first scan only records a baseline for
+/// jobs and backlogs, while an updater result whose <c>run</c> differs from <c>updateResultNotified</c> is handled on
+/// every scan, the first one too. A job or backlog that can't be read keeps its last known state, and <c>[?]</c>
+/// lines once seen stay seen, so no event is sent twice.</summary>
 internal sealed class PushWatcher : IHostedService, IDisposable
 {
     public static readonly TimeSpan Interval = TimeSpan.FromSeconds(30);
@@ -21,6 +23,8 @@ internal sealed class PushWatcher : IHostedService, IDisposable
     private readonly PushStore store;
 
     private readonly PushSender sender;
+
+    private readonly UpdateResultReader results;
 
     private readonly TimeProvider time;
 
@@ -42,6 +46,7 @@ internal sealed class PushWatcher : IHostedService, IDisposable
         factoryRoot = root.Path;
         this.store = store;
         this.sender = sender;
+        results = new UpdateResultReader(store.Folder, store.Owner);
         this.time = time;
         this.logger = logger;
     }
@@ -72,7 +77,8 @@ internal sealed class PushWatcher : IHostedService, IDisposable
         try
         {
             List<PushPayload> events = Collect();
-            if (events.Count == 0)
+            UpdateResult? result = results.Read();
+            if (events.Count == 0 && result is null)
             {
                 return events;
             }
@@ -80,7 +86,17 @@ internal sealed class PushWatcher : IHostedService, IDisposable
             bool notifyDone;
             try
             {
-                notifyDone = store.Settings().NotifyDone;
+                PushSettings settings = store.Settings();
+                notifyDone = settings.NotifyDone;
+                if (result is not null && !string.Equals(result.Run, settings.UpdateResultNotified, StringComparison.Ordinal))
+                {
+                    // Stored first, so a result is announced at most once, also across restarts.
+                    store.SetUpdateResultNotified(result.Run);
+                    if (settings.NotifyUpdate)
+                    {
+                        events.Add(PushPayload.From(result));
+                    }
+                }
             }
             catch (PushStoreException)
             {

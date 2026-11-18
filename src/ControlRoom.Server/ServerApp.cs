@@ -4,9 +4,9 @@ using Microsoft.AspNetCore.StaticFiles;
 namespace ControlRoom.Server;
 
 /// <summary>Builds the web app: loopback-only Kestrel, security headers, the <c>Host</c> check, GET/HEAD only (plus POST on
-/// the backlog change route and the push routes), static files from the
+/// the backlog change route, the update settings route and the push routes), static files from the
 /// server's own <c>wwwroot</c>, an access token on every <c>/api/</c> request, the backlogs, story, board, job,
-/// push, version and update APIs, the push watcher and the update check.</summary>
+/// push, version and update APIs, the public <c>/health</c> route, the push watcher and the update check.</summary>
 internal static class ServerApp
 {
     public const string ContentSecurityPolicy =
@@ -126,6 +126,7 @@ internal static class ServerApp
         PushEndpoint.Map(app);
         VersionEndpoint.Map(app);
         UpdateEndpoint.Map(app, tailnetHost);
+        HealthEndpoint.Map(app);
         return app;
     }
 
@@ -137,6 +138,7 @@ internal static class ServerApp
         string? subject = builder.Configuration["PushSubject"];
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton(new PushStore(folder));
+        builder.Services.AddSingleton(new UpdateSettingsStore(folder, UnixOwner.CurrentUser()));
         builder.Services.AddSingleton(_ => PushTransport.CreateDefault());
         builder.Services.AddSingleton(services => new PushCrypto(
             services.GetRequiredService<TimeProvider>(), PushCrypto.SystemEphemeralKey, AccessToken.SystemRandom, subject));
@@ -159,8 +161,8 @@ internal static class ServerApp
         return values.Count == 1 && HostCheck.IsAllowed(values[0], tailnetHost);
     }
 
-    /// <summary>GET and HEAD everywhere; POST only on exactly <see cref="BacklogChangeEndpoint.Route"/> and the
-    /// <see cref="PushEndpoint.PostRoutes"/>.</summary>
+    /// <summary>GET and HEAD everywhere; POST only on exactly <see cref="BacklogChangeEndpoint.Route"/>,
+    /// <see cref="UpdateEndpoint.SettingsRoute"/> and the <see cref="PushEndpoint.PostRoutes"/>.</summary>
     private static bool IsAllowedMethod(HttpRequest request)
     {
         if (HttpMethods.IsGet(request.Method) || HttpMethods.IsHead(request.Method))
@@ -170,6 +172,7 @@ internal static class ServerApp
 
         return HttpMethods.IsPost(request.Method)
             && (string.Equals(request.Path.Value, BacklogChangeEndpoint.Route, StringComparison.Ordinal)
+                || string.Equals(request.Path.Value, UpdateEndpoint.SettingsRoute, StringComparison.Ordinal)
                 || (request.Path.Value is string path && PushEndpoint.PostRoutes.Contains(path)));
     }
 

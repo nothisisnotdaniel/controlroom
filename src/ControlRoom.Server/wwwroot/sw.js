@@ -38,7 +38,7 @@ function isShellRequest(request) {
   if (url.origin !== self.location.origin) {
     return false;
   }
-  if (url.pathname.startsWith("/api/")) {
+  if (url.pathname.startsWith("/api/") || url.pathname === "/health") {
     return false;
   }
   return Shell.includes(url.pathname);
@@ -69,7 +69,7 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(staleWhileRevalidate(event));
 });
 
-// Push: the payload holds only kind, project, job, stage, version, reason and count. The title comes from this fixed table,
+// Push: the payload holds only kind, project, job, stage, version, previous, reason and count. The title comes from this fixed table,
 // never from the payload; the body is built from the payload's names. Nothing is fetched here.
 const PushTitles = {
   "needs-human": "Needs you",
@@ -79,6 +79,15 @@ const PushTitles = {
   approval: "New items to approve",
   test: "Test notification",
   update: "Update available",
+  updated: "ControlRoom updated",
+  update_failed: "Update failed",
+};
+// The fixed body per updater failure code (the payload's reason); an unknown code has no body.
+const UpdateFailedBodies = {
+  check: "The download didn't check out. Nothing was changed.",
+  no_answer: "The new version didn't start, so the old one is back.",
+  swap: "The new version couldn't be put in place, so the old one is back.",
+  rollback_failed: "The old version didn't come back. Check the Mac.",
 };
 const PushFallbackTitle = "Control Room";
 const PushJobPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}$/;
@@ -98,6 +107,10 @@ function readPushData(event) {
   }
 }
 
+function pushVersion(data, name) {
+  return PushVersionPattern.test(pushField(data, name)) ? pushField(data, name) : "";
+}
+
 function pushNotification(data) {
   const kind = Object.prototype.hasOwnProperty.call(PushTitles, data.kind) ? data.kind : "";
   const project = pushField(data, "project");
@@ -114,6 +127,15 @@ function pushNotification(data) {
     const version = PushVersionPattern.test(pushField(data, "version")) ? pushField(data, "version") : "";
     body = version ? "ControlRoom " + version : "";
     tag = "update:" + version;
+  } else if (kind === "updated") {
+    const version = pushVersion(data, "version");
+    const previous = pushVersion(data, "previous");
+    body = version ? "Now " + version + (previous ? " (was " + previous + ")." : ".") : "";
+    tag = "updated:" + version;
+  } else if (kind === "update_failed") {
+    const reason = pushField(data, "reason");
+    body = Object.prototype.hasOwnProperty.call(UpdateFailedBodies, reason) ? UpdateFailedBodies[reason] : "";
+    tag = "update_failed:" + pushVersion(data, "version");
   } else if (kind === "test") {
     body = "Notifications work on this device.";
     tag = "test:";
