@@ -281,19 +281,24 @@ internal sealed class UpdateChecker : IHostedService, IDisposable
     /// <summary>The timer's check: skipped while another one runs; never throws.</summary>
     public async Task CheckSafely()
     {
-        if (checking.CurrentCount == 0)
+        SemVer? current = SemVer.Parse(running.Value);
+        if (current is null || !await checking.WaitAsync(0))
         {
             return;
         }
 
         try
         {
-            await Check();
+            await CheckHeld(current);
         }
         catch (Exception)
         {
             // A failed check must never stop the server or surface as an unobserved task exception.
             logger.LogWarning("Update check failed");
+        }
+        finally
+        {
+            checking.Release();
         }
     }
 
@@ -310,21 +315,27 @@ internal sealed class UpdateChecker : IHostedService, IDisposable
         await checking.WaitAsync();
         try
         {
-            UpdateRelease? found = await Fetch();
-            if (found is null)
-            {
-                return;
-            }
-
-            state.Latest = found;
-            if (found.Version.IsNewerThan(current))
-            {
-                await Notify(found.Version);
-            }
+            await CheckHeld(current);
         }
         finally
         {
             checking.Release();
+        }
+    }
+
+    /// <summary>The check itself; the caller holds <c>checking</c>.</summary>
+    private async Task CheckHeld(SemVer current)
+    {
+        UpdateRelease? found = await Fetch();
+        if (found is null)
+        {
+            return;
+        }
+
+        state.Latest = found;
+        if (found.Version.IsNewerThan(current))
+        {
+            await Notify(found.Version);
         }
     }
 
@@ -379,15 +390,15 @@ internal sealed class UpdateChecker : IHostedService, IDisposable
     private static async Task<byte[]?> ReadCapped(HttpContent content, CancellationToken cancellation)
     {
         await using Stream stream = await content.ReadAsStreamAsync(cancellation);
-        byte[] buffer = new byte[MaxBodyBytes + 1];
-        int total = 0;
+        using MemoryStream body = new();
+        byte[] chunk = new byte[16 * 1024];
         int read;
-        while (total < buffer.Length && (read = await stream.ReadAsync(buffer.AsMemory(total), cancellation)) > 0)
+        while (body.Length <= MaxBodyBytes && (read = await stream.ReadAsync(chunk, cancellation)) > 0)
         {
-            total += read;
+            body.Write(chunk, 0, read);
         }
 
-        return total > MaxBodyBytes ? null : buffer[..total];
+        return body.Length > MaxBodyBytes ? null : body.ToArray();
     }
 
     /// <summary>The version from <c>tag_name</c> when it is <c>v</c> + SemVer without build metadata.</summary>
@@ -413,7 +424,9 @@ internal sealed class UpdateChecker : IHostedService, IDisposable
     }
 
     /// <summary>Stores <c>updateNotified</c> first, then sends (only with <c>notifyUpdate</c>), so a version is
-    /// announced at most once, also across restarts. Refused push files send and store nothing.</summary>
+    /// announced at most once, also across restarts. Refused push files send and store nothing. The read and the
+    /// write take the store lock separately; that is safe only because checks run one at a time (<c>checking</c>),
+    /// so a second caller must hold that semaphore too.</summary>
     private async Task Notify(SemVer version)
     {
         string text = version.ToString();
