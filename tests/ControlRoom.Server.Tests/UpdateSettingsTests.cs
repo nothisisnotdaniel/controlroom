@@ -8,10 +8,10 @@ namespace ControlRoom.Server.Tests;
 /// file rules.</summary>
 public sealed class UpdateSettingsTests
 {
-    private const string OnFile = "{\"autoUpdate\":true}\n";
+    private const string OnFile = "{\"autoUpdate\":true,\"channel\":\"stable\"}\n";
 
     [Fact]
-    public async Task Get_WithoutASettingsFile_IsOff()
+    public async Task Get_WithoutASettingsFile_IsOffAndStable()
     {
         using TempFactoryRoot root = new();
         using ServerFactory factory = new(root.Path);
@@ -19,13 +19,13 @@ public sealed class UpdateSettingsTests
 
         string json = await client.GetStringAsync(UpdateEndpoint.Route);
 
-        Assert.EndsWith(",\"autoUpdate\":false}", json, StringComparison.Ordinal);
+        Assert.EndsWith(",\"autoUpdate\":false,\"channel\":\"stable\"}", json, StringComparison.Ordinal);
         Assert.False(File.Exists(SettingsPath(factory)));
     }
 
     [Theory]
-    [InlineData(true, "{\"autoUpdate\":true}\n")]
-    [InlineData(false, "{\"autoUpdate\":false}\n")]
+    [InlineData(true, "{\"autoUpdate\":true,\"channel\":\"stable\"}\n")]
+    [InlineData(false, "{\"autoUpdate\":false,\"channel\":\"stable\"}\n")]
     public async Task Post_StoresTheExactFileAndReturnsTheValue(bool value, string file)
     {
         using TempFactoryRoot root = new();
@@ -36,14 +36,15 @@ public sealed class UpdateSettingsTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.True(response.Headers.CacheControl?.NoStore);
-        Assert.Equal("{\"autoUpdate\":" + (value ? "true" : "false") + "}", await response.Content.ReadAsStringAsync());
+        Assert.Equal("{\"autoUpdate\":" + (value ? "true" : "false") + ",\"channel\":\"stable\"}",
+            await response.Content.ReadAsStringAsync());
         Assert.Equal(file, File.ReadAllText(SettingsPath(factory)));
         if (!OperatingSystem.IsWindows())
         {
             Assert.Equal(AccessToken.FileMode, File.GetUnixFileMode(SettingsPath(factory)));
         }
 
-        Assert.EndsWith(",\"autoUpdate\":" + (value ? "true" : "false") + "}",
+        Assert.EndsWith(",\"autoUpdate\":" + (value ? "true" : "false") + ",\"channel\":\"stable\"}",
             await client.GetStringAsync(UpdateEndpoint.Route), StringComparison.Ordinal);
     }
 
@@ -57,6 +58,17 @@ public sealed class UpdateSettingsTests
     [InlineData("{\"autoUpdate\":true,\"x\":1}")]
     [InlineData("{\"autoUpdate\":true,\"autoUpdate\":false}")]
     [InlineData("{\"auto\":true}")]
+    [InlineData("{\"channel\":\"beta\"}")]
+    [InlineData("{\"channel\":\"Develop\"}")]
+    [InlineData("{\"channel\":\"develop \"}")]
+    [InlineData("{\"channel\":\"\"}")]
+    [InlineData("{\"channel\":null}")]
+    [InlineData("{\"channel\":true}")]
+    [InlineData("{\"channel\":[\"develop\"]}")]
+    [InlineData("{\"channel\":\"develop\",\"channel\":\"stable\"}")]
+    [InlineData("{\"channel\":\"develop\",\"autoUpdate\":true,\"x\":1}")]
+    [InlineData("{\"Channel\":\"develop\"}")]
+    [InlineData("[{\"channel\":\"develop\"}]")]
     public async Task Post_AnyOtherBody_Is400AndStoresNothing(string body)
     {
         using TempFactoryRoot root = new();
@@ -131,7 +143,7 @@ public sealed class UpdateSettingsTests
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         Assert.Equal("{\"error\":\"settings_store\"}", await response.Content.ReadAsStringAsync());
         Assert.True(response.Headers.CacheControl?.NoStore);
-        Assert.EndsWith(",\"autoUpdate\":null}", json, StringComparison.Ordinal);
+        Assert.EndsWith(",\"autoUpdate\":null,\"channel\":null}", json, StringComparison.Ordinal);
         Assert.Equal(before, Snapshot(folder, target));
         File.SetUnixFileMode(folder, AccessToken.FolderMode);
     }
@@ -158,18 +170,94 @@ public sealed class UpdateSettingsTests
     }
 
     [Theory]
-    [InlineData("{\"autoUpdate\":true}", true)]
-    [InlineData("{\"autoUpdate\":true}\n", true)]
-    [InlineData("{\"autoUpdate\":false}", false)]
-    [InlineData("{\"autoUpdate\":false}\n", false)]
+    [InlineData("{\"autoUpdate\":true}", "true stable")]
+    [InlineData("{\"autoUpdate\":true}\n", "true stable")]
+    [InlineData("{\"autoUpdate\":false}", "false stable")]
+    [InlineData("{\"autoUpdate\":false}\n", "false stable")]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"stable\"}", "true stable")]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"stable\"}\n", "true stable")]
+    [InlineData("{\"autoUpdate\":false,\"channel\":\"stable\"}\n", "false stable")]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\"}", "true develop")]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\"}\n", "true develop")]
+    [InlineData("{\"autoUpdate\":false,\"channel\":\"develop\"}", "false develop")]
+    [InlineData("{\"autoUpdate\":false,\"channel\":\"develop\"}\n", "false develop")]
     [InlineData("{\"autoUpdate\":true}\n\n", null)]
     [InlineData("{\"autoUpdate\": true}", null)]
     [InlineData("{\"autoUpdate\":true}\r\n", null)]
     [InlineData(" {\"autoUpdate\":true}", null)]
     [InlineData("", null)]
-    public void Parse_AcceptsOnlyTheExactFiles(string content, bool? expected)
+    [InlineData("{\"channel\":\"develop\",\"autoUpdate\":true}", null)]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"beta\"}", null)]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"Develop\"}", null)]
+    [InlineData("{\"autoUpdate\":true,\"channel\": \"develop\"}", null)]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\"}\n\n", null)]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\"}\r\n", null)]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\",\"x\":1}", null)]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"stable\",\"channel\":\"develop\"}", null)]
+    [InlineData("{\"channel\":\"develop\"}", null)]
+    public void Parse_AcceptsOnlyTheExactFiles(string content, string? expected)
     {
-        Assert.Equal(expected, UpdateSettingsStore.Parse(Encoding.UTF8.GetBytes(content)));
+        UpdateSettings? parsed = UpdateSettingsStore.Parse(Encoding.UTF8.GetBytes(content));
+
+        Assert.Equal(expected, parsed is null ? null : (parsed.AutoUpdate ? "true " : "false ") + parsed.Channel);
+    }
+
+    [Theory]
+    [InlineData("{\"autoUpdate\":true}", "true", "stable")]
+    [InlineData("{\"autoUpdate\":false}\n", "false", "stable")]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"stable\"}\n", "true", "stable")]
+    [InlineData("{\"autoUpdate\":false,\"channel\":\"develop\"}", "false", "develop")]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\"}\n", "true", "develop")]
+    public async Task Get_ReportsEveryAllowedFormAndLeavesItAsItIs(string file, string autoUpdate, string channel)
+    {
+        using TempFactoryRoot root = new();
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+        WriteSettings(factory, file);
+
+        string json = await client.GetStringAsync(UpdateEndpoint.Route);
+
+        Assert.EndsWith(",\"autoUpdate\":" + autoUpdate + ",\"channel\":\"" + channel + "\"}", json, StringComparison.Ordinal);
+        Assert.Equal(file, File.ReadAllText(SettingsPath(factory)));
+    }
+
+    [Theory]
+    [InlineData(null, "{\"channel\":\"develop\"}", "{\"autoUpdate\":false,\"channel\":\"develop\"}")]
+    [InlineData("{\"autoUpdate\":true}", "{\"channel\":\"develop\"}", "{\"autoUpdate\":true,\"channel\":\"develop\"}")]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\"}\n", "{\"autoUpdate\":false}", "{\"autoUpdate\":false,\"channel\":\"develop\"}")]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\"}", "{\"channel\":\"stable\"}", "{\"autoUpdate\":true,\"channel\":\"stable\"}")]
+    [InlineData("{\"autoUpdate\":false}", "{\"channel\":\"develop\",\"autoUpdate\":true}", "{\"autoUpdate\":true,\"channel\":\"develop\"}")]
+    [InlineData("{\"autoUpdate\":false}", "{\"autoUpdate\":true,\"channel\":\"stable\"}", "{\"autoUpdate\":true,\"channel\":\"stable\"}")]
+    public async Task Post_PartialBody_KeepsTheOtherValueAndWritesTheThreeKeyForm(string? file, string body, string expected)
+    {
+        using TempFactoryRoot root = new();
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+        if (file is not null)
+        {
+            WriteSettings(factory, file);
+        }
+
+        using HttpResponseMessage response = await Post(client, body);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(expected, await response.Content.ReadAsStringAsync());
+        Assert.Equal(expected + "\n", File.ReadAllText(SettingsPath(factory)));
+    }
+
+    [Fact]
+    public void Store_SetKeepsMissingValuesAndRefusesAnUnknownChannel()
+    {
+        using TempTokenFolder tokens = new();
+        UpdateSettingsStore store = new(Path.Combine(tokens.Path, "support"), UnixOwner.CurrentUser());
+
+        Assert.Equal(new UpdateSettings(false, "stable"), store.Settings());
+        Assert.Equal(new UpdateSettings(false, "develop"), store.Set(null, "develop", out bool changed));
+        Assert.True(changed);
+        Assert.Equal(new UpdateSettings(true, "develop"), store.Set(true, null, out changed));
+        Assert.False(changed);
+        Assert.Throws<ArgumentException>(() => store.Set(null, "beta"));
+        Assert.Equal("{\"autoUpdate\":true,\"channel\":\"develop\"}\n", File.ReadAllText(store.Path));
     }
 
     [Fact]

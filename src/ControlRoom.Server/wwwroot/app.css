@@ -1006,6 +1006,25 @@ body:has(#edit-notice:not([hidden])) {
   overflow-wrap: anywhere;
 }
 
+/* The update channel choice under the switch: a native select, large enough to tap. */
+.update-channel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+}
+
+.update-channel-select {
+  min-height: 44px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
 /* Update banner under the board heading. */
 .update {
   max-width: 640px;

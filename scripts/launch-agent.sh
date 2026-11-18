@@ -86,15 +86,15 @@ valid_tailnet_host() {
     [ "$labels" -ge 2 ]
 }
 
-# True for "v" plus a SemVer version (prerelease part allowed, no build metadata, no -develop) on one line:
-# the same rule as .github/scripts/release-version.sh. Only such a tag goes into a URL or path.
+# True for "v" plus a SemVer version (prerelease part allowed, so also a develop build such as
+# v1.2.4-develop.7; no build metadata) on one line. Only such a tag goes into a URL or path.
 valid_tag() {
     case $1 in
         v*) ;;
         *) return 1 ;;
     esac
     case $1 in
-        *[!0-9A-Za-z.-]* | *-develop*) return 1 ;;
+        *[!0-9A-Za-z.-]*) return 1 ;;
     esac
     printf '%s\n' "${1#v}" \
         | LC_ALL=C grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'

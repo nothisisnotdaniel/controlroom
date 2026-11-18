@@ -45,21 +45,28 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     overwritten. `POST /api/push/test` sends at most once per 10 s server-wide (`PushTestLimiter` on
     `TimeProvider`); a call inside that window returns `429 {"error":"too_many_requests"}` and sends nothing.
   - Update files live in the same folder, with the same rules (`PrivateFolder`): `settings.json` is exactly
-    `{"autoUpdate":true}` or `{"autoUpdate":false}` (one optional trailing line break; missing is off), written only
-    by `POST /api/update/settings` (a refused or invalid file gives `500 {"error":"settings_store"}` and is never
-    overwritten). `update-result.json` is written only by `scripts/updater.sh`; the server reads it (no-follow,
+    `{"autoUpdate":B}` (channel `stable`), `{"autoUpdate":B,"channel":"stable"}` or
+    `{"autoUpdate":B,"channel":"develop"}` with `B` `true` or `false` (one optional trailing line break; missing is
+    off and `stable`), written only by `POST /api/update/settings` as the three-key form plus a line break (body: one
+    or both of `autoUpdate` and `channel`, a missing one keeps its value; a channel change starts one update check
+    without waiting; a refused or invalid file gives `500 {"error":"settings_store"}` and is never overwritten). `update-result.json` is written only by `scripts/updater.sh`; the server reads it (no-follow,
     `0600`, owned by the user, at most 4 KiB, exact schema) and never writes or deletes it.
   - The only outbound calls are Web Push POSTs to subscription endpoints, allowed only as `https`, port 443, no
     userinfo, on `*.push.apple.com`, `fcm.googleapis.com` or `updates.push.services.mozilla.com`, and the update
     check: one fixed `GET https://api.github.com/repos/nothisisnotdaniel/controlroom/releases/latest` at start and
     every 6 h (no `Authorization` or cookies, body capped at 1 MiB, only a `v`+SemVer `tag_name` kept, the release
-    URL rebuilt from it); no redirects, 10 s timeout. Endpoints, keys and the token are never logged (status codes
+    URL rebuilt from it); on the `develop` channel instead one fixed
+    `GET https://api.github.com/repos/nothisisnotdaniel/controlroom/releases?per_page=100` (same rules; from the
+    array only non-draft `vX.Y.Z` or `vX.Y.Z-develop.N` tags, the highest by SemVer); no redirects, 10 s timeout.
+    The banner shows a result only for the channel it was found on. Endpoints, keys and the token are never logged (status codes
     only). A payload holds only `kind`, `project`, `job`, `stage`, `version`, a fixed `reason` and `count`, never
     record or backlog text; an `update` payload is exactly `kind`, `version` and `reason`, sent once per version;
     an `updated` payload is exactly `kind`, `version`, `previous`, `reason`, an `update_failed` payload exactly
     `kind`, `version` and the result's fixed code as `reason`, each sent once per updater run.
   - Scripts (`launch-agent.sh`, `updater.sh`) never read the token. The updater's only network calls are the
-    release download (as `install --release`) and `GET http://127.0.0.1:8100/health`, without `Authorization`.
+    latest-release redirect (`stable`) or the release list `GET` above (`develop`, `curl --proto =https --tlsv1.2
+    -fsS --max-time 30 --max-filesize 1048576`, no `-L`), the release download (as `install --release`) and
+    `GET http://127.0.0.1:8100/health`, without `Authorization`.
 - **Stack:** .NET 10 ASP.NET Core minimal API (`Microsoft.NET.Sdk.Web`, no extra packages) serving a plain
   HTML/CSS/JS web app from its own `wwwroot` (no CDN, no build step, strict CSP), xUnit tests with
   `Microsoft.AspNetCore.Mvc.Testing` to host the app in memory. No new package without a reason in the spec.
@@ -72,18 +79,24 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   `scripts/launch-agent.sh install --release [vX.Y.Z] [--tailnet-host <name>]` installs a GitHub release instead (latest
   when no tag; no .NET SDK needed; launchd runs `server/ControlRoom.Server` directly). It also installs the
   updater (`local.controlroom.updater`, every 6 h, `<support>/updater.sh`, marker `<support>/installed-release`, log
-  `~/Library/Logs/ControlRoom/updater.log`), which installs newer releases only while `settings.json` says on and
+  `~/Library/Logs/ControlRoom/updater.log`), which installs newer releases (by SemVer; on `stable` prereleases are
+  ignored, on `develop` the newest `vX.Y.Z` or `vX.Y.Z-develop.N`) only while `settings.json` says on and
   no job is in `spike|spec|build|review`; a plain `install` and `uninstall` remove it.
   `dotnet run --project src/ControlRoom.Server -- version` prints `ControlRoom <version>` (`dev` without `-p:Version`);
   `GET /api/version` returns `{"version":"…"}`; `GET /api/update` returns `{current, available, latest, url,
-  command, autoUpdate}` from the last update check (`dev` never checks) and `settings.json` (`null` when refused).
-- **Releases:** `.github/workflows/release.yml` runs only for a merged PR from `develop` into `main` titled
-  `release vX.Y.Z` (`.github/scripts/release-version.sh` checks the title and existing tags). On a `macos-15` (arm64)
+  command, autoUpdate, channel}` from the last update check (`dev` never checks) and `settings.json` (`null` when refused).
+- **Releases:** `.github/workflows/release.yml` runs for a merged PR from `develop` into `main` titled
+  `release vX.Y.Z` (`.github/scripts/release-version.sh` checks the title and existing tags, and refuses
+  `-develop`) and for every push to `develop` that changes more than `backlog.md` and `backlog/**` (a prerelease
+  `X.Y.(Z+1)-develop.<run number>` from `.github/scripts/develop-version.sh` on `GITHUB_SHA`, checked against
+  `refs/heads/develop` and `HEAD`). On a `macos-15` (arm64)
   runner it re-checks the PR, runs `dotnet test -c Release`, publishes `-r osx-arm64 --self-contained
   -p:Version=X.Y.Z`, smoke-checks `ControlRoom.Server version`, packs `controlroom-X.Y.Z-osx-arm64.tar.gz` (one top
-  folder), writes `SHA256SUMS`, attests build provenance and runs `gh release create vX.Y.Z` on the merge commit
-  (`--title "ControlRoom X.Y.Z" --generate-notes`, plus `--prerelease` for a prerelease version). Top-level `permissions: {}`; the job has only `contents: write`,
-  `id-token: write`, `attestations: write`; every action pinned to a commit SHA; PR fields only through `env:`.
+  folder), writes `SHA256SUMS`, attests build provenance and runs `gh release create vX.Y.Z` on the merge commit or pushed commit
+  (`--title "ControlRoom X.Y.Z" --generate-notes`, plus `--prerelease` for a prerelease version). After a stable
+  release, `Prune old prereleases` (`continue-on-error`) deletes every `-develop` prerelease and tag at or below
+  that version (`.github/scripts/old-prereleases.sh`). Top-level `permissions: {}`; the job has only `contents: write`,
+  `id-token: write`, `attestations: write`; every action pinned to a commit SHA; PR and ref fields only through `env:`.
   Check a tarball with `gh attestation verify <tarball> --repo nothisisnotdaniel/controlroom`. The repo slug is fixed
   in `launch-agent.sh`; renaming the repo breaks `--release`.
 - **Test command:** `dotnet test` (from `ControlRoom/`; `dotnet build` must stay at 0 warnings). Tests build a
@@ -142,10 +155,13 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `server.previous`, new folder to `server`, bootstrap, poll `/health` up to 15 times (an answer counts only while
     `launchctl print` shows the server running and its pid is the only listener `lsof` shows on port 8100); rolls
     back when it does not answer, and (as `swap_failed`) when the marker can't be updated. A `state.json` over
-    64 KiB counts as a running job. `valid_tag`, `latest_tag`, `download` and `check_and_extract` are byte-identical to
-    `launch-agent.sh` (a test compares them).
+    64 KiB counts as a running job. `valid_tag` (`v`+SemVer, `-develop.N` allowed, no build
+    metadata), `latest_tag`, `download` and `check_and_extract` are byte-identical to `launch-agent.sh` (a test
+    compares them). The channel comes from `settings.json` (at most 64 bytes).
   - `.github/workflows/release.yml` and `.github/scripts/release-version.sh` (title `release vX.Y.Z` to `X.Y.Z`;
-    existing tags on stdin).
+    existing tags on stdin), `.github/scripts/develop-version.sh` (run number to the next `-develop.<run>`
+    version; tags on stdin) and `.github/scripts/old-prereleases.sh` (version to the `-develop` tags at or below
+    it; tags on stdin).
   - `tests/ControlRoom.Server.Tests/`: one test class per unit or concern (`LaunchAgentScriptTests` runs the script with fake
     `launchctl`/`dotnet`/`curl` in a temp `HOME` and builds release tarballs with `/usr/bin/tar`; `UpdaterScriptTests` runs `updater.sh` with fake
     `launchctl`/`curl`/`sleep`/`mv`;

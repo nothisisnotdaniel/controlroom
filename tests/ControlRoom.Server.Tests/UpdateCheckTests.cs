@@ -24,9 +24,12 @@ public sealed partial class UpdateCheckTests : IDisposable
 
     private readonly PushStore store;
 
+    private readonly UpdateSettingsStore settings;
+
     public UpdateCheckTests()
     {
         store = new PushStore(Path.Combine(folder.Path, "push"));
+        settings = new UpdateSettingsStore(Path.Combine(folder.Path, "push"), UnixOwner.CurrentUser());
         Assert.True(store.Subscribe(new PushSubscription(
             PushTestData.AppleEndpoint, Base64Url.Encode(receiver.PublicKey), Base64Url.Encode(receiver.Auth))));
     }
@@ -48,6 +51,10 @@ public sealed partial class UpdateCheckTests : IDisposable
     [InlineData("1.10.0", "1.9.0")]
     [InlineData("1.0.0-rc.1", "1.0.0-beta.11")]
     [InlineData("100000000000000000000.0.0", "99999999999999999999.0.0")]
+    [InlineData("1.2.4-develop.1", "1.2.3")]
+    [InlineData("1.2.4", "1.2.4-develop.9")]
+    [InlineData("1.2.4-develop.10", "1.2.4-develop.9")]
+    [InlineData("1.2.5-develop.1", "1.2.4-develop.99")]
     public void SemVer_OrdersByPrecedence(string higher, string lower)
     {
         SemVer high = SemVer.Parse(higher)!;
@@ -110,6 +117,136 @@ public sealed partial class UpdateCheckTests : IDisposable
         Assert.Equal("ControlRoom", request.Headers["User-Agent"]);
         Assert.False(request.Headers.ContainsKey("Authorization"));
         Assert.False(request.Headers.ContainsKey("Cookie"));
+    }
+
+    [Fact]
+    public async Task DevelopChannel_IsOneFixedListGetWithoutCredentials()
+    {
+        settings.Set(null, UpdateChannel.Develop);
+        RespondWithList("[{\"tag_name\":\"v1.2.0\"}]");
+        UpdateChecker checker = Checker("1.0.0", out UpdateState state);
+
+        await checker.Check();
+
+        UpdateRequest request = Assert.Single(github.Requests);
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Equal("https://api.github.com/repos/nothisisnotdaniel/controlroom/releases?per_page=100", request.Uri.AbsoluteUri);
+        Assert.Equal("application/vnd.github+json", request.Headers["Accept"]);
+        Assert.Equal("ControlRoom", request.Headers["User-Agent"]);
+        Assert.False(request.Headers.ContainsKey("Authorization"));
+        Assert.False(request.Headers.ContainsKey("Cookie"));
+        Assert.Equal(UpdateChannel.Develop, state.Latest?.Channel);
+    }
+
+    [Fact]
+    public async Task StableChannel_StoredOrRefused_AsksForTheLatestRelease()
+    {
+        settings.Set(true, UpdateChannel.Stable);
+        github.RespondWithTag("v1.2.0");
+        UpdateChecker checker = Checker("1.0.0", out UpdateState state);
+        await checker.Check();
+        File.WriteAllText(settings.Path, "{\"autoUpdate\":true,\"channel\":\"beta\"}");
+        await checker.Check();
+
+        Assert.Equal(2, github.Requests.Count);
+        Assert.All(github.Requests, request => Assert.Equal(UpdateChecker.LatestUrl, request.Uri.AbsoluteUri));
+        Assert.Equal(UpdateChannel.Stable, state.Latest?.Channel);
+    }
+
+    [Theory]
+    [InlineData("[{\"tag_name\":\"v1.2.4-develop.9\"},{\"tag_name\":\"v1.2.4-develop.10\"},{\"tag_name\":\"v1.2.3\"}]", "1.2.4-develop.10")]
+    [InlineData("[{\"tag_name\":\"v1.2.4-develop.9\"},{\"tag_name\":\"v1.2.4\"}]", "1.2.4")]
+    [InlineData("[{\"tag_name\":\"v1.2.3\"},{\"tag_name\":\"v1.2.4-develop.1\"}]", "1.2.4-develop.1")]
+    [InlineData("[{\"tag_name\":\"v9.0.0\",\"draft\":true},{\"tag_name\":\"v1.2.4-develop.1\",\"draft\":false}]", "1.2.4-develop.1")]
+    [InlineData("[{\"tag_name\":\"v9.0.0-rc.1\"},{\"tag_name\":\"v9.0.0+b\"},{\"tag_name\":\"9.0.0\"},"
+        + "{\"tag_name\":\"v9.0.0-develop.01\"},{\"tag_name\":\"v9.0.0-develop.0\"},{\"tag_name\":\"v09.0.0\"},"
+        + "{\"tag_name\":\"v9.0.0-develop.1.2\"},{\"tag_name\":\"v9.0.0-Develop.1\"},{\"tag_name\":9},"
+        + "{\"name\":\"v9.0.0\"},\"v9.0.0\",null,{\"tag_name\":\"v1.1.0\"}]", "1.1.0")]
+    public async Task DevelopList_KeepsTheHighestValidNonDraftTag(string list, string expected)
+    {
+        settings.Set(null, UpdateChannel.Develop);
+        RespondWithList(list);
+        UpdateChecker checker = Checker("1.0.0", out UpdateState state);
+
+        await checker.Check();
+
+        Assert.Equal(expected, state.Latest?.Version.ToString());
+        Assert.Equal(Prefix + "v" + expected, state.Latest?.Url);
+    }
+
+    [Theory]
+    [InlineData("{\"tag_name\":\"v9.0.0\"}")]
+    [InlineData("[]")]
+    [InlineData("[{\"tag_name\":\"v9.0.0\",\"draft\":true}]")]
+    [InlineData("[{\"tag_name\":\"v9.0.0-rc.1\"}]")]
+    [InlineData("[{\"tag_name\":\"v9.0.0\"} BODY-MARKER")]
+    [InlineData("\"v9.0.0\"")]
+    public async Task DevelopList_InvalidBody_KeepsTheLastState(string body)
+    {
+        settings.Set(null, UpdateChannel.Develop);
+        RespondWithList("[{\"tag_name\":\"v1.2.0-develop.3\"}]");
+        UpdateChecker checker = Checker("1.0.0", out UpdateState state);
+        await checker.Check();
+        UpdateRelease? before = state.Latest;
+        RespondWithList(body);
+
+        await checker.Check();
+
+        Assert.NotNull(before);
+        Assert.Same(before, state.Latest);
+        AssertLogsHoldNoUrlOrBody();
+    }
+
+    [Fact]
+    public async Task DevelopList_OverOneMebibyte_KeepsTheLastState()
+    {
+        settings.Set(null, UpdateChannel.Develop);
+        UpdateChecker checker = Checker("1.0.0", out UpdateState state);
+        RespondWithList("[{\"tag_name\":\"v9.0.0\"}]".PadRight(UpdateChecker.MaxBodyBytes + 1));
+
+        await checker.Check();
+
+        Assert.Null(state.Latest);
+    }
+
+    [Theory]
+    [InlineData("1.2.3", "v1.2.4-develop.1", true)]
+    [InlineData("1.2.4-develop.9", "v1.2.4", true)]
+    [InlineData("1.2.4-develop.9", "v1.2.4-develop.10", true)]
+    [InlineData("1.2.4-develop.10", "v1.2.4-develop.9", false)]
+    [InlineData("1.2.4", "v1.2.4-develop.9", false)]
+    public async Task DevelopResult_IsAvailableOnlyWhenNewerAndOnTheSameChannel(string current, string tag, bool available)
+    {
+        settings.Set(null, UpdateChannel.Develop);
+        RespondWithList("[{\"tag_name\":\"" + tag + "\"}]");
+        UpdateChecker checker = Checker(current, out UpdateState state);
+
+        await checker.Check();
+
+        UpdateResponse develop = UpdateEndpoint.Describe(state.Latest, current, null, UpdateChannel.Develop);
+        Assert.Equal(available, develop.Available);
+        if (available)
+        {
+            Assert.Equal("scripts/launch-agent.sh install --release " + tag, develop.Command);
+        }
+
+        Assert.False(UpdateEndpoint.Describe(state.Latest, current, null, UpdateChannel.Stable).Available);
+        Assert.Equal(available ? 1 : 0, push.Requests.Count);
+    }
+
+    [Fact]
+    public async Task DevelopBuild_SendsTheUpdatePushOncePerVersion()
+    {
+        settings.Set(null, UpdateChannel.Develop);
+        RespondWithList("[{\"tag_name\":\"v1.0.1-develop.4\"}]");
+        UpdateChecker checker = Checker("1.0.0", out _);
+
+        await checker.Check();
+        await checker.Check();
+
+        PushRequest request = Assert.Single(push.Requests);
+        Assert.Equal("{\"kind\":\"update\",\"version\":\"1.0.1-develop.4\",\"reason\":\"Update available\"}",
+            receiver.DecryptText(request.Body));
     }
 
     [Fact]
@@ -390,6 +527,7 @@ public sealed partial class UpdateCheckTests : IDisposable
         Assert.Equal(UpdateChecker.RepoSlug, releases.Groups[1].Value);
         Assert.Equal("https://api.github.com/repos/" + UpdateChecker.RepoSlug + "/releases/latest", UpdateChecker.LatestUrl);
         Assert.Equal("https://github.com/" + UpdateChecker.RepoSlug + "/releases/tag/", UpdateChecker.ReleasePrefix);
+        Assert.Equal("https://api.github.com/repos/" + UpdateChecker.RepoSlug + "/releases?per_page=100", UpdateChecker.ListUrl);
 
         string claude = File.ReadAllText(Path.Combine(RepoFolder(), "CLAUDE.md")).Replace("\r\n", "\n", StringComparison.Ordinal);
         int outbound = claude.IndexOf("  - The only outbound calls are", StringComparison.Ordinal);
@@ -409,7 +547,14 @@ public sealed partial class UpdateCheckTests : IDisposable
         PushSender sender = new(store, crypto, new PushTransport(push), logs.For<PushSender>());
         UpdateTransport transport = timeout is null ? new UpdateTransport(github) : new UpdateTransport(github, timeout.Value);
         return new UpdateChecker(
-            state, new RunningVersion(current), transport, store, sender, new FakeTime(), logs.For<UpdateChecker>());
+            state, new RunningVersion(current), transport, settings, store, sender, new FakeTime(), logs.For<UpdateChecker>());
+    }
+
+    private void RespondWithList(string body)
+    {
+        github.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsoluteUri == UpdateChecker.ListUrl
+            ? FakeUpdateHandler.Ok(body)
+            : new HttpResponseMessage(HttpStatusCode.NotFound));
     }
 
     private void AssertLogsHoldNoUrlOrBody()

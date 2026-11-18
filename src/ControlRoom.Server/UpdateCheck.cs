@@ -184,9 +184,9 @@ internal sealed class UpdateTransport
     }
 }
 
-/// <summary>The latest release found and its release page (built from the tag, never taken from the
-/// response).</summary>
-internal sealed record UpdateRelease(SemVer Version, string Url);
+/// <summary>The latest release found, its release page (built from the tag, never taken from the response) and
+/// the update channel (<see cref="UpdateChannel"/>) it was found on.</summary>
+internal sealed record UpdateRelease(SemVer Version, string Url, string Channel = UpdateChannel.Stable);
 
 /// <summary>The last release a check found, kept in memory only; <c>null</c> until a check succeeds.</summary>
 internal sealed class UpdateState
@@ -201,18 +201,23 @@ internal sealed class UpdateState
 }
 
 /// <summary>Checks the latest GitHub Release of <see cref="RepoSlug"/> at start and every 6 h on the
-/// <see cref="TimeProvider"/>: one <c>GET</c> to <see cref="LatestUrl"/> without credentials, no redirects, a 10 s
-/// timeout and a 1 MiB body cap. Only a <c>tag_name</c> of <c>v</c> + SemVer is kept; the release URL is rebuilt
-/// from it. Anything else keeps the last known state. When the release is newer than the running version and has
+/// <see cref="TimeProvider"/>, on the channel <c>settings.json</c> names (<c>stable</c> when it is missing or
+/// refused): one <c>GET</c> without credentials, no redirects, a 10 s timeout and a 1 MiB body cap. On
+/// <c>stable</c> it asks <see cref="LatestUrl"/> and keeps only a <c>tag_name</c> of <c>v</c> + SemVer; on
+/// <c>develop</c> it asks <see cref="ListUrl"/> and keeps the highest (by SemVer precedence) non-draft
+/// <c>tag_name</c> that is exactly <c>vX.Y.Z</c> or <c>vX.Y.Z-develop.N</c>. The release URL is rebuilt from the
+/// tag. Anything else keeps the last known state. When the release is newer than the running version and has
 /// not been announced yet (<c>updateNotified</c> in <c>push.json</c>), one <c>update</c> push is sent (unless
 /// <c>notifyUpdate</c> is off) and the version is stored. A <c>dev</c> or non-SemVer running version makes no
 /// request. Logs hold only a status code or a fixed text.</summary>
-internal sealed class UpdateChecker : IHostedService, IDisposable
+internal sealed partial class UpdateChecker : IHostedService, IDisposable
 {
     /// <summary>Must equal the slug in <c>RELEASES</c> in <c>scripts/launch-agent.sh</c>.</summary>
     public const string RepoSlug = "nothisisnotdaniel/controlroom";
 
     public const string LatestUrl = "https://api.github.com/repos/" + RepoSlug + "/releases/latest";
+
+    public const string ListUrl = "https://api.github.com/repos/" + RepoSlug + "/releases?per_page=100";
 
     public const string ReleasePrefix = "https://github.com/" + RepoSlug + "/releases/tag/";
 
@@ -225,6 +230,8 @@ internal sealed class UpdateChecker : IHostedService, IDisposable
     private readonly RunningVersion running;
 
     private readonly UpdateTransport transport;
+
+    private readonly UpdateSettingsStore settings;
 
     private readonly PushStore store;
 
@@ -243,12 +250,13 @@ internal sealed class UpdateChecker : IHostedService, IDisposable
     private ITimer? timer;
 
     public UpdateChecker(
-        UpdateState state, RunningVersion running, UpdateTransport transport, PushStore store, PushSender sender,
-        TimeProvider time, ILogger<UpdateChecker> logger)
+        UpdateState state, RunningVersion running, UpdateTransport transport, UpdateSettingsStore settings,
+        PushStore store, PushSender sender, TimeProvider time, ILogger<UpdateChecker> logger)
     {
         this.state = state;
         this.running = running;
         this.transport = transport;
+        this.settings = settings;
         this.store = store;
         this.sender = sender;
         this.time = time;
@@ -323,10 +331,23 @@ internal sealed class UpdateChecker : IHostedService, IDisposable
         }
     }
 
+    /// <summary>The channel to check: the stored one, or <c>stable</c> when <c>settings.json</c> is refused.</summary>
+    public string Channel()
+    {
+        try
+        {
+            return settings.Settings().Channel;
+        }
+        catch (PrivateFileException)
+        {
+            return UpdateChannel.Stable;
+        }
+    }
+
     /// <summary>The check itself; the caller holds <c>checking</c>.</summary>
     private async Task CheckHeld(SemVer current)
     {
-        UpdateRelease? found = await Fetch();
+        UpdateRelease? found = await Fetch(Channel());
         if (found is null)
         {
             return;
@@ -339,13 +360,14 @@ internal sealed class UpdateChecker : IHostedService, IDisposable
         }
     }
 
-    private async Task<UpdateRelease?> Fetch()
+    private async Task<UpdateRelease?> Fetch(string channel)
     {
+        bool develop = channel == UpdateChannel.Develop;
         using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(stopping.Token);
         timeout.CancelAfter(transport.Timeout);
         try
         {
-            using HttpRequestMessage request = new(HttpMethod.Get, LatestUrl);
+            using HttpRequestMessage request = new(HttpMethod.Get, develop ? ListUrl : LatestUrl);
             request.Headers.TryAddWithoutValidation("Accept", "application/vnd.github+json");
             request.Headers.TryAddWithoutValidation("User-Agent", "ControlRoom");
             using HttpResponseMessage response = await client.SendAsync(
@@ -364,14 +386,14 @@ internal sealed class UpdateChecker : IHostedService, IDisposable
                 return null;
             }
 
-            SemVer? version = ParseTag(body);
+            SemVer? version = develop ? ParseList(body) : ParseTag(body);
             if (version is null)
             {
                 logger.LogWarning("Update check response not valid");
                 return null;
             }
 
-            return new UpdateRelease(version, ReleasePrefix + "v" + version);
+            return new UpdateRelease(version, ReleasePrefix + "v" + version, channel);
         }
         catch (OperationCanceledException) when (!stopping.IsCancellationRequested)
         {
@@ -422,6 +444,51 @@ internal sealed class UpdateChecker : IHostedService, IDisposable
             return null;
         }
     }
+
+    /// <summary>The highest version (SemVer precedence) among the array entries that are objects, whose
+    /// <c>draft</c> is not <c>true</c> and whose <c>tag_name</c> is exactly <c>vX.Y.Z</c> or
+    /// <c>vX.Y.Z-develop.N</c>; <c>null</c> when the body is no JSON array or no entry qualifies.</summary>
+    private static SemVer? ParseList(byte[] body)
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(body);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            SemVer? best = null;
+            foreach (JsonElement entry in document.RootElement.EnumerateArray())
+            {
+                if (entry.ValueKind != JsonValueKind.Object
+                    || (entry.TryGetProperty("draft", out JsonElement draft) && draft.ValueKind == JsonValueKind.True)
+                    || !entry.TryGetProperty("tag_name", out JsonElement tag)
+                    || tag.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                string text = tag.GetString()!;
+                SemVer? version = ChannelTag().IsMatch(text) ? SemVer.Parse(text[1..]) : null;
+                if (version is not null && (best is null || version.IsNewerThan(best)))
+                {
+                    best = version;
+                }
+            }
+
+            return best;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    [GeneratedRegex(
+        "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-develop\\.[1-9][0-9]*)?\\z",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex ChannelTag();
 
     /// <summary>Stores <c>updateNotified</c> first, then sends (only with <c>notifyUpdate</c>), so a version is
     /// announced at most once, also across restarts. Refused push files send and store nothing. The read and the

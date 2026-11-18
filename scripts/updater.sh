@@ -2,8 +2,9 @@
 # The ControlRoom updater: run by the LaunchAgent local.controlroom.updater (every 6 h, never at load) as
 #   /bin/sh <support>/updater.sh --factory-root <root>
 # where <support> is ~/Library/Application Support/ControlRoom. When the user turned on "Install updates
-# automatically" (settings.json is exactly {"autoUpdate":true}), the install is a release (installed-release holds
-# its tag) and no factory job is running, it installs a newer GitHub release with the same download and checks as
+# automatically" (settings.json is exactly {"autoUpdate":true} or {"autoUpdate":true,"channel":"stable"|"develop"}),
+# the install is a release (installed-release holds its tag) and no factory job is running, it installs a newer
+# GitHub release (on the develop channel also a -develop prerelease) with the same download and checks as
 # `launch-agent.sh install --release`, swaps it in, confirms it through the public GET /health route (counted only
 # while launchd runs the server and its pid is the one listening on the port) and rolls back when it doesn't
 # answer or the marker can't be updated. It writes update-result.json for the server's push and prints exactly one line,
@@ -19,6 +20,11 @@ exec 3>&1 1>/dev/null 2>/dev/null
 LABEL="local.controlroom.server"
 # The one repository releases come from (the same as launch-agent.sh).
 RELEASES="https://github.com/nothisisnotdaniel/controlroom/releases"
+# The develop channel's one release list (newest first; the API never shows drafts without a token).
+LIST_URL="https://api.github.com/repos/nothisisnotdaniel/controlroom/releases?per_page=100"
+MAX_LIST_BYTES=1048576
+# settings.json is at most this long: the longest form with its line break is 41 bytes.
+MAX_SETTINGS_BYTES=64
 # The texts the shared functions below fail with are the log words here.
 LATEST_FAILED=latest_failed
 DOWNLOAD_FAILED=download_failed
@@ -139,30 +145,110 @@ number_greater() {
     [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | LC_ALL=C sort | tail -n 1)" = "$1" ]
 }
 
-# True when tag $1 (no prerelease) is newer than tag $2: a higher X.Y.Z, or the same X.Y.Z when $2 has a
-# prerelease.
-is_newer() {
-    latest=${1#v}
-    installed=${2#v}
-    core=${installed%%-*}
-    saved_ifs=$IFS
-    IFS=.
-    # shellcheck disable=SC2086
-    set -- $latest $core
-    IFS=$saved_ifs
-    if [ "$1" != "$4" ]; then
-        number_greater "$1" "$4"
+# True when $1 is ASCII-greater than $2 (two different prerelease identifiers that are not numbers).
+text_greater() {
+    [ "$(printf '%s\n%s\n' "$1" "$2" | LC_ALL=C sort | tail -n 1)" = "$1" ]
+}
+
+# True when tag $1 is newer than tag $2 by SemVer precedence: the higher X.Y.Z; for the same X.Y.Z, no prerelease
+# beats a prerelease; two prereleases compare identifier by identifier (numbers as numbers and below names, names
+# in ASCII order, and more identifiers win when all before are equal). Both tags passed valid_tag.
+semver_newer() {
+    a=${1#v}
+    b=${2#v}
+    a_core=${a%%-*}
+    b_core=${b%%-*}
+    a_pre=""
+    b_pre=""
+    case $a in
+        *-*) a_pre=${a#*-} ;;
+    esac
+    case $b in
+        *-*) b_pre=${b#*-} ;;
+    esac
+    a_rest=$a_core.
+    b_rest=$b_core.
+    while [ -n "$a_rest" ]; do
+        a_id=${a_rest%%.*}
+        b_id=${b_rest%%.*}
+        a_rest=${a_rest#*.}
+        b_rest=${b_rest#*.}
+        if [ "$a_id" != "$b_id" ]; then
+            number_greater "$a_id" "$b_id"
+            return
+        fi
+    done
+    if [ -z "$a_pre" ] || [ -z "$b_pre" ]; then
+        [ -z "$a_pre" ] && [ -n "$b_pre" ]
         return
     fi
-    if [ "$2" != "$5" ]; then
-        number_greater "$2" "$5"
+    a_rest=$a_pre.
+    b_rest=$b_pre.
+    while :; do
+        if [ -z "$a_rest" ]; then
+            return 1
+        fi
+        if [ -z "$b_rest" ]; then
+            return 0
+        fi
+        a_id=${a_rest%%.*}
+        b_id=${b_rest%%.*}
+        a_rest=${a_rest#*.}
+        b_rest=${b_rest#*.}
+        if [ "$a_id" = "$b_id" ]; then
+            continue
+        fi
+        case $a_id in
+            *[!0-9]*) a_number=no ;;
+            *) a_number=yes ;;
+        esac
+        case $b_id in
+            *[!0-9]*) b_number=no ;;
+            *) b_number=yes ;;
+        esac
+        if [ "$a_number" = yes ] && [ "$b_number" = yes ]; then
+            number_greater "$a_id" "$b_id"
+        elif [ "$a_number" = yes ]; then
+            return 1
+        elif [ "$b_number" = yes ]; then
+            return 0
+        else
+            text_greater "$a_id" "$b_id"
+        fi
         return
-    fi
-    if [ "$3" != "$6" ]; then
-        number_greater "$3" "$6"
-        return
-    fi
-    [ "$core" != "$installed" ]
+    done
+}
+
+# True for a tag the develop channel installs: exactly vX.Y.Z or vX.Y.Z-develop.N (after valid_tag).
+channel_tag() {
+    valid_tag "$1" || return 1
+    printf '%s\n' "$1" \
+        | LC_ALL=C grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-develop\.[1-9][0-9]*)?$'
+}
+
+# The develop channel: lists the releases (one fixed GET, no Authorization, no redirects, 1 MiB at most) and sets
+# TAG to the newest channel_tag among their tag_name values. Any failure, or no such tag, is latest_failed.
+develop_tag() {
+    # The trailing x keeps the answer's last line break, so nothing is cut before the tags are read.
+    answer=$("$CURL" --proto =https --tlsv1.2 -fsS --max-time 30 --max-filesize "$MAX_LIST_BYTES" "$LIST_URL" \
+        && printf x) || finish "$LATEST_FAILED"
+    answer=${answer%x}
+    [ ${#answer} -le "$MAX_LIST_BYTES" ] || finish "$LATEST_FAILED"
+    best=""
+    # Only "tag_name":"<value>" pairs: in a JSON string a quote is escaped, so text inside one never matches.
+    names=$(printf '%s\n' "$answer" | LC_ALL=C grep -Eo '"tag_name"[[:space:]]*:[[:space:]]*"[^"\\]*"' \
+        | LC_ALL=C sed -E 's/^"tag_name"[[:space:]]*:[[:space:]]*"([^"]*)"$/\1/')
+    # Read line by line from a here-document: no word splitting or globbing of the names.
+    while IFS= read -r name; do
+        channel_tag "$name" || continue
+        if [ -z "$best" ] || semver_newer "$name" "$best"; then
+            best=$name
+        fi
+    done <<NAMES
+$names
+NAMES
+    [ -n "$best" ] || finish "$LATEST_FAILED"
+    TAG=$best
 }
 
 # True when no job is in an active stage. A missing jobs folder, or a state.json that is not a regular file, is
@@ -307,7 +393,7 @@ valid_tag() {
         *) return 1 ;;
     esac
     case $1 in
-        *[!0-9A-Za-z.-]* | *-develop*) return 1 ;;
+        *[!0-9A-Za-z.-]*) return 1 ;;
     esac
     printf '%s\n' "${1#v}" \
         | LC_ALL=C grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
@@ -424,11 +510,20 @@ PREVIOUS="$SUPPORT/server.previous"
 AGENTS="$HOME/Library/LaunchAgents"
 PLIST="$AGENTS/$LABEL.plist"
 
-# 1. The setting: exactly {"autoUpdate":true}, with or without one line break, in the private support folder.
-if ! private_folder "$SUPPORT" || ! private_file "$SETTINGS" 20 \
-    || [ "$(cat "$SETTINGS")" != '{"autoUpdate":true}' ]; then
+# 1. The setting: exactly {"autoUpdate":true} (stable), {"autoUpdate":true,"channel":"stable"} or
+# {"autoUpdate":true,"channel":"develop"}, with or without one line break, in the private support folder.
+if ! private_folder "$SUPPORT" || ! private_file "$SETTINGS" "$MAX_SETTINGS_BYTES"; then
     finish off
 fi
+settings=$(cat "$SETTINGS") || finish off
+case $settings in
+    '{"autoUpdate":true}' | '{"autoUpdate":true,"channel":"stable"}') CHANNEL=stable ;;
+    '{"autoUpdate":true,"channel":"develop"}') CHANNEL=develop ;;
+    *) finish off ;;
+esac
+# $(cat) drops every trailing line break: the size allows the text plus at most one.
+settings_size=$(wc -c <"$SETTINGS") || finish off
+[ $((settings_size + 0)) -le $((${#settings} + 1)) ] || finish off
 
 # 2. A release install: the marker holds a valid tag, and the server folder and plist are in place.
 private_file "$MARKER" 200 || finish not_release
@@ -462,13 +557,18 @@ if [ -z "$ROOT" ] || ! jobs_idle; then
     finish job_running
 fi
 
-# 5. Only a newer, final release that has not just failed its check or start.
+# 5. Only a newer release that has not just failed its check or start: on stable the latest final release, on
+# develop the newest vX.Y.Z or vX.Y.Z-develop.N.
 CURL=$(find_program curl) || finish latest_failed
-latest_tag
-case $TAG in
-    *-*) finish current ;;
-esac
-is_newer "$TAG" "$INSTALLED" || finish current
+if [ "$CHANNEL" = develop ]; then
+    develop_tag
+else
+    latest_tag
+    case $TAG in
+        *-*) finish current ;;
+    esac
+fi
+semver_newer "$TAG" "$INSTALLED" || finish current
 skipped=$(last_skipped_version) && [ -n "$skipped" ] && [ "v$skipped" = "$TAG" ] && finish skipped_failed
 
 # 6. Download and check exactly like launch-agent.sh install --release; nothing is touched before this passes.
