@@ -72,8 +72,8 @@ scripts/launch-agent.sh install --release --tailnet-host mac.tail1234.ts.net  # 
 ```
 
 `install --release [vX.Y.Z]` downloads `controlroom-<version>-osx-arm64.tar.gz` (Apple silicon) and `SHA256SUMS`
-from https://github.com/nothisisnotdaniel/controlroom/releases over HTTPS, checks the checksum and every entry of
-the archive, and only then replaces the server and restarts it. If anything doesn't check out, nothing is changed.
+from https://github.com/nothisisnotdaniel/controlroom/releases over HTTPS, checks the checksum, every entry of the archive
+and its size (at most 200 MiB to download and 512 MiB unpacked), and only then replaces the server and restarts it. If anything doesn't check out, nothing is changed.
 Run it again to update. A later plain `install` goes back to publishing from the sources.
 
 Every release also has a build-provenance attestation. To check a downloaded tarball by hand:

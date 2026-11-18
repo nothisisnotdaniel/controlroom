@@ -16,6 +16,11 @@ RELEASES="https://github.com/nothisisnotdaniel/controlroom/releases"
 LATEST_FAILED="Can't find the latest release. Nothing was changed."
 DOWNLOAD_FAILED="Download failed. Nothing was changed."
 RELEASE_BAD="The release download doesn't check out. Nothing was changed."
+# Size caps for --release (the real tarball is about 42 MiB, unpacked about 112 MiB in under 400 entries).
+MAX_TARBALL_BYTES=209715200
+MAX_SUMS_BYTES=4096
+MAX_UNPACKED_BYTES=536870912
+MAX_ENTRIES=10000
 FIXED_PATH="/usr/local/share/dotnet:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 fail() {
@@ -228,10 +233,10 @@ latest_tag() {
     TAG=$found
 }
 
-# Downloads one file of release TAG into the work folder.
+# Downloads one file of release TAG, at most $2 bytes, into the work folder.
 download() {
-    "$CURL" --proto =https --proto-redir =https --tlsv1.2 -fsSL --max-time 300 -o "$WORK/$1" \
-        "$RELEASES/download/$TAG/$1" || fail "$DOWNLOAD_FAILED"
+    "$CURL" --proto =https --proto-redir =https --tlsv1.2 -fsSL --max-time 300 --max-filesize "$2" \
+        -o "$WORK/$1" "$RELEASES/download/$TAG/$1" || fail "$DOWNLOAD_FAILED"
     if [ ! -f "$WORK/$1" ] || [ -L "$WORK/$1" ]; then
         fail "$DOWNLOAD_FAILED"
     fi
@@ -281,6 +286,13 @@ check_and_extract() {
             *) fail "$RELEASE_BAD" ;;
         esac
     done <"$WORK/types"
+    # Size: at most MAX_ENTRIES entries and MAX_UNPACKED_BYTES of file content, counted by unpacking to a pipe
+    # (never to disk) and stopping one byte past the cap.
+    entries=$(wc -l <"$WORK/names") || fail "$RELEASE_BAD"
+    [ $((entries + 0)) -le "$MAX_ENTRIES" ] || fail "$RELEASE_BAD"
+    unpacked=$("$TAR" -xOzf "$WORK/$TARBALL" 2>/dev/null | head -c $((MAX_UNPACKED_BYTES + 1)) | wc -c) \
+        || fail "$RELEASE_BAD"
+    [ $((unpacked + 0)) -le "$MAX_UNPACKED_BYTES" ] || fail "$RELEASE_BAD"
 
     mkdir "$WORK/out" || fail "$RELEASE_BAD"
     "$TAR" -xzf "$WORK/$TARBALL" -C "$WORK/out" >/dev/null 2>&1 || fail "$RELEASE_BAD"
@@ -308,8 +320,8 @@ install_release() {
     fi
     TOP="controlroom-${TAG#v}-osx-arm64"
     TARBALL="$TOP.tar.gz"
-    download "$TARBALL"
-    download SHA256SUMS
+    download "$TARBALL" "$MAX_TARBALL_BYTES"
+    download SHA256SUMS "$MAX_SUMS_BYTES"
     check_and_extract
     mv "$WORK/out/$TOP" "$SERVER_NEW" || fail "$RELEASE_BAD"
     PROGRAM="$SERVER/ControlRoom.Server"

@@ -814,6 +814,8 @@ public sealed class LaunchAgentScriptTests
     [InlineData(ReleaseFault.HardLinkEntry)]
     [InlineData(ReleaseFault.NotExecutable)]
     [InlineData(ReleaseFault.NoIndexHtml)]
+    [InlineData(ReleaseFault.TooManyEntries)]
+    [InlineData(ReleaseFault.TooMuchContent)]
     public void InstallRelease_WithABadDownload_RefusesItAndChangesNothing(ReleaseFault fault)
     {
         if (OperatingSystem.IsWindows())
@@ -828,6 +830,22 @@ public sealed class LaunchAgentScriptTests
         AssertReleaseRefused(home, ["install", "--release", "v1.2.3"], ReleaseBadText);
         Assert.False(File.Exists(Path.Combine(home.Path, "Library", "evil")));
         Assert.False(File.Exists(Path.Combine(home.Support, "evil")));
+    }
+
+    [Fact]
+    public void InstallRelease_WhenSha256SumsIsOverItsSizeCap_FailsTheDownloadAndChangesNothing()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        Assert.Equal(0, home.Run("install").ExitCode);
+        home.AddRelease("1.2.3", ReleaseFault.LargeChecksumFile);
+
+        AssertReleaseRefused(home, ["install", "--release", "v1.2.3"], DownloadFailedText);
+        Assert.Equal(2, home.CurlCalls().Count);
     }
 
     [Fact]
@@ -876,11 +894,13 @@ public sealed class LaunchAgentScriptTests
     /// fixed release URL.</summary>
     private static void AssertDownload(ScriptHome home, string call, string tag, string name)
     {
-        const string Options = "--proto =https --proto-redir =https --tlsv1.2 -fsSL --max-time 300 -o ";
-        Assert.StartsWith(Options, call, StringComparison.Ordinal);
+        string limit = name == "SHA256SUMS" ? "4096" : "209715200";
+        string options = "--proto =https --proto-redir =https --tlsv1.2 -fsSL --max-time 300 --max-filesize " + limit
+            + " -o ";
+        Assert.StartsWith(options, call, StringComparison.Ordinal);
         string suffix = "/" + name + " " + Releases + "/download/" + tag + "/" + name;
         Assert.EndsWith(suffix, call, StringComparison.Ordinal);
-        string folder = call[Options.Length..^suffix.Length];
+        string folder = call[options.Length..^suffix.Length];
         Assert.Equal(home.Support, Path.GetDirectoryName(folder));
         Assert.StartsWith(".release.", Path.GetFileName(folder), StringComparison.Ordinal);
     }
@@ -937,6 +957,9 @@ public sealed class LaunchAgentScriptTests
         HardLinkEntry,
         NotExecutable,
         NoIndexHtml,
+        TooManyEntries,
+        TooMuchContent,
+        LargeChecksumFile,
     }
 
     /// <summary>A temp folder that acts as <c>HOME</c>, with fake <c>launchctl</c> and <c>dotnet</c> in its
@@ -969,13 +992,14 @@ public sealed class LaunchAgentScriptTests
 
         /// <summary>Logs its arguments as one line; for <c>-w</c> prints <c>$HOME/redirect</c> (exit 22 when
         /// missing), else copies <c>$HOME/release/&lt;last URL part&gt;</c> to <c>-o</c> (exit 22 when
-        /// missing).</summary>
+        /// missing, exit 63 like curl when it is larger than <c>--max-filesize</c>).</summary>
         private const string FakeCurl =
             "#!/bin/sh\n"
             + "printf '%s\\n' \"$*\" >> \"$HOME/curl.log\"\n"
-            + "out=\"\"; url=\"\"; w=no\n"
+            + "out=\"\"; url=\"\"; w=no; max=\"\"\n"
             + "while [ $# -gt 0 ]; do\n"
-            + "  case $1 in -o) out=$2; shift ;; -w) w=yes; shift ;; https://*) url=$1 ;; esac\n"
+            + "  case $1 in -o) out=$2; shift ;; -w) w=yes; shift ;; --max-filesize) max=$2; shift ;;"
+            + " https://*) url=$1 ;; esac\n"
             + "  shift\n"
             + "done\n"
             + "if [ $w = yes ]; then\n"
@@ -983,7 +1007,11 @@ public sealed class LaunchAgentScriptTests
             + "  exit 22\n"
             + "fi\n"
             + "name=${url##*/}\n"
-            + "if [ -f \"$HOME/release/$name\" ]; then cp \"$HOME/release/$name\" \"$out\"; exit 0; fi\n"
+            + "if [ -f \"$HOME/release/$name\" ]; then\n"
+            + "  size=$(wc -c < \"$HOME/release/$name\")\n"
+            + "  if [ -n \"$max\" ] && [ $((size + 0)) -gt \"$max\" ]; then exit 63; fi\n"
+            + "  cp \"$HOME/release/$name\" \"$out\"; exit 0\n"
+            + "fi\n"
             + "exit 22\n";
 
         private static readonly string[] HarnessFiles = ["calls.log", "states.log", "dotnet.log", "curl.log"];
@@ -1151,6 +1179,28 @@ public sealed class LaunchAgentScriptTests
                 ? UnixFileMode.UserRead | UnixFileMode.UserWrite
                 : UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             File.WriteAllText(System.IO.Path.Combine(folder, "ControlRoom.Server.dll"), "dll");
+            if (fault == ReleaseFault.TooManyEntries)
+            {
+                string many = System.IO.Path.Combine(folder, "many");
+                Directory.CreateDirectory(many);
+                for (int index = 0; index < 10000; index++)
+                {
+                    File.WriteAllBytes(System.IO.Path.Combine(many, index.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture)), []);
+                }
+            }
+
+            if (fault == ReleaseFault.TooMuchContent)
+            {
+                // Real zeros (no holes), just over the 512 MiB cap; gzip shrinks it to well under a MiB.
+                using FileStream big = File.Create(System.IO.Path.Combine(folder, "big"));
+                byte[] block = new byte[1 << 20];
+                for (int index = 0; index < 513; index++)
+                {
+                    big.Write(block);
+                }
+            }
+
             if (fault != ReleaseFault.NoIndexHtml)
             {
                 File.WriteAllText(System.IO.Path.Combine(folder, "wwwroot", "index.html"), "<!doctype html>");
@@ -1209,6 +1259,7 @@ public sealed class LaunchAgentScriptTests
                 ReleaseFault.NoChecksumLine => hash + "  other.tar.gz\n",
                 ReleaseFault.TwoChecksumLines => hash + "  " + name + "\n" + hash + "  " + name + "\n",
                 ReleaseFault.UpperCaseChecksum => hash.ToUpperInvariant() + "  " + name + "\n",
+                ReleaseFault.LargeChecksumFile => new string('#', 4096) + "\n" + hash + "  " + name + "\n",
                 _ => "1111111111111111111111111111111111111111111111111111111111111111  other.tar.gz\n"
                     + hash + "  " + name + "\n",
             };

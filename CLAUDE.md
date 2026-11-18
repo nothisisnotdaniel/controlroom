@@ -109,8 +109,10 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   - `scripts/launch-agent.sh`: POSIX `sh` LaunchAgent installer (publish, `bootout`, replace, plist `0644`,
     `bootstrap`; refuses symlinks; never reads the token). With `--release` it runs `curl`, `tar` and `shasum`
     instead of `dotnet`: tag and latest-release redirect checked as `v`+SemVer, downloads into a `mktemp -d` folder
-    in the support folder (removed on every exit), one matching `SHA256SUMS` line, archive entries only regular
-    files and folders under `controlroom-<ver>-osx-arm64/`, checked again after extraction. Not part of the server.
+    in the support folder (removed on every exit), `curl --max-filesize` 200 MiB for the tarball and 4 KiB
+    for `SHA256SUMS`, one matching `SHA256SUMS` line, archive entries only regular files and folders under
+    `controlroom-<ver>-osx-arm64/`, at most 10000 entries and 512 MiB of unpacked content (counted through a pipe
+    before extraction), checked again after extraction. Not part of the server.
   - `.github/workflows/release.yml` and `.github/scripts/release-version.sh` (title `release vX.Y.Z` to `X.Y.Z`;
     existing tags on stdin).
   - `tests/ControlRoom.Server.Tests/`: one test class per unit or concern (`LaunchAgentScriptTests` runs the script with fake
