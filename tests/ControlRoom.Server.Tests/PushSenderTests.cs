@@ -40,6 +40,7 @@ public sealed class PushSenderTests : IDisposable
     [InlineData(PushPayload.Done, "normal")]
     [InlineData(PushPayload.Approval, "normal")]
     [InlineData(PushPayload.Test, "normal")]
+    [InlineData(PushPayload.Update, "normal")]
     public async Task Send_UsesTheFixedHeaders(string kind, string urgency)
     {
         int sent = await sender.Send(new PushPayload(kind, null, null, null, 1), CancellationToken.None);
@@ -53,6 +54,16 @@ public sealed class PushSenderTests : IDisposable
         Assert.StartsWith("vapid t=", request.Headers["Authorization"], StringComparison.Ordinal);
         Assert.Contains(", k=" + Base64Url.Encode(store.Keys().PublicKey), request.Headers["Authorization"], StringComparison.Ordinal);
         Assert.Contains("\"kind\":\"" + kind + "\"", receiver.DecryptText(request.Body), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UpdatePayload_IsExactlyKindVersionAndReason()
+    {
+        PushPayload payload = new(PushPayload.Update, "Times", "5-x", "build", 3, "1.2.0-rc.1");
+
+        Assert.Equal("{\"kind\":\"update\",\"version\":\"1.2.0-rc.1\",\"reason\":\"Update available\"}",
+            System.Text.Encoding.UTF8.GetString(payload.ToJson()));
+        Assert.False(payload.NeedsYou);
     }
 
     [Fact]

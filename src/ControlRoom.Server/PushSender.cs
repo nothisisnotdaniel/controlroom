@@ -7,7 +7,8 @@ namespace ControlRoom.Server;
 
 /// <summary>What a notification is about. Only these fields go into the payload; the reason comes from a fixed
 /// table keyed by kind, never from record text.</summary>
-internal sealed record PushPayload(string Kind, string? Project, string? Job, string? Stage, int? Count = null)
+internal sealed record PushPayload(
+    string Kind, string? Project, string? Job, string? Stage, int? Count = null, string? Version = null)
 {
     public const string NeedsHuman = "needs-human";
 
@@ -21,6 +22,8 @@ internal sealed record PushPayload(string Kind, string? Project, string? Job, st
 
     public const string Test = "test";
 
+    public const string Update = "update";
+
     public static readonly IReadOnlyDictionary<string, string> Reasons = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         [NeedsHuman] = "Needs you",
@@ -29,13 +32,15 @@ internal sealed record PushPayload(string Kind, string? Project, string? Job, st
         [Done] = "Done",
         [Approval] = "New items to approve",
         [Test] = "Test notification",
+        [Update] = "Update available",
     };
 
     /// <summary>The kinds that need the user: sent with <c>Urgency: high</c>.</summary>
     public bool NeedsYou => Kind is NeedsHuman or MergeConflict or CiFailed;
 
     /// <summary>The JSON body: <c>kind</c>, <c>project</c>, <c>job</c>, <c>stage</c> (each left out when
-    /// unknown), <c>reason</c> and, for approvals, <c>count</c>.</summary>
+    /// unknown), <c>reason</c> and, for approvals, <c>count</c>. An update is exactly <c>kind</c>, <c>version</c> and
+    /// <c>reason</c>.</summary>
     public byte[] ToJson()
     {
         using MemoryStream stream = new();
@@ -43,6 +48,15 @@ internal sealed record PushPayload(string Kind, string? Project, string? Job, st
         {
             writer.WriteStartObject();
             writer.WriteString("kind", Kind);
+            if (Kind == Update)
+            {
+                writer.WriteString("version", Version);
+                writer.WriteString("reason", Reasons[Kind]);
+                writer.WriteEndObject();
+                writer.Flush();
+                return stream.ToArray();
+            }
+
             if (Project is not null)
             {
                 writer.WriteString("project", Project);

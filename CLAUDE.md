@@ -37,16 +37,19 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   - Text from files (backlog lines, job records) is shown as text, never as raw HTML; Markdown is rendered
     with raw HTML turned off.
   - Push files live next to the token file (never in the factory root): `push-keys.json` (VAPID P-256 key pair,
-    a secret like the token) and `push.json` (subscriptions, `notifyDone`). Both `0600`, written atomically
+    a secret like the token) and `push.json` (subscriptions, `notifyDone`, `notifyUpdate` (default on) and `updateNotified`). Both `0600`, written atomically
     (`0600` temp file, then rename); their folder must be `0700` and owned by the current user (created `0700`
     when missing; owner read with `lstat` in `UnixOwner`). A symlinked, loose-mode or invalid file or folder (or
     one owned by someone else) makes every `/api/push*` route return `500 {"error":"push_store"}` and is never
     overwritten. `POST /api/push/test` sends at most once per 10 s server-wide (`PushTestLimiter` on
     `TimeProvider`); a call inside that window returns `429 {"error":"too_many_requests"}` and sends nothing.
   - The only outbound calls are Web Push POSTs to subscription endpoints, allowed only as `https`, port 443, no
-    userinfo, on `*.push.apple.com`, `fcm.googleapis.com` or `updates.push.services.mozilla.com`; no redirects,
-    10 s timeout. Endpoints, keys and the token are never logged (status codes only). A payload holds only
-    `kind`, `project`, `job`, `stage`, a fixed `reason` and `count`, never record or backlog text.
+    userinfo, on `*.push.apple.com`, `fcm.googleapis.com` or `updates.push.services.mozilla.com`, and the update
+    check: one fixed `GET https://api.github.com/repos/nothisisnotdaniel/controlroom/releases/latest` at start and
+    every 6 h (no `Authorization` or cookies, body capped at 1 MiB, only a `v`+SemVer `tag_name` kept, the release
+    URL rebuilt from it); no redirects, 10 s timeout. Endpoints, keys and the token are never logged (status codes
+    only). A payload holds only `kind`, `project`, `job`, `stage`, `version`, a fixed `reason` and `count`, never
+    record or backlog text; an `update` payload is exactly `kind`, `version` and `reason`, sent once per version.
 - **Stack:** .NET 10 ASP.NET Core minimal API (`Microsoft.NET.Sdk.Web`, no extra packages) serving a plain
   HTML/CSS/JS web app from its own `wwwroot` (no CDN, no build step, strict CSP), xUnit tests with
   `Microsoft.AspNetCore.Mvc.Testing` to host the app in memory. No new package without a reason in the spec.
@@ -59,7 +62,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   `scripts/launch-agent.sh install --release [vX.Y.Z] [--tailnet-host <name>]` installs a GitHub release instead (latest
   when no tag; no .NET SDK needed; launchd runs `server/ControlRoom.Server` directly).
   `dotnet run --project src/ControlRoom.Server -- version` prints `ControlRoom <version>` (`dev` without `-p:Version`);
-  `GET /api/version` returns `{"version":"…"}`.
+  `GET /api/version` returns `{"version":"…"}`; `GET /api/update` returns `{current, available, latest, url,
+  command}` from the last update check (`dev` never checks).
 - **Releases:** `.github/workflows/release.yml` runs only for a merged PR from `develop` into `main` titled
   `release vX.Y.Z` (`.github/scripts/release-version.sh` checks the title and existing tags). On a `macos-15` (arm64)
   runner it re-checks the PR, runs `dotnet test -c Release`, publishes `-r osx-arm64 --self-contained
@@ -98,11 +102,14 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     removes it), `PushWatcher` (hosted service, `Scan()` every 30 s on `TimeProvider`; first scan is the baseline),
     `PushEndpoint` (`GET /api/push`, `POST /api/push/subscribe|unsubscribe|settings|test`), `PushTestLimiter`
     (one test send per 10 s), `UnixOwner` (`geteuid`, `lstat` uid via P/Invoke), `AppVersion` (informational version without
-    `+build`, else `dev`), `VersionCommand` (`version`), `VersionEndpoint` (`GET /api/version`), `wwwroot/` (`index.html`, `app.css`, `token.js` (stored token under
+    `+build`, else `dev`), `VersionCommand` (`version`), `VersionEndpoint` (`GET /api/version`), `UpdateCheck` (`SemVer` (2.0.0 precedence, no build metadata),
+    `RunningVersion`, `UpdateTransport` (the injectable handler and timeout), `UpdateState` (latest release, in
+    memory), `UpdateChecker` (hosted service, `Check()` at start and every 6 h on `TimeProvider`, the `update` push
+    once per version)), `UpdateEndpoint` (`GET /api/update`), `wwwroot/` (`index.html`, `app.css`, `token.js` (stored token under
     `controlroom-token`, `authFetch` for every `/api/` call, the token view), `app.js` (routing, backlogs,
     story), `edit.js` (per-project edit mode, the Add form, Edit story, fixed texts per error code), `board.js` (jobs board and job page, polls every 5 s while visible; the `ControlRoom <version>`
-    line at the foot of Jobs, asked once per page load), `push.js` (Notifications section on the
-    board: state texts, Turn on (permission only from the tap), done switch, Send test, Turn off),
+    line at the foot of Jobs and the update banner under its heading, each asked once per page load), `push.js` (Notifications section on the
+    board: state texts, Turn on (permission only from the tap), done and update switches, Send test, Turn off),
     `sw.js` (service worker: caches only the fixed app shell, never `/api/`; bump its cache version when the
     shell list changes; `push` shows a notification from fixed titles, `notificationclick` opens `#job/<id>` or
     `#backlogs`), `manifest.webmanifest`, `icons/` (opaque RGB PNGs, 180/192/512 px)).
@@ -119,8 +126,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `launchctl`/`dotnet`/`curl` in a temp `HOME` and builds release tarballs with `/usr/bin/tar`;
     `ReleaseWorkflowTests` reads `release.yml` as text); `TempFactoryRoot` (`InitGit`, `AddBareRemote`
     and `Git` for a real local repo), `TempTokenFolder` and `ServerFactory` (own temp token file; clients send `Host: 127.0.0.1:8100`; optional tailnet name;
-    `CreateTokenClient()` for API calls; `Push` fake push service, `Time` fixed clock whose timers never fire,
-    `Logs`) are the shared fixtures; `PushFakes` holds `FakeTime`, `FakePushHandler`, `PushReceiver` (test-side
+    `CreateTokenClient()` for API calls; `Push` fake push service, `Update` fake GitHub (`FakeUpdateHandler`), `CurrentVersion` (default `dev`),
+    `Time` fixed clock whose timers never fire (it records their due time and period), `Logs`) are the shared fixtures; `PushFakes` holds `FakeTime`, `FakePushHandler`, `FakeUpdateHandler`, `PushReceiver` (test-side
     decrypt) and `LogCapture`.
 - **Style:** C# like Context: file-scoped namespaces, `internal sealed` unless a type must be public, no
   primary constructors, no `var`, braces on every body, camelCase private fields without `_`; the build

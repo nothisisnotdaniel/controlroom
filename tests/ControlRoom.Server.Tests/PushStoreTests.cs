@@ -124,6 +124,42 @@ public sealed class PushStoreTests
     }
 
     [Fact]
+    public void OlderSettingsFile_WithoutTheUpdateFields_LoadsWithDefaultsAndKeepsItsValues()
+    {
+        using TempTokenFolder tokens = new();
+        string folder = Path.Combine(tokens.Path, "push");
+        PushStore store = new(folder);
+        store.Settings();
+        File.WriteAllText(store.SettingsPath, "{\n  \"notifyDone\": true,\n  \"subscriptions\": []\n}\n");
+
+        PushSettings settings = store.Settings();
+
+        Assert.True(settings.NotifyDone);
+        Assert.True(settings.NotifyUpdate);
+        Assert.Null(settings.UpdateNotified);
+        store.SetUpdateNotified("1.2.0");
+        PushSettings stored = new PushStore(folder).Settings();
+        Assert.True(stored.NotifyDone);
+        Assert.True(stored.NotifyUpdate);
+        Assert.Equal("1.2.0", stored.UpdateNotified);
+    }
+
+    [Theory]
+    [InlineData("\"notifyUpdate\": \"yes\"")]
+    [InlineData("\"updateNotified\": 3")]
+    [InlineData("\"updateNotified\": \"v1.2.0\"")]
+    [InlineData("\"updateNotified\": \"1.2.0+b\"")]
+    public void SettingsFile_WithABadUpdateField_IsRefused(string field)
+    {
+        using TempTokenFolder tokens = new();
+        PushStore store = new(Path.Combine(tokens.Path, "push"));
+        store.Settings();
+        File.WriteAllText(store.SettingsPath, "{\"notifyDone\": false, " + field + ", \"subscriptions\": []}");
+
+        Assert.Throws<PushStoreException>(() => store.Settings());
+    }
+
+    [Fact]
     public void Store_KeepsSubscriptionsAndSettingsWithPrivateWrites()
     {
         using TempTokenFolder tokens = new();

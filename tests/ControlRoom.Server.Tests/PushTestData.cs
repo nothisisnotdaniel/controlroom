@@ -35,4 +35,4 @@ internal static class PushTestData
     }
 }
 
-internal sealed record PushInfoBody(string PublicKey, bool NotifyDone, int Subscribed);
+internal sealed record PushInfoBody(string PublicKey, bool NotifyDone, bool NotifyUpdate, int Subscribed);

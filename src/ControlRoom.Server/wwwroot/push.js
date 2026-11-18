@@ -15,6 +15,7 @@ const PushTexts = {
   sendTest: "Send test",
   checkAgain: "Check again",
   notifyDone: "Notify when a job is done",
+  notifyUpdate: "Notify when an update is available",
   failed: "Can't change notifications. Try again.",
   notAllowed: "Permission was not given.",
   testSent: "Test sent.",
@@ -102,16 +103,24 @@ function pushButton(label, onClick, primary) {
   return button;
 }
 
-function doneSwitch(checked) {
+function settingSwitch(text, checked, onChange) {
   const label = element("label", "push-switch");
   const input = document.createElement("input");
   input.type = "checkbox";
   input.setAttribute("role", "switch");
   input.checked = checked;
   input.disabled = pushBusy;
-  input.addEventListener("change", () => setNotifyDone(input.checked));
-  label.append(input, element("span", null, PushTexts.notifyDone));
+  input.addEventListener("change", () => onChange(input.checked));
+  label.append(input, element("span", null, text));
   return label;
+}
+
+function doneSwitch(checked) {
+  return settingSwitch(PushTexts.notifyDone, checked, setNotifyDone);
+}
+
+function updateSwitch(checked) {
+  return settingSwitch(PushTexts.notifyUpdate, checked, setNotifyUpdate);
 }
 
 function showPush(text, controls) {
@@ -161,6 +170,7 @@ async function renderPush() {
   if (subscription && Notification.permission === "granted") {
     showPush(PushTexts.on, [
       doneSwitch(info.notifyDone === true),
+      updateSwitch(info.notifyUpdate !== false),
       pushButton(PushTexts.sendTest, sendTestPush, false),
       pushButton(PushTexts.turnOff, turnOffPush, false),
     ]);
@@ -239,6 +249,12 @@ function sendTestPush() {
 function setNotifyDone(on) {
   withPushBusy(async () => {
     await pushJson("/api/push/settings", { notifyDone: on });
+  });
+}
+
+function setNotifyUpdate(on) {
+  withPushBusy(async () => {
+    await pushJson("/api/push/settings", { notifyUpdate: on });
   });
 }
 

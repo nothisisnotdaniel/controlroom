@@ -6,10 +6,15 @@ using Microsoft.Extensions.Logging;
 
 namespace ControlRoom.Server.Tests;
 
-/// <summary>A clock fixed at <see cref="Now"/>; its timers never fire, so nothing runs on its own in a test.</summary>
+/// <summary>A clock fixed at <see cref="Now"/>; its timers never fire, so nothing runs on its own in a test. Each
+/// timer's due time and period are recorded in <see cref="Timers"/>.</summary>
 internal sealed class FakeTime : TimeProvider
 {
     public static readonly DateTimeOffset Start = new(2026, 3, 1, 9, 30, 0, TimeSpan.Zero);
+
+    private readonly ConcurrentQueue<(TimeSpan Due, TimeSpan Period)> timers = new();
+
+    public IReadOnlyList<(TimeSpan Due, TimeSpan Period)> Timers => timers.ToArray();
 
     public DateTimeOffset Now { get; set; } = Start;
 
@@ -20,6 +25,7 @@ internal sealed class FakeTime : TimeProvider
 
     public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
     {
+        timers.Enqueue((dueTime, period));
         return new NeverTimer();
     }
 
@@ -77,6 +83,91 @@ internal sealed class FakePushHandler : HttpMessageHandler
 
         requests.Enqueue(new PushRequest(request.RequestUri!, headers, body));
         HttpResponseMessage response = Respond(request);
+        response.RequestMessage = request;
+        return response;
+    }
+}
+
+/// <summary>One request the fake GitHub saw: method, URL and headers (request and content).</summary>
+internal sealed record UpdateRequest(HttpMethod Method, Uri Uri, IReadOnlyDictionary<string, string> Headers);
+
+/// <summary>A fake GitHub API: records every request and answers with <see cref="Respond"/> (404 by default). It
+/// never opens a connection. <see cref="WaitForRequests"/> completes once that many requests were seen.</summary>
+internal sealed class FakeUpdateHandler : HttpMessageHandler
+{
+    /// <summary>The bound for <see cref="WaitForRequests"/>, so a broken test fails instead of hanging.</summary>
+    public static readonly TimeSpan WaitLimit = TimeSpan.FromSeconds(30);
+
+    private readonly ConcurrentQueue<UpdateRequest> requests = new();
+
+    private readonly object gate = new();
+
+    private readonly List<(int Count, TaskCompletionSource Done)> waiters = [];
+
+    public Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> Respond { get; set; } =
+        (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+
+    public IReadOnlyList<UpdateRequest> Requests => requests.ToArray();
+
+    /// <summary>Answers <c>200</c> with <c>{"tag_name": tag, …}</c> plus fields that must never be kept.</summary>
+    public void RespondWithTag(string tag)
+    {
+        Respond = (_, _) => Task.FromResult(Ok(
+            "{\"tag_name\":\"" + tag + "\",\"html_url\":\"https://evil.example/x\",\"body\":\"BODY-MARKER\"}"));
+    }
+
+    public static HttpResponseMessage Ok(string json)
+    {
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json"),
+        };
+    }
+
+    /// <summary>Waits (bounded) until at least <paramref name="count"/> requests were recorded.</summary>
+    public Task WaitForRequests(int count)
+    {
+        lock (gate)
+        {
+            if (requests.Count >= count)
+            {
+                return Task.CompletedTask;
+            }
+
+            TaskCompletionSource done = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            waiters.Add((count, done));
+            return done.Task.WaitAsync(WaitLimit);
+        }
+    }
+
+    protected override async Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        Dictionary<string, string> headers = new(StringComparer.OrdinalIgnoreCase);
+        foreach (KeyValuePair<string, IEnumerable<string>> header in request.Headers)
+        {
+            headers[header.Key] = string.Join(", ", header.Value);
+        }
+
+        if (request.Content is not null)
+        {
+            foreach (KeyValuePair<string, IEnumerable<string>> header in request.Content.Headers)
+            {
+                headers[header.Key] = string.Join(", ", header.Value);
+            }
+        }
+
+        lock (gate)
+        {
+            requests.Enqueue(new UpdateRequest(request.Method, request.RequestUri!, headers));
+            foreach ((int count, TaskCompletionSource done) in waiters.Where(waiter => requests.Count >= waiter.Count).ToList())
+            {
+                done.TrySetResult();
+                waiters.Remove((count, done));
+            }
+        }
+
+        HttpResponseMessage response = await Respond(request, cancellationToken);
         response.RequestMessage = request;
         return response;
     }

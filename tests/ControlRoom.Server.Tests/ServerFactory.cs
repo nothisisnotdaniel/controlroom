@@ -10,7 +10,8 @@ namespace ControlRoom.Server.Tests;
 /// <summary>Hosts the server in memory (no real port) with <c>FactoryRoot</c> set to a temporary root and
 /// <c>TokenFile</c> set to a file in the factory's own temp folder (outside the root, never the real one), deleted
 /// on dispose. Clients send <c>Host: 127.0.0.1:8100</c>. Push requests go to <see cref="Push"/> (never the
-/// network) and the clock is <see cref="Time"/>, whose timers never fire.</summary>
+/// network), the update check goes to <see cref="Update"/> as <see cref="CurrentVersion"/>, and the clock is
+/// <see cref="Time"/>, whose timers never fire.</summary>
 internal sealed class ServerFactory : WebApplicationFactory<Program>
 {
     private readonly string factoryRoot;
@@ -45,6 +46,13 @@ internal sealed class ServerFactory : WebApplicationFactory<Program>
 
         TokenFile = tokenFile;
     }
+
+    /// <summary>The fake GitHub API the update check goes to.</summary>
+    public FakeUpdateHandler Update { get; } = new();
+
+    /// <summary>The version the server reports as running; set before the host starts (default <c>dev</c>, which
+    /// never checks).</summary>
+    public string CurrentVersion { get; set; } = AppVersion.Dev;
 
     /// <summary>The fake push service every push request goes to.</summary>
     public FakePushHandler Push { get; } = new();
@@ -87,6 +95,8 @@ internal sealed class ServerFactory : WebApplicationFactory<Program>
         {
             services.AddSingleton<TimeProvider>(Time);
             services.AddSingleton(new PushTransport(Push));
+            services.AddSingleton(new UpdateTransport(Update));
+            services.AddSingleton(new RunningVersion(CurrentVersion));
             services.AddSingleton<ILoggerProvider>(Logs);
         });
     }

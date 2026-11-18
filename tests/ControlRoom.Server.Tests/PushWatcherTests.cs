@@ -249,6 +249,7 @@ public sealed class PushWatcherTests : IDisposable
                 ["done"] = "Done",
                 ["approval"] = "New items to approve",
                 ["test"] = "Test notification",
+                ["update"] = "Update available",
             },
             PushPayload.Reasons.OrderBy(pair => pair.Key, StringComparer.Ordinal)
                 .ToDictionary(pair => pair.Key, pair => pair.Value));

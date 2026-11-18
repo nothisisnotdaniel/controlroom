@@ -173,7 +173,7 @@ public sealed class PushApiTests
             using HttpClient client = factory.CreateTokenClient();
             using HttpResponseMessage response = await client.PostAsync(
                 PushEndpoint.SettingsRoute, PushTestData.Json("{\"notifyDone\":true}"));
-            Assert.Equal("{\"notifyDone\":true}", await response.Content.ReadAsStringAsync());
+            Assert.Equal("{\"notifyDone\":true,\"notifyUpdate\":true}", await response.Content.ReadAsStringAsync());
             Assert.True((await PushTestData.Info(client)).NotifyDone);
             using HttpResponseMessage bad = await client.PostAsync(
                 PushEndpoint.SettingsRoute, PushTestData.Json("{\"notifyDone\":\"yes\"}"));
@@ -183,6 +183,60 @@ public sealed class PushApiTests
         using ServerFactory again = new(root.Path, tokens.TokenFile);
         using HttpClient second = again.CreateTokenClient();
         Assert.True((await PushTestData.Info(second)).NotifyDone);
+    }
+
+    [Fact]
+    public async Task Settings_NotifyUpdate_IsOnByDefaultAndSetsOnlyThatField()
+    {
+        using TempFactoryRoot root = new();
+        using TempTokenFolder tokens = new();
+        using (ServerFactory factory = new(root.Path, tokens.TokenFile))
+        {
+            using HttpClient client = factory.CreateTokenClient();
+            PushInfoBody before = await PushTestData.Info(client);
+            Assert.True(before.NotifyUpdate);
+            Assert.False(before.NotifyDone);
+            using HttpResponseMessage done = await client.PostAsync(
+                PushEndpoint.SettingsRoute, PushTestData.Json("{\"notifyDone\":true}"));
+
+            using HttpResponseMessage response = await client.PostAsync(
+                PushEndpoint.SettingsRoute, PushTestData.Json("{\"notifyUpdate\":false}"));
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal("{\"notifyDone\":true,\"notifyUpdate\":false}", await response.Content.ReadAsStringAsync());
+            PushInfoBody after = await PushTestData.Info(client);
+            Assert.True(after.NotifyDone);
+            Assert.False(after.NotifyUpdate);
+            string json = await client.GetStringAsync(PushEndpoint.Route);
+            Assert.Contains("\"notifyUpdate\":false", json, StringComparison.Ordinal);
+        }
+
+        using ServerFactory again = new(root.Path, tokens.TokenFile);
+        using HttpClient second = again.CreateTokenClient();
+        Assert.False((await PushTestData.Info(second)).NotifyUpdate);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"other\":true}")]
+    [InlineData("{\"notifyUpdate\":\"no\"}")]
+    [InlineData("{\"notifyUpdate\":0}")]
+    [InlineData("{\"notifyUpdate\":null}")]
+    [InlineData("{\"notifyDone\":true,\"notifyUpdate\":1}")]
+    [InlineData("[true]")]
+    public async Task Settings_WithoutAFlagOrWithANonBoolean_Is400AndChangesNothing(string body)
+    {
+        using TempFactoryRoot root = new();
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+
+        using HttpResponseMessage response = await client.PostAsync(PushEndpoint.SettingsRoute, PushTestData.Json(body));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("{\"error\":\"invalid\"}", await response.Content.ReadAsStringAsync());
+        PushInfoBody info = await PushTestData.Info(client);
+        Assert.False(info.NotifyDone);
+        Assert.True(info.NotifyUpdate);
     }
 
     [Fact]

@@ -69,7 +69,7 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(staleWhileRevalidate(event));
 });
 
-// Push: the payload holds only kind, project, job, stage, reason and count. The title comes from this fixed table,
+// Push: the payload holds only kind, project, job, stage, version, reason and count. The title comes from this fixed table,
 // never from the payload; the body is built from the payload's names. Nothing is fetched here.
 const PushTitles = {
   "needs-human": "Needs you",
@@ -78,9 +78,11 @@ const PushTitles = {
   done: "Done",
   approval: "New items to approve",
   test: "Test notification",
+  update: "Update available",
 };
 const PushFallbackTitle = "Control Room";
 const PushJobPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}$/;
+const PushVersionPattern = /^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})(-[0-9A-Za-z-]{1,40}(\.[0-9A-Za-z-]{1,40}){0,9})?$/;
 
 function pushField(data, name) {
   const value = data[name];
@@ -108,6 +110,10 @@ function pushNotification(data) {
     body = (count === 1 ? "1 new item" : count + " new items") + (project ? " in " + project : "");
     tag = "approval:" + project;
     url = "/#backlogs";
+  } else if (kind === "update") {
+    const version = PushVersionPattern.test(pushField(data, "version")) ? pushField(data, "version") : "";
+    body = version ? "ControlRoom " + version : "";
+    tag = "update:" + version;
   } else if (kind === "test") {
     body = "Notifications work on this device.";
     tag = "test:";
