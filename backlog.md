@@ -53,6 +53,6 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#43](backlog/043-mention-tailnet-host-in-the-launch.md) Mention --tailnet-host in the launch-agent.sh usage text
 - [?] [#44](backlog/044-clearer-refusal-when-the-tailnet-name.md) Clearer refusal when the tailnet name is not configured
 - [x] [#45](backlog/045-release-builds-on-github.md) Release builds on GitHub → 225-release-builds-github
-- [ ] [#46](backlog/046-update-available-notice.md) Update available notice (after: #45)
+- [x] [#46](backlog/046-update-available-notice.md) Update available notice (after: #45) → 228-update-available-notice
 - [ ] [#47](backlog/047-automatic-updates.md) Automatic updates (after: #46)
 - [ ] [#48](backlog/048-strict-semver-prerelease-identifiers-in-release.md) Strict SemVer prerelease identifiers in release tags
