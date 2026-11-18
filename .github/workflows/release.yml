@@ -1,0 +1,148 @@
+# Builds ControlRoom for macOS on Apple silicon and attaches it to a GitHub release.
+# - Only a merged pull request from develop into main, titled "release vX.Y.Z", makes a release: vX.Y.Z (and
+#   its tag) on the merge commit (.github/scripts/release-version.sh). Closed-unmerged PRs, PRs from other
+#   branches and fork PRs are skipped by the job's if:, and the first step checks the same again.
+# - The release holds controlroom-<version>-osx-arm64.tar.gz (one top folder controlroom-<version>-osx-arm64/
+#   with the self-contained publish output, wwwroot/ included) and SHA256SUMS, plus a build-provenance
+#   attestation for the tarball (check it with: gh attestation verify <tarball> --repo nothisisnotdaniel/controlroom).
+#   scripts/launch-agent.sh install --release [vX.Y.Z] installs it.
+# PR fields reach the shell only through env:, never through ${{ }} inside a run: script.
+# Actions are pinned to full commit SHAs (the tag each one had is in the trailing comment), so a moved tag
+# cannot run new code with the contents: write token.
+name: Release
+
+on:
+  pull_request:
+    types:
+      - "closed"
+    branches:
+      - "main"
+
+permissions: {}
+
+jobs:
+  release:
+    # Only a merged PR from develop in this repository.
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.head.repo.full_name == github.repository
+    # macos-15 is an Apple silicon (arm64) runner; the first step checks it.
+    runs-on: macos-15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      PR_TITLE: ${{ github.event.pull_request.title }}
+      PR_MERGED: ${{ github.event.pull_request.merged }}
+      PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+      MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # No later step needs git credentials (gh uses GH_TOKEN), so the write token is not left in .git/config.
+          persist-credentials: false
+          # All history and tags: the tags are checked by release-version.sh, and the merge commit against
+          # origin/main.
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Check the pull request
+        run: |
+          if [ "$(uname -m)" != "arm64" ]; then
+            echo "The runner is not arm64" >&2
+            exit 1
+          fi
+          if [ "$PR_MERGED" != "true" ]; then
+            echo "Pull request is not merged; nothing to release" >&2
+            exit 1
+          fi
+          if [ "$PR_HEAD_REF" != "develop" ]; then
+            echo "Release pull requests must come from develop" >&2
+            exit 1
+          fi
+          if [ "$PR_HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then
+            echo "Release pull requests must come from this repository" >&2
+            exit 1
+          fi
+          case "$MERGE_SHA" in
+            '' | *[!0-9a-f]*)
+              echo "The merge commit is not a lowercase hex commit id" >&2
+              exit 1
+              ;;
+          esac
+          if [ "${#MERGE_SHA}" -ne 40 ]; then
+            echo "The merge commit is not 40 characters long" >&2
+            exit 1
+          fi
+          if [ "$(git rev-parse HEAD)" != "$MERGE_SHA" ]; then
+            echo "The checked-out commit is not the merge commit" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$MERGE_SHA" origin/main; then
+            echo "The merge commit is not on main" >&2
+            exit 1
+          fi
+
+      - name: Version
+        run: |
+          if ! VERSION="$(git tag --list 'v*' | sh .github/scripts/release-version.sh "$PR_TITLE")"; then
+            echo "The release pull request title must be exactly 'release vX.Y.Z' for a new version" >&2
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      # The tests run on the normal build (no version override): they expect the version "dev".
+      - name: Test
+        run: dotnet test -c Release
+
+      - name: Publish
+        run: dotnet publish src/ControlRoom.Server -c Release -r osx-arm64 --self-contained -p:Version="$VERSION" -o "$RUNNER_TEMP/publish"
+
+      - name: Smoke check the published server
+        run: |
+          ACTUAL="$("$RUNNER_TEMP/publish/ControlRoom.Server" version)"
+          if [ "$ACTUAL" != "ControlRoom $VERSION" ]; then
+            echo "ControlRoom.Server version printed '$ACTUAL', expected 'ControlRoom $VERSION'" >&2
+            exit 1
+          fi
+
+      - name: Pack
+        env:
+          # No ._ AppleDouble entries for extended attributes: the tarball holds only the publish output.
+          COPYFILE_DISABLE: "1"
+        run: |
+          NAME="controlroom-$VERSION-osx-arm64"
+          mkdir -p "$RUNNER_TEMP/pack" dist
+          mv "$RUNNER_TEMP/publish" "$RUNNER_TEMP/pack/$NAME"
+          if [ ! -f "$RUNNER_TEMP/pack/$NAME/wwwroot/index.html" ]; then
+            echo "The publish output has no wwwroot/index.html" >&2
+            exit 1
+          fi
+          tar -czf "dist/$NAME.tar.gz" -C "$RUNNER_TEMP/pack" "$NAME"
+
+      - name: Checksums
+        run: |
+          cd dist
+          shasum -a 256 "controlroom-$VERSION-osx-arm64.tar.gz" > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/controlroom-${{ env.VERSION }}-osx-arm64.tar.gz
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PRERELEASE=""
+          case "$VERSION" in
+            *-*) PRERELEASE="--prerelease" ;;
+          esac
+          gh release create "v$VERSION" "dist/controlroom-$VERSION-osx-arm64.tar.gz" dist/SHA256SUMS --title "ControlRoom $VERSION" --generate-notes --target "$MERGE_SHA" $PRERELEASE

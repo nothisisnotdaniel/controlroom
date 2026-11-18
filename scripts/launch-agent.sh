@@ -2,12 +2,20 @@
 # Installs, removes and reports on the macOS LaunchAgent that starts the ControlRoom server at login.
 # Usage: scripts/launch-agent.sh install|uninstall|status
 #        scripts/launch-agent.sh install --tailnet-host <mac>.<tailnet>.ts.net  (adds --TailnetHost <name>)
-# POSIX sh. Runs only dotnet (publish) and launchctl with fixed arguments. Never reads the access token file.
+#        scripts/launch-agent.sh install --release [vX.Y.Z] [--tailnet-host <name>]
+#          (installs the ready-built release from GitHub instead of publishing: the latest one, or vX.Y.Z)
+# POSIX sh. Runs only dotnet (publish), launchctl and, with --release, curl, tar and shasum, all with fixed
+# arguments. Never reads the access token file.
 
 set -u
 
 LABEL="local.controlroom.server"
-USAGE="usage: scripts/launch-agent.sh install|uninstall|status"
+USAGE="usage: scripts/launch-agent.sh install [--release [vX.Y.Z]] [--tailnet-host <name>]|uninstall|status"
+# The one repository releases come from (renaming it breaks --release).
+RELEASES="https://github.com/nothisisnotdaniel/controlroom/releases"
+LATEST_FAILED="Can't find the latest release. Nothing was changed."
+DOWNLOAD_FAILED="Download failed. Nothing was changed."
+RELEASE_BAD="The release download doesn't check out. Nothing was changed."
 FIXED_PATH="/usr/local/share/dotnet:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 fail() {
@@ -68,18 +76,61 @@ valid_tailnet_host() {
     [ "$labels" -ge 2 ]
 }
 
+# True for "v" plus a SemVer version (prerelease part allowed, no build metadata, no -develop) on one line:
+# the same rule as .github/scripts/release-version.sh. Only such a tag goes into a URL or path.
+valid_tag() {
+    case $1 in
+        v*) ;;
+        *) return 1 ;;
+    esac
+    case $1 in
+        *[!0-9A-Za-z.-]* | *-develop*) return 1 ;;
+    esac
+    printf '%s\n' "${1#v}" \
+        | LC_ALL=C grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+}
+
 case ${1:-} in
     install | uninstall | status) ;;
     *) usage ;;
 esac
 COMMAND=$1
+shift
 TAILNET_HOST=""
-if [ "$COMMAND" = install ] && [ $# -eq 3 ] && [ "$2" = --tailnet-host ]; then
-    if ! valid_tailnet_host "$3"; then
-        fail "--tailnet-host must be a name like mac.tailnet.ts.net. Nothing was changed."
-    fi
-    TAILNET_HOST=$3
-elif [ $# -ne 1 ]; then
+HAS_TAILNET=no
+RELEASE=no
+TAG=""
+if [ "$COMMAND" = install ]; then
+    # install [--release [vX.Y.Z]] [--tailnet-host <name>]: in either order, each at most once.
+    while [ $# -gt 0 ]; do
+        case $1 in
+            --tailnet-host)
+                if [ "$HAS_TAILNET" = yes ] || [ $# -lt 2 ]; then
+                    usage
+                fi
+                if ! valid_tailnet_host "$2"; then
+                    fail "--tailnet-host must be a name like mac.tailnet.ts.net. Nothing was changed."
+                fi
+                HAS_TAILNET=yes
+                TAILNET_HOST=$2
+                shift 2
+                ;;
+            --release)
+                if [ "$RELEASE" = yes ]; then
+                    usage
+                fi
+                RELEASE=yes
+                shift
+                if [ $# -gt 0 ] && [ "$1" != --tailnet-host ]; then
+                    valid_tag "$1" || usage
+                    TAG=$1
+                    shift
+                fi
+                ;;
+            *) usage ;;
+        esac
+    done
+elif [ $# -ne 0 ]; then
     usage
 fi
 
@@ -133,6 +184,138 @@ do_uninstall() {
     exit 0
 }
 
+# Finds a program on PATH as an absolute path without control characters, or stops.
+find_program() {
+    found=$(command -v "$1") || fail "$1 not found on PATH."
+    case $found in
+        /*) ;;
+        *) fail "$1 not found on PATH." ;;
+    esac
+    check_text "$found" "The $1 path contains a control character."
+    printf '%s' "$found"
+}
+
+# Publishes the server from the sources into server.new; launchd runs it with dotnet.
+publish_server() {
+    if ! "$DOTNET" publish "$REPO/src/ControlRoom.Server" -c Release -o "$SERVER_NEW" >&2 \
+        || [ ! -f "$SERVER_NEW/ControlRoom.Server.dll" ]; then
+        rm -rf "$SERVER_NEW"
+        fail "dotnet publish failed. Nothing was changed."
+    fi
+    PROGRAM=$DOTNET
+    PROGRAM_FILE="$SERVER/ControlRoom.Server.dll"
+}
+
+# Removes the release work folder on every way out of the script.
+cleanup_work() {
+    if [ -n "${WORK:-}" ]; then
+        rm -rf "$WORK"
+    fi
+}
+
+# Sets TAG from the redirect of .../releases/latest (the redirect is not followed, nothing is downloaded).
+latest_tag() {
+    # The trailing x keeps a trailing line break in the answer, so only the exact URL passes.
+    answer=$("$CURL" --proto =https --tlsv1.2 -fsS --max-time 30 -o /dev/null -w '%{redirect_url}' \
+        "$RELEASES/latest" && printf x) || fail "$LATEST_FAILED"
+    answer=${answer%x}
+    case $answer in
+        "$RELEASES/tag/"*) ;;
+        *) fail "$LATEST_FAILED" ;;
+    esac
+    found=${answer#"$RELEASES/tag/"}
+    valid_tag "$found" || fail "$LATEST_FAILED"
+    TAG=$found
+}
+
+# Downloads one file of release TAG into the work folder.
+download() {
+    "$CURL" --proto =https --proto-redir =https --tlsv1.2 -fsSL --max-time 300 -o "$WORK/$1" \
+        "$RELEASES/download/$TAG/$1" || fail "$DOWNLOAD_FAILED"
+    if [ ! -f "$WORK/$1" ] || [ -L "$WORK/$1" ]; then
+        fail "$DOWNLOAD_FAILED"
+    fi
+}
+
+# Checks the tarball against its one SHA256SUMS line, checks every archive entry before extracting, extracts
+# into $WORK/out and checks the result again.
+check_and_extract() {
+    lines=0
+    expected=""
+    while IFS= read -r line || [ -n "$line" ]; do
+        case $line in
+            *"  $TARBALL")
+                lines=$((lines + 1))
+                expected=${line%"  $TARBALL"}
+                ;;
+        esac
+    done <"$WORK/SHA256SUMS"
+    [ "$lines" -eq 1 ] || fail "$RELEASE_BAD"
+    case $expected in
+        "" | *[!0-9a-f]*) fail "$RELEASE_BAD" ;;
+    esac
+    [ ${#expected} -eq 64 ] || fail "$RELEASE_BAD"
+    actual=$("$SHASUM" -a 256 "$WORK/$TARBALL") || fail "$RELEASE_BAD"
+    [ "${actual%% *}" = "$expected" ] || fail "$RELEASE_BAD"
+
+    # Every name is the top folder or inside it (so never absolute), with no empty, . or .. part.
+    "$TAR" -tzf "$WORK/$TARBALL" >"$WORK/names" 2>/dev/null || fail "$RELEASE_BAD"
+    [ -s "$WORK/names" ] || fail "$RELEASE_BAD"
+    while IFS= read -r name || [ -n "$name" ]; do
+        case $name in
+            "$TOP" | "$TOP/" | "$TOP/"*) ;;
+            *) fail "$RELEASE_BAD" ;;
+        esac
+        case /$name/ in
+            */../* | */./* | *//?*) fail "$RELEASE_BAD" ;;
+        esac
+        case $name in
+            *[[:cntrl:]]*) fail "$RELEASE_BAD" ;;
+        esac
+    done <"$WORK/names"
+    # Every entry is a regular file or a folder: no symlink, hard link or device.
+    "$TAR" -tvzf "$WORK/$TARBALL" >"$WORK/types" 2>/dev/null || fail "$RELEASE_BAD"
+    while IFS= read -r entry || [ -n "$entry" ]; do
+        case $entry in
+            -* | d*) ;;
+            *) fail "$RELEASE_BAD" ;;
+        esac
+    done <"$WORK/types"
+
+    mkdir "$WORK/out" || fail "$RELEASE_BAD"
+    "$TAR" -xzf "$WORK/$TARBALL" -C "$WORK/out" >/dev/null 2>&1 || fail "$RELEASE_BAD"
+    # Checked again: only the top folder, only files and folders in it, the server executable and the app shell.
+    [ "$(ls -A "$WORK/out")" = "$TOP" ] || fail "$RELEASE_BAD"
+    if [ ! -d "$WORK/out/$TOP" ] || [ -L "$WORK/out/$TOP" ]; then
+        fail "$RELEASE_BAD"
+    fi
+    others=$(find "$WORK/out/$TOP" ! -type f ! -type d) || fail "$RELEASE_BAD"
+    [ -z "$others" ] || fail "$RELEASE_BAD"
+    if [ ! -f "$WORK/out/$TOP/ControlRoom.Server" ] || [ ! -x "$WORK/out/$TOP/ControlRoom.Server" ] \
+        || [ ! -f "$WORK/out/$TOP/wwwroot/index.html" ]; then
+        fail "$RELEASE_BAD"
+    fi
+}
+
+# Downloads, checks and extracts release TAG (the latest one when empty) into server.new; launchd runs its
+# ControlRoom.Server directly. Nothing from the download runs here.
+install_release() {
+    WORK=$(mktemp -d "$SUPPORT/.release.XXXXXX") || fail "$DOWNLOAD_FAILED"
+    trap cleanup_work EXIT
+    trap 'exit 1' HUP INT TERM
+    if [ -z "$TAG" ]; then
+        latest_tag
+    fi
+    TOP="controlroom-${TAG#v}-osx-arm64"
+    TARBALL="$TOP.tar.gz"
+    download "$TARBALL"
+    download SHA256SUMS
+    check_and_extract
+    mv "$WORK/out/$TOP" "$SERVER_NEW" || fail "$RELEASE_BAD"
+    PROGRAM="$SERVER/ControlRoom.Server"
+    PROGRAM_FILE=""
+}
+
 do_install() {
     SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd) || fail "Can't find the script folder."
     REPO=$(cd "$SCRIPT_DIR/.." && pwd) || fail "Can't find the ControlRoom folder."
@@ -140,12 +323,18 @@ do_install() {
     ROOT=$(cd "$REPO/.." && pwd) || fail "Can't find the factory root."
     check_text "$ROOT" "The factory root path contains a control character."
 
-    DOTNET=$(command -v dotnet) || fail "dotnet not found on PATH."
-    case $DOTNET in
-        /*) ;;
-        *) fail "dotnet not found on PATH." ;;
-    esac
-    check_text "$DOTNET" "The dotnet path contains a control character."
+    if [ "$RELEASE" = yes ]; then
+        CURL=$(find_program curl) || exit 1
+        TAR=$(find_program tar) || exit 1
+        SHASUM=$(find_program shasum) || exit 1
+    else
+        DOTNET=$(command -v dotnet) || fail "dotnet not found on PATH."
+        case $DOTNET in
+            /*) ;;
+            *) fail "dotnet not found on PATH." ;;
+        esac
+        check_text "$DOTNET" "The dotnet path contains a control character."
+    fi
 
     refuse_link "$HOME/Library"
     refuse_link "$AGENTS"
@@ -167,10 +356,10 @@ do_install() {
     fi
 
     rm -rf "$SERVER_NEW" || fail "Can't remove $SERVER_NEW"
-    if ! "$DOTNET" publish "$REPO/src/ControlRoom.Server" -c Release -o "$SERVER_NEW" >&2 \
-        || [ ! -f "$SERVER_NEW/ControlRoom.Server.dll" ]; then
-        rm -rf "$SERVER_NEW"
-        fail "dotnet publish failed. Nothing was changed."
+    if [ "$RELEASE" = yes ]; then
+        install_release
+    else
+        publish_server
     fi
 
     # Not loaded is fine: the agent may not be installed yet.
@@ -191,8 +380,10 @@ do_install() {
         printf '    <string>%s</string>\n' "$LABEL"
         printf '    <key>ProgramArguments</key>\n'
         printf '    <array>\n'
-        printf '        <string>%s</string>\n' "$(xml_escape "$DOTNET")"
-        printf '        <string>%s</string>\n' "$(xml_escape "$SERVER/ControlRoom.Server.dll")"
+        printf '        <string>%s</string>\n' "$(xml_escape "$PROGRAM")"
+        if [ -n "$PROGRAM_FILE" ]; then
+            printf '        <string>%s</string>\n' "$(xml_escape "$PROGRAM_FILE")"
+        fi
         printf '        <string>--FactoryRoot</string>\n'
         printf '        <string>%s</string>\n' "$(xml_escape "$ROOT")"
         if [ -n "$TAILNET_HOST" ]; then
@@ -235,7 +426,11 @@ do_install() {
     "$LAUNCHCTL" bootstrap "$DOMAIN" "$PLIST" >/dev/null \
         || fail "launchctl bootstrap failed. Check: launchctl print $SERVICE"
 
-    printf 'Installed: %s\n' "$PLIST"
+    if [ "$RELEASE" = yes ]; then
+        printf 'Installed %s: %s\n' "$TAG" "$PLIST"
+    else
+        printf 'Installed: %s\n' "$PLIST"
+    fi
     printf 'Log: %s\n' "$LOG"
     exit 0
 }

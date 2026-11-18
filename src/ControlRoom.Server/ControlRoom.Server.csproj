@@ -3,6 +3,13 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>ControlRoom.Server</RootNamespace>
+    <!-- The version is only the passed -p:Version, never with a +sha suffix. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+  <!-- A build without -p:Version reports "dev" (AppVersion reads the informational version). -->
+  <PropertyGroup Condition="'$(Version)' == ''">
+    <InformationalVersion>dev</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>

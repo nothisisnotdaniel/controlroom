@@ -5,7 +5,8 @@ using System.Security.Cryptography;
 namespace ControlRoom.Server.Tests;
 
 /// <summary><c>scripts/launch-agent.sh</c>, run with <c>/bin/sh</c> in its own temp <c>HOME</c> with fake
-/// <c>launchctl</c> and <c>dotnet</c> on <c>PATH</c>. No real launchctl, publish or network is used.</summary>
+/// <c>launchctl</c>, <c>dotnet</c> and <c>curl</c> on <c>PATH</c>. No real launchctl, publish or network is used:
+/// release tarballs are built with the real <c>/usr/bin/tar</c> in the test's own temp folder.</summary>
 [UnsupportedOSPlatform("windows")]
 public sealed class LaunchAgentScriptTests
 {
@@ -14,7 +15,16 @@ public sealed class LaunchAgentScriptTests
     private const string FixedPath =
         "/usr/local/share/dotnet:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
 
-    private const string Usage = "usage: scripts/launch-agent.sh install|uninstall|status\n";
+    private const string Usage =
+        "usage: scripts/launch-agent.sh install [--release [vX.Y.Z]] [--tailnet-host <name>]|uninstall|status\n";
+
+    private const string Releases = "https://github.com/nothisisnotdaniel/controlroom/releases";
+
+    private const string LatestFailedText = "Can't find the latest release. Nothing was changed.\n";
+
+    private const string DownloadFailedText = "Download failed. Nothing was changed.\n";
+
+    private const string ReleaseBadText = "The release download doesn't check out. Nothing was changed.\n";
 
     private const string PublishFailedText = "dotnet publish failed. Nothing was changed.\n";
 
@@ -550,6 +560,331 @@ public sealed class LaunchAgentScriptTests
         Assert.DoesNotContain("access-token", File.ReadAllText(ScriptHome.ScriptPath()), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void InstallRelease_WithATag_DownloadsChecksExtractsAndRunsTheServerWithoutDotnet()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.AddRelease("1.2.3", ReleaseFault.None);
+        Directory.CreateDirectory(Path.Combine(home.Server, "old"));
+
+        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.3");
+
+        Assert.Equal(0, run.ExitCode);
+        Assert.Equal("Installed v1.2.3: " + home.Plist + "\nLog: " + home.Log + "\n", run.Output);
+        Assert.Empty(home.DotnetArguments());
+        IReadOnlyList<string> curl = home.CurlCalls();
+        Assert.Equal(2, curl.Count);
+        AssertDownload(home, curl[0], "v1.2.3", "controlroom-1.2.3-osx-arm64.tar.gz");
+        AssertDownload(home, curl[1], "v1.2.3", "SHA256SUMS");
+        Assert.Equal(
+            ["bootout new=yes server=yes plist=no", "bootstrap new=no server=yes plist=yes"],
+            home.LaunchctlStates());
+        Assert.True(File.Exists(Path.Combine(home.Server, "ControlRoom.Server")));
+        Assert.True(File.Exists(Path.Combine(home.Server, "wwwroot", "index.html")));
+        Assert.False(Directory.Exists(Path.Combine(home.Server, "old")));
+        Assert.False(Directory.Exists(home.ServerNew));
+        Assert.Empty(home.WorkFolders());
+        Assert.Equal(
+            [Path.Combine(home.Server, "ControlRoom.Server"), "--FactoryRoot",
+                Directory.GetParent(ScriptHome.RepoFolder())!.FullName],
+            ProgramArguments(home.Plist));
+        Assert.Equal(
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead,
+            File.GetUnixFileMode(home.Plist));
+        if (File.Exists(PlutilPath))
+        {
+            Assert.Equal(0, Plutil("-lint", home.Plist).ExitCode);
+            Assert.Equal("3", Extract(home.Plist, "ProgramArguments"));
+            Assert.Equal(home.Server, Extract(home.Plist, "WorkingDirectory"));
+        }
+    }
+
+    [Fact]
+    public void InstallRelease_WithoutATag_FindsTheLatestReleaseFromTheRedirect()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.AddRelease("2.0.0-rc.1", ReleaseFault.None);
+        home.SetRedirect(Releases + "/tag/v2.0.0-rc.1");
+
+        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--release");
+
+        Assert.Equal(0, run.ExitCode);
+        Assert.Equal("Installed v2.0.0-rc.1: " + home.Plist + "\nLog: " + home.Log + "\n", run.Output);
+        IReadOnlyList<string> curl = home.CurlCalls();
+        Assert.Equal(3, curl.Count);
+        Assert.Equal(
+            "--proto =https --tlsv1.2 -fsS --max-time 30 -o /dev/null -w %{redirect_url} " + Releases + "/latest",
+            curl[0]);
+        AssertDownload(home, curl[1], "v2.0.0-rc.1", "controlroom-2.0.0-rc.1-osx-arm64.tar.gz");
+        AssertDownload(home, curl[2], "v2.0.0-rc.1", "SHA256SUMS");
+        Assert.Empty(home.DotnetArguments());
+        Assert.Empty(home.WorkFolders());
+    }
+
+    [Theory]
+    [InlineData("install --release v1.2.3 --tailnet-host mac.tail1234.ts.net")]
+    [InlineData("install --tailnet-host mac.tail1234.ts.net --release v1.2.3")]
+    [InlineData("install --release --tailnet-host mac.tail1234.ts.net")]
+    [InlineData("install --tailnet-host mac.tail1234.ts.net --release")]
+    public void InstallRelease_WithATailnetHostInEitherOrder_EndsTheProgramArgumentsWithIt(string joined)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.AddRelease("1.2.3", ReleaseFault.None);
+        home.SetRedirect(Releases + "/tag/v1.2.3");
+
+        ScriptRun run = home.Run(ScriptHome.ScriptPath(), joined.Split(' '));
+
+        Assert.Equal(0, run.ExitCode);
+        Assert.Equal(
+            [Path.Combine(home.Server, "ControlRoom.Server"), "--FactoryRoot",
+                Directory.GetParent(ScriptHome.RepoFolder())!.FullName, "--TailnetHost", "mac.tail1234.ts.net"],
+            ProgramArguments(home.Plist));
+        Assert.Empty(home.DotnetArguments());
+    }
+
+    [Fact]
+    public void Install_AfterARelease_WritesTheDotnetPlistAgain()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.AddRelease("1.2.3", ReleaseFault.None);
+        Assert.Equal(0, home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.3").ExitCode);
+
+        ScriptRun run = home.Run("install");
+
+        Assert.Equal(0, run.ExitCode);
+        Assert.Equal("Installed: " + home.Plist + "\nLog: " + home.Log + "\n", run.Output);
+        Assert.Equal(
+            [Path.Combine(home.Path, "bin", "dotnet"), Path.Combine(home.Server, "ControlRoom.Server.dll"),
+                "--FactoryRoot", Directory.GetParent(ScriptHome.RepoFolder())!.FullName],
+            ProgramArguments(home.Plist));
+        Assert.False(File.Exists(Path.Combine(home.Server, "ControlRoom.Server")));
+    }
+
+    [Theory]
+    [InlineData("1.2.3")]
+    [InlineData("v1.2")]
+    [InlineData("v1.2.3.4")]
+    [InlineData("v01.2.3")]
+    [InlineData("v1.02.3")]
+    [InlineData("v1.2.3+build")]
+    [InlineData("v1.2.3-develop.1")]
+    [InlineData("v1.2.3-")]
+    [InlineData("v1.2.3/../x")]
+    [InlineData("v1.2.3 ")]
+    [InlineData("v1.2.3\nv1.2.4")]
+    [InlineData("V1.2.3")]
+    [InlineData("--release")]
+    [InlineData("")]
+    public void InstallRelease_WithABadTag_PrintsUsageExitsTwoAndDownloadsNothing(string tag)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.AddRelease("1.2.3", ReleaseFault.None);
+        IReadOnlyList<string> before = home.Snapshot();
+
+        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--release", tag);
+
+        Assert.Equal(2, run.ExitCode);
+        Assert.Equal(Usage, run.Error);
+        Assert.Equal("", run.Output);
+        Assert.Empty(home.CurlCalls());
+        Assert.Empty(home.LaunchctlCalls());
+        Assert.Empty(home.DotnetArguments());
+        Assert.Equal(before, home.Snapshot());
+    }
+
+    [Theory]
+    [InlineData("install --release v1.2.3 extra")]
+    [InlineData("install --release v1.2.3 v1.2.4")]
+    [InlineData("install --release --release")]
+    [InlineData("install --release v1.2.3 --release")]
+    [InlineData("install --tailnet-host mac.tail1234.ts.net --tailnet-host mac.tail1234.ts.net")]
+    [InlineData("install --tailnet-host mac.tail1234.ts.net --release v1.2.3 --tailnet-host mac.tail1234.ts.net")]
+    [InlineData("install --release --tailnet-host")]
+    [InlineData("install v1.2.3")]
+    [InlineData("status --release")]
+    [InlineData("uninstall --release v1.2.3")]
+    public void BadReleaseArguments_PrintUsageExitTwoAndChangeNothing(string joined)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        IReadOnlyList<string> before = home.Snapshot();
+
+        ScriptRun run = home.Run(ScriptHome.ScriptPath(), joined.Split(' '));
+
+        Assert.Equal(2, run.ExitCode);
+        Assert.Equal(Usage, run.Error);
+        Assert.Empty(home.CurlCalls());
+        Assert.Empty(home.LaunchctlCalls());
+        Assert.Empty(home.DotnetArguments());
+        Assert.Equal(before, home.Snapshot());
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(Releases + "/tag/v1.2")]
+    [InlineData(Releases + "/tag/v1.2.3\n")]
+    [InlineData(Releases + "/tag/v1.2.3/")]
+    [InlineData(Releases + "/tag/v1.2.3+abc")]
+    [InlineData(Releases + "/tag/v1.2.3/../../x")]
+    [InlineData(Releases + "/tag/1.2.3")]
+    [InlineData(Releases + "/tag/")]
+    [InlineData(Releases)]
+    [InlineData("http://github.com/nothisisnotdaniel/controlroom/releases/tag/v1.2.3")]
+    [InlineData("https://evil.example/nothisisnotdaniel/controlroom/releases/tag/v1.2.3")]
+    [InlineData("https://github.com/someone/controlroom/releases/tag/v1.2.3")]
+    [InlineData(" " + Releases + "/tag/v1.2.3")]
+    public void InstallRelease_WithABadLatestAnswer_FailsAndChangesNothing(string? answer)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        Assert.Equal(0, home.Run("install").ExitCode);
+        home.AddRelease("1.2.3", ReleaseFault.None);
+        if (answer is not null)
+        {
+            home.SetRedirect(answer);
+        }
+
+        AssertReleaseRefused(home, ["install", "--release"], LatestFailedText);
+        Assert.Single(home.CurlCalls());
+    }
+
+    [Theory]
+    [InlineData("controlroom-1.2.3-osx-arm64.tar.gz")]
+    [InlineData("SHA256SUMS")]
+    public void InstallRelease_WhenADownloadFails_FailsAndChangesNothing(string missing)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        Assert.Equal(0, home.Run("install").ExitCode);
+        home.AddRelease("1.2.3", ReleaseFault.None);
+        home.RemoveReleaseFile(missing);
+
+        AssertReleaseRefused(home, ["install", "--release", "v1.2.3"], DownloadFailedText);
+    }
+
+    [Theory]
+    [InlineData(ReleaseFault.BadChecksum)]
+    [InlineData(ReleaseFault.NoChecksumLine)]
+    [InlineData(ReleaseFault.TwoChecksumLines)]
+    [InlineData(ReleaseFault.UpperCaseChecksum)]
+    [InlineData(ReleaseFault.DotDotEntry)]
+    [InlineData(ReleaseFault.DotEntry)]
+    [InlineData(ReleaseFault.AbsoluteEntry)]
+    [InlineData(ReleaseFault.OutsideEntry)]
+    [InlineData(ReleaseFault.SecondTopFolder)]
+    [InlineData(ReleaseFault.SymlinkEntry)]
+    [InlineData(ReleaseFault.HardLinkEntry)]
+    [InlineData(ReleaseFault.NotExecutable)]
+    [InlineData(ReleaseFault.NoIndexHtml)]
+    public void InstallRelease_WithABadDownload_RefusesItAndChangesNothing(ReleaseFault fault)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        Assert.Equal(0, home.Run("install").ExitCode);
+        home.AddRelease("1.2.3", fault);
+
+        AssertReleaseRefused(home, ["install", "--release", "v1.2.3"], ReleaseBadText);
+        Assert.False(File.Exists(Path.Combine(home.Path, "Library", "evil")));
+        Assert.False(File.Exists(Path.Combine(home.Support, "evil")));
+    }
+
+    [Fact]
+    public void InstallRelease_OnAFreshHome_WhenTheDownloadIsBad_WritesNoPlist()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.AddRelease("1.2.3", ReleaseFault.BadChecksum);
+
+        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.3");
+
+        Assert.Equal(1, run.ExitCode);
+        Assert.Equal(ReleaseBadText, run.Error);
+        Assert.Empty(home.LaunchctlCalls());
+        Assert.False(File.Exists(home.Plist));
+        Assert.False(Directory.Exists(home.Server));
+        Assert.False(Directory.Exists(home.ServerNew));
+        Assert.Empty(home.WorkFolders());
+    }
+
+    /// <summary>Runs a release install that must fail with <paramref name="text"/>: exit 1, no output, no new
+    /// launchctl call (so no <c>bootout</c>), no dotnet, the work folder gone and HOME as before.</summary>
+    private static void AssertReleaseRefused(ScriptHome home, string[] arguments, string text)
+    {
+        IReadOnlyList<string> before = home.Snapshot();
+        int calls = home.LaunchctlCalls().Count;
+        int publishes = home.DotnetArguments().Count;
+
+        ScriptRun run = home.Run(ScriptHome.ScriptPath(), arguments);
+
+        Assert.Equal(1, run.ExitCode);
+        Assert.Equal(text, run.Error);
+        Assert.Equal("", run.Output);
+        Assert.Equal(calls, home.LaunchctlCalls().Count);
+        Assert.Equal(publishes, home.DotnetArguments().Count);
+        Assert.Empty(home.WorkFolders());
+        Assert.False(Directory.Exists(home.ServerNew));
+        Assert.Equal(before, home.Snapshot());
+    }
+
+    /// <summary>One download call: fixed options, <c>-o</c> into a work folder under the support folder, and the
+    /// fixed release URL.</summary>
+    private static void AssertDownload(ScriptHome home, string call, string tag, string name)
+    {
+        const string Options = "--proto =https --proto-redir =https --tlsv1.2 -fsSL --max-time 300 -o ";
+        Assert.StartsWith(Options, call, StringComparison.Ordinal);
+        string suffix = "/" + name + " " + Releases + "/download/" + tag + "/" + name;
+        Assert.EndsWith(suffix, call, StringComparison.Ordinal);
+        string folder = call[Options.Length..^suffix.Length];
+        Assert.Equal(home.Support, Path.GetDirectoryName(folder));
+        Assert.StartsWith(".release.", Path.GetFileName(folder), StringComparison.Ordinal);
+    }
+
     /// <summary>The <c>&lt;string&gt;</c> values of the plist's <c>ProgramArguments</c> array, read as text (no
     /// <c>plutil</c> needed).</summary>
     private static List<string> ProgramArguments(string plist)
@@ -585,6 +920,25 @@ public sealed class LaunchAgentScriptTests
 
     private sealed record ScriptRun(int ExitCode, string Output, string Error);
 
+    /// <summary>The one way a test release is broken.</summary>
+    public enum ReleaseFault
+    {
+        None,
+        BadChecksum,
+        NoChecksumLine,
+        TwoChecksumLines,
+        UpperCaseChecksum,
+        DotDotEntry,
+        DotEntry,
+        AbsoluteEntry,
+        OutsideEntry,
+        SecondTopFolder,
+        SymlinkEntry,
+        HardLinkEntry,
+        NotExecutable,
+        NoIndexHtml,
+    }
+
     /// <summary>A temp folder that acts as <c>HOME</c>, with fake <c>launchctl</c> and <c>dotnet</c> in its
     /// <c>bin/</c>; deleted on dispose.</summary>
     private sealed class ScriptHome : IDisposable
@@ -613,7 +967,26 @@ public sealed class LaunchAgentScriptTests
             + "printf dll > \"$out/ControlRoom.Server.dll\"\n"
             + "exit 0\n";
 
-        private static readonly string[] HarnessFiles = ["calls.log", "states.log", "dotnet.log"];
+        /// <summary>Logs its arguments as one line; for <c>-w</c> prints <c>$HOME/redirect</c> (exit 22 when
+        /// missing), else copies <c>$HOME/release/&lt;last URL part&gt;</c> to <c>-o</c> (exit 22 when
+        /// missing).</summary>
+        private const string FakeCurl =
+            "#!/bin/sh\n"
+            + "printf '%s\\n' \"$*\" >> \"$HOME/curl.log\"\n"
+            + "out=\"\"; url=\"\"; w=no\n"
+            + "while [ $# -gt 0 ]; do\n"
+            + "  case $1 in -o) out=$2; shift ;; -w) w=yes; shift ;; https://*) url=$1 ;; esac\n"
+            + "  shift\n"
+            + "done\n"
+            + "if [ $w = yes ]; then\n"
+            + "  if [ -f \"$HOME/redirect\" ]; then cat \"$HOME/redirect\"; exit 0; fi\n"
+            + "  exit 22\n"
+            + "fi\n"
+            + "name=${url##*/}\n"
+            + "if [ -f \"$HOME/release/$name\" ]; then cp \"$HOME/release/$name\" \"$out\"; exit 0; fi\n"
+            + "exit 22\n";
+
+        private static readonly string[] HarnessFiles = ["calls.log", "states.log", "dotnet.log", "curl.log"];
 
         public ScriptHome()
         {
@@ -623,6 +996,7 @@ public sealed class LaunchAgentScriptTests
             Directory.CreateDirectory(bin);
             WriteExecutable(System.IO.Path.Combine(bin, "launchctl"), FakeLaunchctl);
             WriteExecutable(System.IO.Path.Combine(bin, "dotnet"), FakeDotnet);
+            WriteExecutable(System.IO.Path.Combine(bin, "curl"), FakeCurl);
         }
 
         public string Path { get; }
@@ -744,6 +1118,106 @@ public sealed class LaunchAgentScriptTests
         public IReadOnlyList<string> DotnetArguments()
         {
             return ReadLines("dotnet.log");
+        }
+
+        public IReadOnlyList<string> CurlCalls()
+        {
+            return ReadLines("curl.log");
+        }
+
+        /// <summary>Writes what the fake <c>curl</c> prints for <c>-w '%{redirect_url}'</c>.</summary>
+        public void SetRedirect(string answer)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "redirect"), answer);
+        }
+
+        /// <summary>Leftover release work folders (<c>.release.*</c>) in the support folder.</summary>
+        public IReadOnlyList<string> WorkFolders()
+        {
+            return Directory.Exists(Support) ? [.. Directory.GetDirectories(Support, ".release.*")] : [];
+        }
+
+        /// <summary>Builds <c>release/controlroom-&lt;version&gt;-osx-arm64.tar.gz</c> and <c>release/SHA256SUMS</c>
+        /// with the real <c>/usr/bin/tar</c>, broken in the one given way.</summary>
+        public void AddRelease(string version, ReleaseFault fault)
+        {
+            string top = "controlroom-" + version + "-osx-arm64";
+            string stage = System.IO.Path.Combine(Path, "stage-" + Guid.NewGuid().ToString("N"));
+            string folder = System.IO.Path.Combine(stage, top);
+            Directory.CreateDirectory(System.IO.Path.Combine(folder, "wwwroot"));
+            string server = System.IO.Path.Combine(folder, "ControlRoom.Server");
+            File.WriteAllText(server, "#!/bin/sh\nexit 0\n");
+            File.SetUnixFileMode(server, fault == ReleaseFault.NotExecutable
+                ? UnixFileMode.UserRead | UnixFileMode.UserWrite
+                : UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            File.WriteAllText(System.IO.Path.Combine(folder, "ControlRoom.Server.dll"), "dll");
+            if (fault != ReleaseFault.NoIndexHtml)
+            {
+                File.WriteAllText(System.IO.Path.Combine(folder, "wwwroot", "index.html"), "<!doctype html>");
+            }
+
+            List<string> arguments = [];
+            List<string> entries = [top];
+            File.WriteAllText(System.IO.Path.Combine(stage, "evil"), "evil");
+            switch (fault)
+            {
+                case ReleaseFault.SymlinkEntry:
+                    File.CreateSymbolicLink(System.IO.Path.Combine(folder, "wwwroot", "link"), "/etc/hosts");
+                    break;
+                case ReleaseFault.HardLinkEntry:
+                    Assert.Equal(0, RunProcess(
+                        "/bin/ln", [server, System.IO.Path.Combine(folder, "hard")], null).ExitCode);
+                    break;
+                case ReleaseFault.DotDotEntry:
+                    arguments.AddRange(["-s", ",^evil$," + top + "/../evil,"]);
+                    entries.Add("evil");
+                    break;
+                case ReleaseFault.DotEntry:
+                    arguments.AddRange(["-s", ",^evil$," + top + "/./evil,"]);
+                    entries.Add("evil");
+                    break;
+                case ReleaseFault.AbsoluteEntry:
+                    arguments.AddRange(["-P", "-s", ",^evil$,/" + top + "/evil,"]);
+                    entries.Add("evil");
+                    break;
+                case ReleaseFault.OutsideEntry:
+                    arguments.AddRange(["-s", ",^evil$,other/evil,"]);
+                    entries.Add("evil");
+                    break;
+                case ReleaseFault.SecondTopFolder:
+                    arguments.AddRange(["-s", ",^evil$," + top + "-x/evil,"]);
+                    entries.Add("evil");
+                    break;
+                default:
+                    break;
+            }
+
+            string release = System.IO.Path.Combine(Path, "release");
+            Directory.CreateDirectory(release);
+            string tarball = System.IO.Path.Combine(release, top + ".tar.gz");
+            Dictionary<string, string> environment = new() { ["COPYFILE_DISABLE"] = "1" };
+            ScriptRun tar = RunProcess(
+                "/usr/bin/tar", ["-czf", tarball, .. arguments, "-C", stage, .. entries], environment);
+            Assert.True(tar.ExitCode == 0, "tar: " + tar.Error);
+            Directory.Delete(stage, recursive: true);
+
+            string hash = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(tarball))).ToLowerInvariant();
+            string name = top + ".tar.gz";
+            string sums = fault switch
+            {
+                ReleaseFault.BadChecksum => new string('0', 64) + "  " + name + "\n",
+                ReleaseFault.NoChecksumLine => hash + "  other.tar.gz\n",
+                ReleaseFault.TwoChecksumLines => hash + "  " + name + "\n" + hash + "  " + name + "\n",
+                ReleaseFault.UpperCaseChecksum => hash.ToUpperInvariant() + "  " + name + "\n",
+                _ => "1111111111111111111111111111111111111111111111111111111111111111  other.tar.gz\n"
+                    + hash + "  " + name + "\n",
+            };
+            File.WriteAllText(System.IO.Path.Combine(release, "SHA256SUMS"), sums);
+        }
+
+        public void RemoveReleaseFile(string name)
+        {
+            File.Delete(System.IO.Path.Combine(Path, "release", name));
         }
 
         /// <summary>Every file and folder under HOME (apart from the fakes' logs) with its mode and content

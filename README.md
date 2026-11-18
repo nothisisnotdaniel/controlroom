@@ -39,6 +39,16 @@ dotnet run --project src/ControlRoom.Server -- token --new  # replaces it
 
 The token is stored in `~/Library/Application Support/ControlRoom/access-token`.
 
+## See the version
+
+```sh
+dotnet run --project src/ControlRoom.Server -- version   # prints "ControlRoom dev" for a build from the sources
+```
+
+A release build prints its own version, for example `~/Library/Application Support/ControlRoom/server/ControlRoom.Server version`
+prints `ControlRoom 1.2.3`. The app shows the same line at the foot of the Jobs view; it reads it from
+`GET /api/version` (with the access token), which returns `{"version":"1.2.3"}`.
+
 ## Start it at login
 
 `scripts/launch-agent.sh` installs a macOS LaunchAgent. The server then starts when you log in and starts
@@ -52,6 +62,33 @@ scripts/launch-agent.sh uninstall  # stops it and removes the agent and the publ
 ```
 
 Run `install` again after you pull changes. It publishes the server again and restarts it.
+
+### From a release (no .NET SDK needed)
+
+```sh
+scripts/launch-agent.sh install --release          # the latest release from GitHub
+scripts/launch-agent.sh install --release v1.2.3   # that release
+scripts/launch-agent.sh install --release --tailnet-host mac.tail1234.ts.net  # either one, for Tailscale
+```
+
+`install --release [vX.Y.Z]` downloads `controlroom-<version>-osx-arm64.tar.gz` (Apple silicon) and `SHA256SUMS`
+from https://github.com/nothisisnotdaniel/controlroom/releases over HTTPS, checks the checksum and every entry of
+the archive, and only then replaces the server and restarts it. If anything doesn't check out, nothing is changed.
+Run it again to update. A later plain `install` goes back to publishing from the sources.
+
+Every release also has a build-provenance attestation. To check a downloaded tarball by hand:
+
+```sh
+gh attestation verify controlroom-1.2.3-osx-arm64.tar.gz --repo nothisisnotdaniel/controlroom
+```
+
+## Releases
+
+`.github/workflows/release.yml` makes the releases. Merging a pull request from `develop` into `main` titled
+`release vX.Y.Z` (a prerelease such as `release v1.2.3-rc.1` is allowed) runs the tests on an Apple silicon
+macOS runner, publishes a self-contained `osx-arm64` server with that version, checks that it prints
+`ControlRoom X.Y.Z`, and creates the GitHub release `vX.Y.Z` (and its tag) on the merge commit with the tarball,
+`SHA256SUMS` and the attestation. Any other title, or a version that already has a tag, makes no release.
 
 - Published server: `~/Library/Application Support/ControlRoom/server/`
 - Agent: `~/Library/LaunchAgents/local.controlroom.server.plist`

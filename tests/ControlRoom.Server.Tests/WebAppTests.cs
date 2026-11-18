@@ -313,6 +313,43 @@ public sealed partial class WebAppTests
     }
 
     [Fact]
+    public async Task IndexHtml_EndsTheJobsViewWithAHiddenVersionLine()
+    {
+        string html = await Fetch("/index.html");
+
+        int board = html.IndexOf("<main id=\"board\" hidden>", StringComparison.Ordinal);
+        int push = html.IndexOf("<section class=\"push\" id=\"push\"", StringComparison.Ordinal);
+        int version = html.IndexOf("<p class=\"app-version\" id=\"app-version\" hidden></p>", StringComparison.Ordinal);
+        int end = html.IndexOf("</main>", board, StringComparison.Ordinal);
+        Assert.True(board >= 0 && board < push && push < version && version < end);
+        Assert.Equal("\n  ", html[(version + "<p class=\"app-version\" id=\"app-version\" hidden></p>".Length)..end]);
+    }
+
+    [Fact]
+    public async Task BoardJs_LoadsTheVersionOnceThroughAuthFetchAndSetsItAsText()
+    {
+        string js = await Fetch("/board.js");
+        string app = await Fetch("/app.js");
+        string css = await Fetch("/app.css");
+
+        Assert.Contains("version: \"ControlRoom \"", js, StringComparison.Ordinal);
+        Assert.Contains("authFetch(\"/api/version\", { cache: \"no-store\" })", js, StringComparison.Ordinal);
+        Assert.Contains("line.textContent = BoardTexts.version + version;", js, StringComparison.Ordinal);
+        Assert.Contains("line.hidden = false;", js, StringComparison.Ordinal);
+        Assert.Contains("if (versionRequested || !hasToken())", js, StringComparison.Ordinal);
+        int start = js.IndexOf("async function loadVersion()", StringComparison.Ordinal);
+        int stop = js.IndexOf("\n}\n", start, StringComparison.Ordinal);
+        string body = js[start..stop];
+        Assert.DoesNotContain("innerHTML", body, StringComparison.Ordinal);
+        Assert.DoesNotContain(".message", body, StringComparison.Ordinal);
+        Assert.Contains("catch {", body, StringComparison.Ordinal);
+        Assert.Single(Regex.Matches(js, @"loadVersion\(\);"));
+        Assert.Contains("setBoardStatus(true);\n    loadVersion();", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("loadVersion", app, StringComparison.Ordinal);
+        Assert.Contains(".app-version {", css, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task BoardJs_RoutesAndBackReturnsToTheBoardAtItsScroll()
     {
         string js = await Fetch("/board.js");
