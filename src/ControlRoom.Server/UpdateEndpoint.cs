@@ -92,7 +92,7 @@ internal static class UpdateEndpoint
             foreach (JsonProperty property in document.RootElement.EnumerateObject())
             {
                 count++;
-                if (property.NameEquals("autoUpdate") && property.Value.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                if (property.NameEquals("autoUpdate") && (property.Value.ValueKind is JsonValueKind.True or JsonValueKind.False))
                 {
                     value = property.Value.GetBoolean();
                 }

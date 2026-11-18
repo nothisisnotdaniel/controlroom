@@ -6,8 +6,8 @@ namespace ControlRoom.Server;
 /// project and a new updater result (<c>updated</c>/<c>update_failed</c>, only with <c>notifyUpdate</c>).
 /// <see cref="Scan"/> runs every 30 s on the <see cref="TimeProvider"/>; the first scan only records a baseline for
 /// jobs and backlogs, while an updater result whose <c>run</c> differs from <c>updateResultNotified</c> is handled on
-/// every scan, the first one too. A job or backlog that can't be read keeps its last known state, and <c>[?]</c> lines once seen stay
-/// seen, so no event is sent twice.</summary>
+/// every scan, the first one too. A job or backlog that can't be read keeps its last known state, and <c>[?]</c>
+/// lines once seen stay seen, so no event is sent twice.</summary>
 internal sealed class PushWatcher : IHostedService, IDisposable
 {
     public static readonly TimeSpan Interval = TimeSpan.FromSeconds(30);
