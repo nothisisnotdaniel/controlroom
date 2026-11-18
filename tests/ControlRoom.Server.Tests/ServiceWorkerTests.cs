@@ -102,6 +102,8 @@ public sealed partial class ServiceWorkerTests
         Assert.Contains("done: \"Done\",", js, StringComparison.Ordinal);
         Assert.Contains("approval: \"New items to approve\",", js, StringComparison.Ordinal);
         Assert.Contains("test: \"Test notification\",", js, StringComparison.Ordinal);
+        Assert.Contains("update: \"Update available\",", js, StringComparison.Ordinal);
+        Assert.Contains("tag = \"update:\" + version;", js, StringComparison.Ordinal);
         Assert.Contains("title: kind ? PushTitles[kind] : PushFallbackTitle,", js, StringComparison.Ordinal);
         Assert.Contains("tag = \"approval:\" + project;", js, StringComparison.Ordinal);
         Assert.Contains("tag = kind + \":\" + job;", js, StringComparison.Ordinal);

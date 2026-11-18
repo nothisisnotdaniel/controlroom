@@ -18,7 +18,16 @@ const BoardTexts = {
   back: "Back",
   records: "Records",
   version: "ControlRoom ",
+  updateAvailable: "Update available: ControlRoom ",
+  updateThis: " (this is ",
+  updateEnd: ").",
+  copy: "Copy",
+  copied: "Copied.",
+  releaseNotes: "Release notes",
 };
+
+// Only a link to this repo's release page is shown.
+const UpdateReleasePrefix = "https://github.com/nothisisnotdaniel/controlroom/releases/tag/";
 
 const Stages = [
   { key: "spike", label: "Spike" },
@@ -375,6 +384,7 @@ async function pollBoard() {
     }
     setBoardStatus(true);
     loadVersion();
+    loadUpdate();
     if (text === boardText) {
       return;
     }
@@ -441,6 +451,66 @@ async function loadVersion() {
     // Unreachable: the line stays hidden. Refused: the token view is shown, and saving a token asks again.
     versionRequested = !tokenViewShown();
   }
+}
+
+// The update banner under the board heading: asked for once per page load like the version line; filled with
+// textContent only, and left hidden when no update is available or the request fails.
+let updateRequested = false;
+
+async function loadUpdate() {
+  if (updateRequested || !hasToken()) {
+    return;
+  }
+  updateRequested = true;
+  const section = document.getElementById("update");
+  try {
+    const response = await authFetch("/api/update", { cache: "no-store" });
+    if (!response.ok) {
+      return;
+    }
+    const data = await response.json();
+    const latest = asText(data && data.latest);
+    const command = asText(data && data.command);
+    if (!data || data.available !== true || latest === "" || command === "") {
+      section.hidden = true;
+      return;
+    }
+    renderUpdate(section, latest, asText(data.current), command, asText(data.url));
+  } catch {
+    // Unreachable: the banner stays hidden. Refused: the token view is shown, and saving a token asks again.
+    updateRequested = !tokenViewShown();
+  }
+}
+
+function renderUpdate(section, latest, current, command, url) {
+  const text = element("p", "update-text",
+    BoardTexts.updateAvailable + latest + BoardTexts.updateThis + current + BoardTexts.updateEnd);
+  const code = element("code", "update-command", command);
+  const copy = element("button", "edit-button", BoardTexts.copy);
+  copy.type = "button";
+  const note = element("span", "update-note");
+  note.hidden = true;
+  copy.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(command);
+      note.textContent = BoardTexts.copied;
+      note.hidden = false;
+    } catch {
+      // No clipboard access: the command can still be selected by hand.
+    }
+  });
+  const actions = element("div", "update-actions");
+  actions.append(copy, note);
+  const parts = [text, code, actions];
+  if (url.startsWith(UpdateReleasePrefix)) {
+    const link = element("a", "update-link", BoardTexts.releaseNotes);
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    actions.append(link);
+  }
+  section.replaceChildren(...parts);
+  section.hidden = false;
 }
 
 function rememberBoardScroll() {

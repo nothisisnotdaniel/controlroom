@@ -6,7 +6,7 @@ namespace ControlRoom.Server;
 /// <summary>Builds the web app: loopback-only Kestrel, security headers, the <c>Host</c> check, GET/HEAD only (plus POST on
 /// the backlog change route and the push routes), static files from the
 /// server's own <c>wwwroot</c>, an access token on every <c>/api/</c> request, the backlogs, story, board, job,
-/// push and version APIs, and the push watcher.</summary>
+/// push, version and update APIs, the push watcher and the update check.</summary>
 internal static class ServerApp
 {
     public const string ContentSecurityPolicy =
@@ -125,11 +125,12 @@ internal static class ServerApp
         BacklogChangeEndpoint.Map(app);
         PushEndpoint.Map(app);
         VersionEndpoint.Map(app);
+        UpdateEndpoint.Map(app, tailnetHost);
         return app;
     }
 
     /// <summary>The push store next to the token file, the crypto (clock from the container, subject from
-    /// <c>PushSubject</c>), the real no-redirect transport and the watcher.</summary>
+    /// <c>PushSubject</c>), the real no-redirect transport, the watcher and the update check.</summary>
     private static void AddPush(WebApplicationBuilder builder, string tokenPath)
     {
         string folder = Path.GetDirectoryName(Path.GetFullPath(tokenPath))!;
@@ -143,6 +144,11 @@ internal static class ServerApp
         builder.Services.AddSingleton<PushTestLimiter>();
         builder.Services.AddSingleton<PushWatcher>();
         builder.Services.AddHostedService(services => services.GetRequiredService<PushWatcher>());
+        builder.Services.AddSingleton(RunningVersion.Current);
+        builder.Services.AddSingleton(new UpdateState());
+        builder.Services.AddSingleton(_ => UpdateTransport.CreateDefault());
+        builder.Services.AddSingleton<UpdateChecker>();
+        builder.Services.AddHostedService(services => services.GetRequiredService<UpdateChecker>());
     }
 
     /// <summary>True when the request has exactly one <c>Host</c> value and <see cref="HostCheck.IsAllowed"/>

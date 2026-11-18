@@ -6,8 +6,10 @@ namespace ControlRoom.Server;
 /// receiver keys.</summary>
 internal sealed record PushSubscription(string Endpoint, string P256dh, string Auth);
 
-/// <summary>The content of <c>push.json</c>.</summary>
-internal sealed record PushSettings(bool NotifyDone, IReadOnlyList<PushSubscription> Subscriptions)
+/// <summary>The content of <c>push.json</c>. <c>notifyUpdate</c> (default on) and <c>updateNotified</c> (the last
+/// announced release version, default <c>null</c>) may be missing in an older file.</summary>
+internal sealed record PushSettings(
+    bool NotifyDone, IReadOnlyList<PushSubscription> Subscriptions, bool NotifyUpdate = true, string? UpdateNotified = null)
 {
     public static readonly PushSettings Default = new(false, []);
 }
@@ -33,7 +35,8 @@ internal sealed class PushStoreException : Exception
 }
 
 /// <summary>The push files next to the token file (outside the factory root): <c>push-keys.json</c> (the VAPID key
-/// pair, created on first use) and <c>push.json</c> (subscriptions and <c>notifyDone</c>). Both are <c>0600</c> and
+/// pair, created on first use) and <c>push.json</c> (subscriptions, <c>notifyDone</c>, <c>notifyUpdate</c> and
+/// <c>updateNotified</c>). Both are <c>0600</c> and
 /// written atomically (a <c>0600</c> temp file, then rename). The folder must be <c>0700</c> and owned by the current
 /// user (it is created so when missing). A symlinked, loose-mode or invalid file or folder throws
 /// <see cref="PushStoreException"/> and is left as it is. All access is serialized.</summary>
@@ -152,10 +155,32 @@ internal sealed class PushStore
 
     public void SetNotifyDone(bool notifyDone)
     {
+        SetFlags(notifyDone, null);
+    }
+
+    /// <summary>Sets the flags that are not <c>null</c> in one write; returns the stored settings.</summary>
+    public PushSettings SetFlags(bool? notifyDone, bool? notifyUpdate)
+    {
         lock (gate)
         {
             PushSettings settings = LoadSettings();
-            SaveSettings(settings with { NotifyDone = notifyDone });
+            PushSettings changed = settings with
+            {
+                NotifyDone = notifyDone ?? settings.NotifyDone,
+                NotifyUpdate = notifyUpdate ?? settings.NotifyUpdate,
+            };
+            SaveSettings(changed);
+            return changed;
+        }
+    }
+
+    /// <summary>Stores the release version the update notice was last given for.</summary>
+    public void SetUpdateNotified(string version)
+    {
+        lock (gate)
+        {
+            PushSettings settings = LoadSettings();
+            SaveSettings(settings with { UpdateNotified = version });
         }
     }
 
@@ -330,6 +355,16 @@ internal sealed class PushStore
         {
             writer.WriteStartObject();
             writer.WriteBoolean("notifyDone", settings.NotifyDone);
+            writer.WriteBoolean("notifyUpdate", settings.NotifyUpdate);
+            if (settings.UpdateNotified is null)
+            {
+                writer.WriteNull("updateNotified");
+            }
+            else
+            {
+                writer.WriteString("updateNotified", settings.UpdateNotified);
+            }
+
             writer.WriteStartArray("subscriptions");
             foreach (PushSubscription subscription in settings.Subscriptions)
             {
@@ -364,6 +399,28 @@ internal sealed class PushStore
             return null;
         }
 
+        bool notifyUpdate = true;
+        if (root.TryGetProperty("notifyUpdate", out JsonElement update))
+        {
+            if (update.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                return null;
+            }
+
+            notifyUpdate = update.GetBoolean();
+        }
+
+        string? updateNotified = null;
+        if (root.TryGetProperty("updateNotified", out JsonElement notified) && notified.ValueKind != JsonValueKind.Null)
+        {
+            if (notified.ValueKind != JsonValueKind.String || SemVer.Parse(notified.GetString()) is null)
+            {
+                return null;
+            }
+
+            updateNotified = notified.GetString();
+        }
+
         List<PushSubscription> subscriptions = [];
         foreach (JsonElement item in list.EnumerateArray())
         {
@@ -376,7 +433,7 @@ internal sealed class PushStore
             subscriptions.Add(subscription);
         }
 
-        return new PushSettings(done.GetBoolean(), subscriptions);
+        return new PushSettings(done.GetBoolean(), subscriptions, notifyUpdate, updateNotified);
     }
 
     private static JsonDocument? Parse(byte[] bytes)

@@ -508,7 +508,12 @@ public sealed partial class WebAppTests
     [InlineData("createTextNode")]
     public async Task BoardJs_AvoidsHtmlInjectionApis(string forbidden)
     {
+        // The one allowed URL: the fixed release-page prefix the update banner's link must start with.
+        const string ReleasePrefix =
+            "const UpdateReleasePrefix = \"https://github.com/nothisisnotdaniel/controlroom/releases/tag/\";";
         string js = await Fetch("/board.js");
+        Assert.Equal(1, js.Split(ReleasePrefix).Length - 1);
+        js = js.Replace(ReleasePrefix, "", StringComparison.Ordinal);
 
         Assert.DoesNotContain(forbidden, js, StringComparison.Ordinal);
         Assert.Contains("textContent", js, StringComparison.Ordinal);

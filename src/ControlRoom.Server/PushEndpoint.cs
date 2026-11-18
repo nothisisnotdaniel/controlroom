@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace ControlRoom.Server;
 
 /// <summary>The push routes, all behind the token gate: <c>GET /api/push</c> (<c>{publicKey, notifyDone,
-/// subscribed}</c>, <c>subscribed</c> being the number of stored subscriptions), <c>POST /api/push/subscribe</c>,
+/// notifyUpdate, subscribed}</c>, <c>subscribed</c> being the number of stored subscriptions), <c>POST /api/push/subscribe</c>,
 /// <c>/unsubscribe</c>, <c>/settings</c> and <c>/test</c>. Refused push files give
 /// <c>500 {"error":"push_store"}</c>.</summary>
 internal static class PushEndpoint
@@ -44,7 +44,7 @@ internal static class PushEndpoint
             {
                 (PushKeyPair keys, PushSettings settings) = store.Load();
                 return Results.Json(new PushInfo(
-                    Base64Url.Encode(keys.PublicKey), settings.NotifyDone, settings.Subscriptions.Count));
+                    Base64Url.Encode(keys.PublicKey), settings.NotifyDone, settings.NotifyUpdate, settings.Subscriptions.Count));
             }));
 
         app.MapPost(SubscribeRoute, async (PushStore store, HttpContext context) =>
@@ -87,14 +87,16 @@ internal static class PushEndpoint
             return Guarded(context, () =>
             {
                 store.Load();
-                bool? notifyDone = body is null ? null : ParseFlag(body, "notifyDone");
-                if (notifyDone is null)
+                (bool Valid, bool? NotifyDone, bool? NotifyUpdate) flags = body is null
+                    ? (false, null, null)
+                    : ParseFlags(body);
+                if (!flags.Valid)
                 {
                     return Error(StatusCodes.Status400BadRequest, Invalid);
                 }
 
-                store.SetNotifyDone(notifyDone.Value);
-                return Results.Json(new { notifyDone = notifyDone.Value });
+                PushSettings settings = store.SetFlags(flags.NotifyDone, flags.NotifyUpdate);
+                return Results.Json(new { notifyDone = settings.NotifyDone, notifyUpdate = settings.NotifyUpdate });
             });
         });
 
@@ -171,20 +173,34 @@ internal static class PushEndpoint
             : null;
     }
 
-    private static bool? ParseFlag(byte[] body, string name)
+    /// <summary><c>notifyDone</c> and <c>notifyUpdate</c>, each optional; valid only when the body is an object with
+    /// at least one of them and every one given is a boolean.</summary>
+    private static (bool Valid, bool? NotifyDone, bool? NotifyUpdate) ParseFlags(byte[] body)
     {
         using JsonDocument? document = Parse(body);
-        if (document is not { RootElement.ValueKind: JsonValueKind.Object }
-            || !document.RootElement.TryGetProperty(name, out JsonElement value))
+        if (document is not { RootElement.ValueKind: JsonValueKind.Object })
         {
-            return null;
+            return (false, null, null);
+        }
+
+        (bool doneValid, bool? done) = Flag(document.RootElement, "notifyDone");
+        (bool updateValid, bool? update) = Flag(document.RootElement, "notifyUpdate");
+        bool valid = doneValid && updateValid && (done is not null || update is not null);
+        return (valid, done, update);
+    }
+
+    private static (bool Valid, bool? Value) Flag(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty(name, out JsonElement value))
+        {
+            return (true, null);
         }
 
         return value.ValueKind switch
         {
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
-            _ => null,
+            JsonValueKind.True => (true, true),
+            JsonValueKind.False => (true, false),
+            _ => (false, null),
         };
     }
 
@@ -205,5 +221,5 @@ internal static class PushEndpoint
         return Results.Content("{\"error\":\"" + error + "\"}", "application/json", statusCode: status);
     }
 
-    private sealed record PushInfo(string PublicKey, bool NotifyDone, int Subscribed);
+    private sealed record PushInfo(string PublicKey, bool NotifyDone, bool NotifyUpdate, int Subscribed);
 }
