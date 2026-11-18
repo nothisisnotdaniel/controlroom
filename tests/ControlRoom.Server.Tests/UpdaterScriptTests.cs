@@ -19,6 +19,12 @@ public sealed partial class UpdaterScriptTests
 
     private const string Token = "TOKEN-VALUE-never-sent-0123456789abcdefghijkl";
 
+    private const string ListUrl = "https://api.github.com/repos/nothisisnotdaniel/controlroom/releases?per_page=100";
+
+    private const string ListCall = "--proto =https --tlsv1.2 -fsS --max-time 30 --max-filesize 1048576 " + ListUrl;
+
+    private const string Develop = "{\"autoUpdate\":true,\"channel\":\"develop\"}\n";
+
     [Fact]
     public void SharedFunctions_AreTheSameAsInLaunchAgent()
     {
@@ -379,6 +385,15 @@ public sealed partial class UpdaterScriptTests
     [InlineData("{\"autoUpdate\":true}\n\n", true)]
     [InlineData("{\"autoUpdate\":true}\n", false)]
     [InlineData(null, true)]
+    [InlineData("{\"autoUpdate\":false,\"channel\":\"develop\"}\n", true)]
+    [InlineData("{\"autoUpdate\":false,\"channel\":\"stable\"}", true)]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\"}\n\n", true)]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\"}\r\n", true)]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"beta\"}\n", true)]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"Develop\"}\n", true)]
+    [InlineData("{\"channel\":\"develop\",\"autoUpdate\":true}\n", true)]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\",\"x\":1}\n", true)]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\"}\n", false)]
     public void SettingNotExactlyOn_IsOffAndChangesNothing(string? settings, bool safeMode)
     {
         if (OperatingSystem.IsWindows())
@@ -627,6 +642,198 @@ public sealed partial class UpdaterScriptTests
         Assert.Empty(home.Leftovers());
     }
 
+    [Theory]
+    [InlineData("{\"autoUpdate\":true}")]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"stable\"}")]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"stable\"}\n")]
+    public void StableChannel_IgnoresDevelopBuildsAndNeverAsksForTheList(string settings)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.SetSettings(settings);
+        home.SetList("[{\"tag_name\":\"v1.2.1-develop.9\"},{\"tag_name\":\"v1.2.0\"}]");
+        home.AddRelease("1.2.1-develop.9", "1.2.1-develop.9");
+        home.SetRedirect(Releases + "/tag/v1.2.0");
+
+        AssertNothingDone(home, "current", " v1.2.0 v1.2.0", curlCalls: 1);
+        Assert.DoesNotContain(home.CurlCalls(), call => call.Contains("api.github.com", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("v1.2.1-develop.3", "v1.2.1", "updated")]
+    [InlineData("v1.2.1-develop.3", "v1.2.0", "current")]
+    public void StableChannel_ComparesAnInstalledDevelopBuildBySemVer(string installed, string latest, string word)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new(installed);
+        home.AddRelease(latest[1..], latest[1..]);
+        home.SetRedirect(Releases + "/tag/" + latest);
+
+        Assert.Matches(LinePattern(word + " " + installed + " " + latest), home.RunOnce());
+    }
+
+    [Fact]
+    public void DevelopChannel_PicksDevelopTenOverNineAndInstallsIt()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.SetSettings(Develop);
+        home.SetList("[\n  {\n    \"tag_name\": \"v1.2.1-develop.9\",\n    \"body\": \"see \\\"tag_name\\\":\\\"v9.9.9\\\"\"\n  },\n"
+            + "  {\"tag_name\":\"v1.2.1-develop.10\",\"prerelease\":true},{\"tag_name\":\"v1.2.0\"},"
+            + "{\"tag_name\":\"v9.0.0-rc.1\"},{\"tag_name\":\"v9.0.0-develop.01\"},{\"tag_name\":\"v9.0.0+b\"},"
+            + "{\"tag_name\":\"9.0.0\"},{\"tag_name\":\"v9.0.0-develop.1.1\"},{\"tag_name\":\"v9.0.0-develop.*\"}\n]\n");
+        home.AddRelease("1.2.1-develop.10", "1.2.1-develop.10");
+
+        string line = home.RunOnce();
+
+        Assert.Matches(LinePattern("updated v1.2.0 v1.2.1-develop.10"), line);
+        Assert.Equal("v1.2.1-develop.10\n", File.ReadAllText(home.Marker));
+        AssertResult(home, "\"result\":\"updated\",\"version\":\"1.2.1-develop.10\",\"previous\":\"1.2.0\"");
+        IReadOnlyList<string> curl = home.CurlCalls();
+        Assert.Equal(ListCall, curl[0]);
+        Assert.Single(curl, call => call.Contains("api.github.com", StringComparison.Ordinal));
+        Assert.DoesNotContain(curl, call => call.Contains("-w ", StringComparison.Ordinal));
+        Assert.DoesNotContain("-L", curl[0], StringComparison.Ordinal);
+        Assert.Contains(curl, call => call.EndsWith(
+            Releases + "/download/v1.2.1-develop.10/controlroom-1.2.1-develop.10-osx-arm64.tar.gz", StringComparison.Ordinal));
+        Assert.Contains(curl, call => call.EndsWith(Releases + "/download/v1.2.1-develop.10/SHA256SUMS", StringComparison.Ordinal));
+        AssertNoToken(home);
+        Assert.Empty(home.Leftovers());
+    }
+
+    [Fact]
+    public void DevelopChannel_MovesFromADevelopBuildToTheProperRelease()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new("v1.2.1-develop.10");
+        home.SetSettings(Develop);
+        home.SetList("[{\"tag_name\":\"v1.2.1-develop.10\"},{\"tag_name\":\"v1.2.1\"},{\"tag_name\":\"v1.2.0\"}]");
+        home.AddRelease("1.2.1", "1.2.1");
+
+        Assert.Matches(LinePattern("updated v1.2.1-develop.10 v1.2.1"), home.RunOnce());
+        Assert.Equal("v1.2.1\n", File.ReadAllText(home.Marker));
+    }
+
+    [Theory]
+    [InlineData("v1.2.1-develop.10", "[{\"tag_name\":\"v1.2.1-develop.9\"},{\"tag_name\":\"v1.2.0\"}]", "v1.2.1-develop.9")]
+    [InlineData("v1.2.1-develop.10", "[{\"tag_name\":\"v1.2.1-develop.10\"}]", "v1.2.1-develop.10")]
+    [InlineData("v1.2.1", "[{\"tag_name\":\"v1.2.1-develop.10\"}]", "v1.2.1-develop.10")]
+    public void DevelopChannel_NothingNewer_IsCurrent(string installed, string list, string best)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new(installed);
+        home.SetSettings(Develop);
+        home.SetList(list);
+
+        AssertNothingDone(home, "current", " " + installed + " " + best, curlCalls: 1);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("[]")]
+    [InlineData("{\"message\":\"rate limited\"}")]
+    [InlineData("[{\"tag_name\":\"v9.0.0-rc.1\"},{\"tag_name\":\"v9.0.0+b\"}]")]
+    [InlineData("too-big")]
+    public void DevelopChannel_NoListOrNoValidTag_IsLatestFailed(string? list)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.SetSettings(Develop);
+        if (list is not null)
+        {
+            home.SetList(list == "too-big" ? "[{\"tag_name\":\"v9.0.0\"}]".PadRight(1048577) : list);
+        }
+
+        AssertNothingDone(home, "latest_failed", " v1.2.0", curlCalls: 1);
+        Assert.Equal(ListCall, Assert.Single(home.CurlCalls()));
+    }
+
+    [Fact]
+    public void DevelopChannel_BadChecksum_IsCheckFailedAndTheServerUntouched()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.SetSettings(Develop);
+        home.SetList("[{\"tag_name\":\"v1.2.1-develop.4\"}]");
+        home.AddRelease("1.2.1-develop.4", "1.2.1-develop.4", badChecksum: true);
+        IReadOnlyList<string> before = home.Snapshot("server");
+
+        Assert.Matches(LinePattern("check_failed v1.2.0 v1.2.1-develop.4"), home.RunOnce());
+
+        Assert.Empty(home.LaunchctlCalls());
+        Assert.Equal(before, home.Snapshot("server"));
+        Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.2.1-develop.4\",\"reason\":\"check\"");
+        Assert.Empty(home.Leftovers());
+    }
+
+    [Fact]
+    public void DevelopChannel_NoAnswerFromTheNewBuild_RollsBack()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.SetSettings(Develop);
+        home.SetList("[{\"tag_name\":\"v1.2.1-develop.4\"}]");
+        home.AddRelease("1.2.1-develop.4", "9.9.9");
+
+        Assert.Matches(LinePattern("rolled_back v1.2.0 v1.2.1-develop.4"), home.RunOnce());
+
+        Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
+        Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.2.1-develop.4\",\"reason\":\"no_answer\"");
+        AssertNoToken(home);
+        Assert.Empty(home.Leftovers());
+    }
+
+    [Fact]
+    public void DevelopChannel_BuildThatFailedItsCheck_IsSkipped()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.SetSettings(Develop);
+        home.SetList("[{\"tag_name\":\"v1.2.1-develop.4\"}]");
+        home.SetResult("{\"run\":\"20261118T200000Z\",\"result\":\"update_failed\",\"version\":\"1.2.1-develop.4\","
+            + "\"reason\":\"check\"}\n");
+
+        AssertNothingDone(home, "skipped_failed", " v1.2.0 v1.2.1-develop.4", curlCalls: 1);
+    }
+
     /// <summary>One run that must log <paramref name="word"/> (plus <paramref name="details"/>) and change nothing:
     /// no launchctl call, the given number of curl calls, no result, HOME as before apart from the fakes' logs.</summary>
     private static void AssertNothingDone(UpdaterHome home, string word, string details, int curlCalls = 0)
@@ -730,7 +937,7 @@ public sealed partial class UpdaterScriptTests
 
         /// <summary>Logs its arguments as one line and its stdin; <c>/health</c> answers with the server folder's
         /// <c>health</c> file while loaded (else exit 7, like a refused connection); <c>-w</c> prints
-        /// <c>$HOME/redirect</c>; anything else copies <c>$HOME/release/&lt;name&gt;</c> to <c>-o</c>.</summary>
+        /// <c>$HOME/redirect</c>; the release list URL prints <c>$HOME/list</c>; anything else copies <c>$HOME/release/&lt;name&gt;</c> to <c>-o</c>.</summary>
         private const string FakeCurl =
             "#!/bin/sh\n"
             + "printf '%s\\n' \"$*\" >> \"$HOME/curl.log\"\n"
@@ -746,6 +953,12 @@ public sealed partial class UpdaterScriptTests
             + "  if [ -f \"$HOME/loaded\" ] && [ -f \"$health\" ]; then cat \"$health\"; exit 0; fi\n"
             + "  exit 7\n"
             + "fi\n"
+            + "if [ \"$url\" = '" + ListUrl + "' ]; then\n"
+            + "  if [ ! -f \"$HOME/list\" ]; then exit 22; fi\n"
+            + "  size=$(wc -c < \"$HOME/list\")\n"
+            + "  if [ -n \"$max\" ] && [ $((size + 0)) -gt \"$max\" ]; then exit 63; fi\n"
+            + "  cat \"$HOME/list\"; exit 0\n"
+            + "fi\n"
             + "if [ $w = yes ]; then\n"
             + "  if [ -f \"$HOME/redirect\" ]; then cat \"$HOME/redirect\"; exit 0; fi\n"
             + "  exit 22\n"
@@ -760,7 +973,7 @@ public sealed partial class UpdaterScriptTests
 
         private static readonly string[] HarnessFiles =
             ["calls.log", "curl.log", "curl-stdin.log", "sleep.log", "lsof.log", "loaded", "redirect", "mv-fail",
-                "mv-fail-to", "lsof-out", "not-running"];
+                "mv-fail-to", "lsof-out", "not-running", "list"];
 
         public UpdaterHome()
             : this("v1.2.0")
@@ -883,6 +1096,12 @@ public sealed partial class UpdaterScriptTests
         public void SetRedirect(string answer)
         {
             File.WriteAllText(System.IO.Path.Combine(Path, "redirect"), answer);
+        }
+
+        /// <summary>What the fake <c>curl</c> answers for the develop channel's release list.</summary>
+        public void SetList(string json)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "list"), json);
         }
 
         public void FailMoveFrom(string suffix)

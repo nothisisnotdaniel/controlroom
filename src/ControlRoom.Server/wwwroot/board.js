@@ -27,6 +27,10 @@ const BoardTexts = {
   autoUpdate: "Install updates automatically",
   autoUpdateUnreadable: "Can't read the update setting.",
   autoUpdateFailed: "Can't change the update setting. Try again.",
+  updateChannel: "Update channel",
+  channelStable: "Stable",
+  channelDevelop: "Develop (prereleases)",
+  channelFailed: "Can't change the update channel. Try again.",
 };
 
 const AutoUpdateRoute = "/api/update/settings";
@@ -475,6 +479,8 @@ async function loadUpdate() {
     }
     const data = await response.json();
     renderAutoUpdate(asText(data && data.current), data && typeof data.autoUpdate === "boolean" ? data.autoUpdate : null);
+    renderUpdateChannel(asText(data && data.current),
+      data && (data.channel === "stable" || data.channel === "develop") ? data.channel : null);
     const latest = asText(data && data.latest);
     const command = asText(data && data.command);
     if (!data || data.available !== true || latest === "" || command === "") {
@@ -573,6 +579,62 @@ async function setAutoUpdate(input, note) {
     note.hidden = false;
   } finally {
     input.disabled = false;
+  }
+}
+
+// The update channel choice under the switch, only for a release with readable settings: it adds nothing on dev
+// or when the channel is null (a refused settings file, where the switch box already shows the fixed text).
+function renderUpdateChannel(current, channel) {
+  const box = document.getElementById("auto-update");
+  if (current === "" || current === "dev" || channel === null || box.hidden) {
+    return;
+  }
+  const label = element("label", "update-channel");
+  const select = document.createElement("select");
+  select.className = "update-channel-select";
+  for (const [value, text] of [["stable", BoardTexts.channelStable], ["develop", BoardTexts.channelDevelop]]) {
+    const option = element("option", null, text);
+    option.value = value;
+    select.append(option);
+  }
+  select.value = channel;
+  select.dataset.saved = channel;
+  const note = element("p", "auto-update-note");
+  note.setAttribute("role", "status");
+  note.setAttribute("aria-live", "polite");
+  note.hidden = true;
+  select.addEventListener("change", () => setUpdateChannel(select, note));
+  label.append(element("span", null, BoardTexts.updateChannel), select);
+  box.append(label, note);
+}
+
+// Sends the chosen channel; on any error the choice goes back to the stored one and a fixed text is shown.
+async function setUpdateChannel(select, note) {
+  const wanted = select.value;
+  const saved = select.dataset.saved;
+  select.disabled = true;
+  note.hidden = true;
+  try {
+    const response = await authFetch(AutoUpdateRoute, {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channel: wanted }),
+    });
+    if (!response.ok) {
+      throw new Error("status");
+    }
+    const data = await response.json();
+    if (!data || data.channel !== wanted) {
+      throw new Error("data");
+    }
+    select.dataset.saved = wanted;
+  } catch {
+    select.value = saved;
+    note.textContent = BoardTexts.channelFailed;
+    note.hidden = false;
+  } finally {
+    select.disabled = false;
   }
 }
 

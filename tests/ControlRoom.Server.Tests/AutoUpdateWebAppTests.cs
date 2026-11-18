@@ -60,6 +60,58 @@ public sealed class AutoUpdateWebAppTests
     }
 
     [Fact]
+    public async Task BoardJs_ShowsTheChannelChoiceOnlyForAReleaseWithReadableSettings()
+    {
+        string js = await Fetch("/board.js");
+
+        Assert.Contains("  updateChannel: \"Update channel\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("  channelStable: \"Stable\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("  channelDevelop: \"Develop (prereleases)\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("  channelFailed: \"Can't change the update channel. Try again.\",\n", js, StringComparison.Ordinal);
+        int autoUpdate = js.IndexOf("    renderAutoUpdate(asText(data && data.current),", StringComparison.Ordinal);
+        int channel = js.IndexOf(
+            "    renderUpdateChannel(asText(data && data.current),\n"
+            + "      data && (data.channel === \"stable\" || data.channel === \"develop\") ? data.channel : null);",
+            StringComparison.Ordinal);
+        Assert.True(autoUpdate >= 0 && channel > autoUpdate);
+        string render = Body(js, "function renderUpdateChannel(");
+        int guard = render.IndexOf(
+            "if (current === \"\" || current === \"dev\" || channel === null || box.hidden) {\n    return;\n  }",
+            StringComparison.Ordinal);
+        int select = render.IndexOf("document.createElement(\"select\")", StringComparison.Ordinal);
+        Assert.True(guard >= 0 && select > guard);
+        Assert.Contains("[[\"stable\", BoardTexts.channelStable], [\"develop\", BoardTexts.channelDevelop]]", render,
+            StringComparison.Ordinal);
+        Assert.Contains("select.value = channel;", render, StringComparison.Ordinal);
+        Assert.Contains("select.addEventListener(\"change\", () => setUpdateChannel(select, note));", render,
+            StringComparison.Ordinal);
+        Assert.Contains("element(\"span\", null, BoardTexts.updateChannel)", render, StringComparison.Ordinal);
+        Assert.Contains("box.append(label, note);", render, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BoardJs_PostsTheChosenChannelAndRevertsOnAnyError()
+    {
+        string js = await Fetch("/board.js");
+
+        string set = Body(js, "async function setUpdateChannel(");
+        Assert.Contains("const wanted = select.value;", set, StringComparison.Ordinal);
+        Assert.Contains("const saved = select.dataset.saved;", set, StringComparison.Ordinal);
+        Assert.Contains("authFetch(AutoUpdateRoute, {", set, StringComparison.Ordinal);
+        Assert.Contains("method: \"POST\",", set, StringComparison.Ordinal);
+        Assert.Contains("body: JSON.stringify({ channel: wanted }),", set, StringComparison.Ordinal);
+        Assert.DoesNotContain("autoUpdate", set, StringComparison.Ordinal);
+        Assert.Contains("if (!response.ok) {", set, StringComparison.Ordinal);
+        Assert.Contains("data.channel !== wanted", set, StringComparison.Ordinal);
+        int saved = set.IndexOf("select.dataset.saved = wanted;", StringComparison.Ordinal);
+        int catchAt = set.IndexOf("} catch {", StringComparison.Ordinal);
+        int revert = set.IndexOf("select.value = saved;", StringComparison.Ordinal);
+        int text = set.IndexOf("note.textContent = BoardTexts.channelFailed;", StringComparison.Ordinal);
+        int shown = set.IndexOf("note.hidden = false;", StringComparison.Ordinal);
+        Assert.True(saved >= 0 && catchAt > saved && revert > catchAt && text > revert && shown > text);
+    }
+
+    [Fact]
     public async Task SwJs_HasFixedTitlesAndBodiesForTheUpdateResults()
     {
         string js = await Fetch("/sw.js");

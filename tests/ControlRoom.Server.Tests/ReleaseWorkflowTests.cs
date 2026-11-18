@@ -10,28 +10,31 @@ public sealed partial class ReleaseWorkflowTests
     private const string Slug = "nothisisnotdaniel/controlroom";
 
     [Fact]
-    public void Trigger_IsOnlyAMergedPullRequestIntoMain()
+    public void Trigger_IsAPushToDevelopOrAClosedPullRequestIntoMain()
     {
         string yaml = Workflow();
 
         Assert.Equal(
-            "on:\n  pull_request:\n    types:\n      - \"closed\"\n    branches:\n      - \"main\"\n",
+            "on:\n  push:\n    branches:\n      - \"develop\"\n    paths-ignore:\n      - \"backlog.md\"\n"
+            + "      - \"backlog/**\"\n  pull_request:\n    types:\n      - \"closed\"\n    branches:\n      - \"main\"\n",
             TopLevelBlock(yaml, "on:"));
         Assert.Single(TopLevelKey().Matches(yaml), match => match.Value == "on:");
-        Assert.DoesNotContain("push:", yaml, StringComparison.Ordinal);
+        Assert.Single(Regex.Matches(yaml, "paths-ignore:"));
+        Assert.DoesNotContain("\n    tags:", yaml, StringComparison.Ordinal);
         Assert.DoesNotContain("workflow_dispatch", yaml, StringComparison.Ordinal);
         Assert.DoesNotContain("pull_request_target", yaml, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Job_RunsOnlyForAMergedDevelopPullRequestFromThisRepository()
+    public void Job_RunsForAPushOrAMergedDevelopPullRequestFromThisRepository()
     {
         string yaml = Workflow();
 
         string condition = Assert.Single(yaml.Split('\n'), line => line.TrimStart().StartsWith("if:", StringComparison.Ordinal));
         Assert.Equal(
-            "if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop' "
-            + "&& github.event.pull_request.head.repo.full_name == github.repository",
+            "if: github.event_name == 'push' || (github.event.pull_request.merged == true "
+            + "&& github.event.pull_request.head.ref == 'develop' "
+            + "&& github.event.pull_request.head.repo.full_name == github.repository)",
             condition.Trim());
     }
 
@@ -69,8 +72,9 @@ public sealed partial class ReleaseWorkflowTests
 
         Assert.Contains("persist-credentials: false", yaml, StringComparison.Ordinal);
         List<string> runs = RunBlocks(yaml);
-        Assert.True(runs.Count >= 8);
+        Assert.True(runs.Count >= 9);
         Assert.All(runs, run => Assert.DoesNotContain("${{", run, StringComparison.Ordinal));
+        Assert.All(runs, run => Assert.DoesNotContain("github.event", run, StringComparison.Ordinal));
         Assert.Contains("PR_TITLE: ${{ github.event.pull_request.title }}", yaml, StringComparison.Ordinal);
         Assert.Contains("MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}", yaml, StringComparison.Ordinal);
     }
@@ -85,11 +89,18 @@ public sealed partial class ReleaseWorkflowTests
     }
 
     [Fact]
-    public void Steps_CheckVersionTestPublishSmokePackSumAttestAndReleaseInOrder()
+    public void Steps_CheckVersionTestPublishSmokePackSumAttestReleaseAndPruneInOrder()
     {
         string yaml = Workflow();
         string[] steps =
         [
+            "if [ \"$(uname -m)\" != \"arm64\" ]; then",
+            "if [ \"$GITHUB_EVENT_NAME\" = \"push\" ]; then",
+            "if [ \"$GITHUB_REF\" != \"refs/heads/develop\" ]; then",
+            "case \"$GITHUB_SHA\" in\n              '' | *[!0-9a-f]*)",
+            "if [ \"${#GITHUB_SHA}\" -ne 40 ]; then",
+            "if [ \"$(git rev-parse HEAD)\" != \"$GITHUB_SHA\" ]; then",
+            "elif [ \"$GITHUB_EVENT_NAME\" = \"pull_request\" ]; then",
             "if [ \"$PR_MERGED\" != \"true\" ]; then",
             "if [ \"$PR_HEAD_REF\" != \"develop\" ]; then",
             "if [ \"$PR_HEAD_REPO\" != \"$GITHUB_REPOSITORY\" ]; then",
@@ -97,7 +108,13 @@ public sealed partial class ReleaseWorkflowTests
             "if [ \"${#MERGE_SHA}\" -ne 40 ]; then",
             "if [ \"$(git rev-parse HEAD)\" != \"$MERGE_SHA\" ]; then",
             "if ! git merge-base --is-ancestor \"$MERGE_SHA\" origin/main; then",
+            "          else\n            echo \"Only a push to develop or a merged release pull request makes a release\" >&2\n            exit 1\n",
+            "if [ \"$GITHUB_EVENT_NAME\" = \"push\" ]; then",
+            "VERSION=\"$(git tag --list 'v*' | sh .github/scripts/develop-version.sh \"$GITHUB_RUN_NUMBER\")\"",
+            "TARGET=\"$GITHUB_SHA\"",
             "VERSION=\"$(git tag --list 'v*' | sh .github/scripts/release-version.sh \"$PR_TITLE\")\"",
+            "TARGET=\"$MERGE_SHA\"",
+            "echo \"TARGET=$TARGET\" >> \"$GITHUB_ENV\"",
             "run: dotnet test -c Release\n",
             "dotnet publish src/ControlRoom.Server -c Release -r osx-arm64 --self-contained -p:Version=\"$VERSION\"",
             "ACTUAL=\"$(\"$RUNNER_TEMP/publish/ControlRoom.Server\" version)\"",
@@ -111,16 +128,40 @@ public sealed partial class ReleaseWorkflowTests
             "subject-path: dist/controlroom-${{ env.VERSION }}-osx-arm64.tar.gz",
             "*-*) PRERELEASE=\"--prerelease\" ;;",
             "gh release create \"v$VERSION\" \"dist/controlroom-$VERSION-osx-arm64.tar.gz\" dist/SHA256SUMS ",
-            "--target \"$MERGE_SHA\" $PRERELEASE",
+            "--target \"$TARGET\" $PRERELEASE",
+            "- name: Prune old prereleases\n        continue-on-error: true\n",
+            "*-*)\n              echo \"Version $VERSION is a prerelease; nothing to prune\"\n              exit 0\n",
+            "set -o pipefail\n",
+            "gh release list --limit 1000 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease) | .tagName' |",
+            "sh .github/scripts/old-prereleases.sh \"$VERSION\" |",
+            "while IFS= read -r tag; do",
+            "gh release delete \"$tag\" --cleanup-tag --yes || echo \"::warning::Could not delete prerelease $tag\"",
         ];
 
         int last = -1;
         foreach (string step in steps)
         {
-            int index = yaml.IndexOf(step, StringComparison.Ordinal);
+            int index = yaml.IndexOf(step, last + 1, StringComparison.Ordinal);
             Assert.True(index > last, "step out of order or missing: " + step);
             last = index;
         }
+    }
+
+    [Fact]
+    public void PushPath_TakesNoPullRequestRefCheckAndTheShaComesFromTheEnvironment()
+    {
+        string yaml = Workflow();
+
+        Assert.DoesNotContain("github.sha", yaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("github.ref", yaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("github.run_number", yaml, StringComparison.Ordinal);
+        Assert.Single(Regex.Matches(yaml, "--prerelease"));
+        Assert.Single(Regex.Matches(yaml, "gh release create "));
+        Assert.Single(Regex.Matches(yaml, "gh release delete "));
+        int create = yaml.IndexOf("gh release create ", StringComparison.Ordinal);
+        int prune = yaml.IndexOf("- name: Prune old prereleases", StringComparison.Ordinal);
+        Assert.True(prune > create);
+        Assert.Single(Regex.Matches(yaml, "\n        continue-on-error: true\n"));
     }
 
     [Fact]

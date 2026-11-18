@@ -612,6 +612,47 @@ public sealed class LaunchAgentScriptTests
     }
 
     [Fact]
+    public void InstallRelease_WithADevelopTag_DownloadsChecksAndRecordsThatTag()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.AddRelease("1.2.4-develop.7", ReleaseFault.None);
+
+        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.4-develop.7");
+
+        Assert.Equal(0, run.ExitCode);
+        Assert.Equal(
+            "Installed v1.2.4-develop.7: " + home.Plist + "\nLog: " + home.Log + "\nUpdater: " + home.UpdaterPlist + "\n",
+            run.Output);
+        IReadOnlyList<string> curl = home.CurlCalls();
+        Assert.Equal(2, curl.Count);
+        AssertDownload(home, curl[0], "v1.2.4-develop.7", "controlroom-1.2.4-develop.7-osx-arm64.tar.gz");
+        AssertDownload(home, curl[1], "v1.2.4-develop.7", "SHA256SUMS");
+        Assert.True(File.Exists(Path.Combine(home.Server, "ControlRoom.Server")));
+        Assert.Equal("v1.2.4-develop.7\n", File.ReadAllText(home.Marker));
+        Assert.Empty(home.WorkFolders());
+    }
+
+    [Fact]
+    public void InstallRelease_WithADevelopTagAndABadChecksum_RefusesItAndChangesNothing()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        Assert.Equal(0, home.Run("install").ExitCode);
+        home.AddRelease("1.2.4-develop.7", ReleaseFault.BadChecksum);
+
+        AssertReleaseRefused(home, ["install", "--release", "v1.2.4-develop.7"], ReleaseBadText);
+    }
+
+    [Fact]
     public void InstallRelease_WithoutATag_FindsTheLatestReleaseFromTheRedirect()
     {
         if (OperatingSystem.IsWindows())
@@ -696,7 +737,10 @@ public sealed class LaunchAgentScriptTests
     [InlineData("v01.2.3")]
     [InlineData("v1.02.3")]
     [InlineData("v1.2.3+build")]
-    [InlineData("v1.2.3-develop.1")]
+    [InlineData("v1.2.3-develop.1+build")]
+    [InlineData("v1.2.3-develop_1")]
+    [InlineData("v1.2.3-develop.*")]
+    [InlineData("1.2.3-develop.1")]
     [InlineData("v1.2.3-")]
     [InlineData("v1.2.3/../x")]
     [InlineData("v1.2.3 ")]
