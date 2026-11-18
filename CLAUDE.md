@@ -56,12 +56,26 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   `--TailnetHost <mac>.<tailnet>.ts.net` is needed before the iPhone works through Tailscale.
   Start at login: `scripts/launch-agent.sh install [--tailnet-host <name>]|status|uninstall` (LaunchAgent `local.controlroom.server`,
   published server in `~/Library/Application Support/ControlRoom/server/`, log `~/Library/Logs/ControlRoom/server.log`).
+  `scripts/launch-agent.sh install --release [vX.Y.Z] [--tailnet-host <name>]` installs a GitHub release instead (latest
+  when no tag; no .NET SDK needed; launchd runs `server/ControlRoom.Server` directly).
+  `dotnet run --project src/ControlRoom.Server -- version` prints `ControlRoom <version>` (`dev` without `-p:Version`);
+  `GET /api/version` returns `{"version":"…"}`.
+- **Releases:** `.github/workflows/release.yml` runs only for a merged PR from `develop` into `main` titled
+  `release vX.Y.Z` (`.github/scripts/release-version.sh` checks the title and existing tags). On a `macos-15` (arm64)
+  runner it re-checks the PR, runs `dotnet test -c Release`, publishes `-r osx-arm64 --self-contained
+  -p:Version=X.Y.Z`, smoke-checks `ControlRoom.Server version`, packs `controlroom-X.Y.Z-osx-arm64.tar.gz` (one top
+  folder), writes `SHA256SUMS`, attests build provenance and runs `gh release create vX.Y.Z` on the merge commit
+  (`--title "ControlRoom X.Y.Z" --generate-notes`, plus `--prerelease` for a prerelease version). Top-level `permissions: {}`; the job has only `contents: write`,
+  `id-token: write`, `attestations: write`; every action pinned to a commit SHA; PR fields only through `env:`.
+  Check a tarball with `gh attestation verify <tarball> --repo nothisisnotdaniel/controlroom`. The repo slug is fixed
+  in `launch-agent.sh`; renaming the repo breaks `--release`.
 - **Test command:** `dotnet test` (from `ControlRoom/`; `dotnet build` must stay at 0 warnings). Tests build a
   temporary factory root (`TempFactoryRoot`) and host the server with `ServerFactory`; no test reads the real
   factory root or opens a real port.
 - **Layout:**
   - `ControlRoom.slnx`, `Directory.Build.props` (nullable, implicit usings, code style in build), `.editorconfig`.
-  - `src/ControlRoom.Server/`: `Program.cs` (entry; `token` runs `TokenCommand`), `ServerApp` (builds the app:
+  - `src/ControlRoom.Server/`: `Program.cs` (entry; `token` runs `TokenCommand`,
+    `version` runs `VersionCommand`), `ServerApp` (builds the app:
     Kestrel, headers, the `HostCheck`, GET/HEAD only (POST only on `/api/backlog/change` and the four `/api/push/*` POST routes), the `/api/` token gate, static files, endpoints, push services), `AccessToken` (token file
     path, create, safe read, atomic replace, constant-time check), `TokenCommand` (`token`, `token --new`), `HostCheck` (allowed `Host` values, `TailnetHost` rule, fixed
     `421` body), `ServerEndpoint` (the one listen address), `FactoryRootLocator`,
@@ -83,17 +97,27 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     reason table, `PushTransport` (the injectable `HttpMessageHandler`), one POST per subscription, `404`/`410`
     removes it), `PushWatcher` (hosted service, `Scan()` every 30 s on `TimeProvider`; first scan is the baseline),
     `PushEndpoint` (`GET /api/push`, `POST /api/push/subscribe|unsubscribe|settings|test`), `PushTestLimiter`
-    (one test send per 10 s), `UnixOwner` (`geteuid`, `lstat` uid via P/Invoke), `wwwroot/` (`index.html`, `app.css`, `token.js` (stored token under
+    (one test send per 10 s), `UnixOwner` (`geteuid`, `lstat` uid via P/Invoke), `AppVersion` (informational version without
+    `+build`, else `dev`), `VersionCommand` (`version`), `VersionEndpoint` (`GET /api/version`), `wwwroot/` (`index.html`, `app.css`, `token.js` (stored token under
     `controlroom-token`, `authFetch` for every `/api/` call, the token view), `app.js` (routing, backlogs,
-    story), `edit.js` (per-project edit mode, the Add form, Edit story, fixed texts per error code), `board.js` (jobs board and job page, polls every 5 s while visible), `push.js` (Notifications section on the
+    story), `edit.js` (per-project edit mode, the Add form, Edit story, fixed texts per error code), `board.js` (jobs board and job page, polls every 5 s while visible; the `ControlRoom <version>`
+    line at the foot of Jobs, asked once per page load), `push.js` (Notifications section on the
     board: state texts, Turn on (permission only from the tap), done switch, Send test, Turn off),
     `sw.js` (service worker: caches only the fixed app shell, never `/api/`; bump its cache version when the
     shell list changes; `push` shows a notification from fixed titles, `notificationclick` opens `#job/<id>` or
     `#backlogs`), `manifest.webmanifest`, `icons/` (opaque RGB PNGs, 180/192/512 px)).
   - `scripts/launch-agent.sh`: POSIX `sh` LaunchAgent installer (publish, `bootout`, replace, plist `0644`,
-    `bootstrap`; refuses symlinks; never reads the token). Not part of the server.
+    `bootstrap`; refuses symlinks; never reads the token). With `--release` it runs `curl`, `tar` and `shasum`
+    instead of `dotnet`: tag and latest-release redirect checked as `v`+SemVer, downloads into a `mktemp -d` folder
+    in the support folder (removed on every exit), `curl --max-filesize` 200 MiB for the tarball and 4 KiB
+    for `SHA256SUMS`, one matching `SHA256SUMS` line, archive entries only regular files and folders under
+    `controlroom-<ver>-osx-arm64/`, at most 10000 entries and 512 MiB of unpacked content (counted through a pipe
+    before extraction), checked again after extraction. Not part of the server.
+  - `.github/workflows/release.yml` and `.github/scripts/release-version.sh` (title `release vX.Y.Z` to `X.Y.Z`;
+    existing tags on stdin).
   - `tests/ControlRoom.Server.Tests/`: one test class per unit or concern (`LaunchAgentScriptTests` runs the script with fake
-    `launchctl`/`dotnet` in a temp `HOME`); `TempFactoryRoot` (`InitGit`, `AddBareRemote`
+    `launchctl`/`dotnet`/`curl` in a temp `HOME` and builds release tarballs with `/usr/bin/tar`;
+    `ReleaseWorkflowTests` reads `release.yml` as text); `TempFactoryRoot` (`InitGit`, `AddBareRemote`
     and `Git` for a real local repo), `TempTokenFolder` and `ServerFactory` (own temp token file; clients send `Host: 127.0.0.1:8100`; optional tailnet name;
     `CreateTokenClient()` for API calls; `Push` fake push service, `Time` fixed clock whose timers never fire,
     `Logs`) are the shared fixtures; `PushFakes` holds `FakeTime`, `FakePushHandler`, `PushReceiver` (test-side

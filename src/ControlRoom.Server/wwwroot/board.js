@@ -17,6 +17,7 @@ const BoardTexts = {
   task: "[h]",
   back: "Back",
   records: "Records",
+  version: "ControlRoom ",
 };
 
 const Stages = [
@@ -373,6 +374,7 @@ async function pollBoard() {
       return;
     }
     setBoardStatus(true);
+    loadVersion();
     if (text === boardText) {
       return;
     }
@@ -412,6 +414,33 @@ function showBoard() {
   window.scrollTo(0, boardScroll);
   pollBoard();
   showPushSection();
+}
+
+// The version line at the foot of the board: asked for once per page load, after the first board load that
+// worked (again only after a refused token), through authFetch; set with textContent, hidden when it fails.
+let versionRequested = false;
+
+async function loadVersion() {
+  if (versionRequested || !hasToken()) {
+    return;
+  }
+  versionRequested = true;
+  const line = document.getElementById("app-version");
+  try {
+    const response = await authFetch("/api/version", { cache: "no-store" });
+    if (!response.ok) {
+      return;
+    }
+    const data = await response.json();
+    const version = asText(data && data.version);
+    if (version !== "") {
+      line.textContent = BoardTexts.version + version;
+      line.hidden = false;
+    }
+  } catch {
+    // Unreachable: the line stays hidden. Refused: the token view is shown, and saving a token asks again.
+    versionRequested = !tokenViewShown();
+  }
 }
 
 function rememberBoardScroll() {

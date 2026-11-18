@@ -5,8 +5,8 @@ namespace ControlRoom.Server;
 
 /// <summary>Builds the web app: loopback-only Kestrel, security headers, the <c>Host</c> check, GET/HEAD only (plus POST on
 /// the backlog change route and the push routes), static files from the
-/// server's own <c>wwwroot</c>, an access token on every <c>/api/</c> request, the backlogs, story, board, job
-/// and push APIs, and the push watcher.</summary>
+/// server's own <c>wwwroot</c>, an access token on every <c>/api/</c> request, the backlogs, story, board, job,
+/// push and version APIs, and the push watcher.</summary>
 internal static class ServerApp
 {
     public const string ContentSecurityPolicy =
@@ -124,6 +124,7 @@ internal static class ServerApp
         JobEndpoint.Map(app);
         BacklogChangeEndpoint.Map(app);
         PushEndpoint.Map(app);
+        VersionEndpoint.Map(app);
         return app;
     }
 
