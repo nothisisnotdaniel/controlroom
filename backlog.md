@@ -66,3 +66,6 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#56](backlog/056-drop-a-develop-check-result-after.md) Drop a develop check result after switching back to stable
 - [?] [#57](backlog/057-filter-drafts-in-the-updater-s.md) Filter drafts in the updater's develop tag pick too
 - [?] [#58](backlog/058-guard-the-release-workflow-s-github.md) Guard the release workflow's GITHUB_ENV writes
+- [?] [#59](backlog/059-behaviour-tests-for-the-web-app.md) Behaviour tests for the web app's JavaScript
+- [?] [#60](backlog/060-calmer-colour-for-non-urgent-job.md) Calmer colour for non-urgent job notes
+- [?] [#61](backlog/061-check-that-the-job-page-refreshes.md) Check that the job page refreshes in place
