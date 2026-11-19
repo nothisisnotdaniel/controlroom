@@ -143,8 +143,9 @@ function renderActPending(section, job, request) {
   const action = asText(request.action);
   if (action === "approve" || action === "rework") {
     const label = action === "approve" ? ActTexts.approveSent : ActTexts.reworkSent;
+    const when = actLocalTime(asText(request.requested));
     section.appendChild(element("p", "act-waiting",
-      ActTexts.waitingStart + project + ": " + label + ActTexts.sent + actLocalTime(asText(request.requested))));
+      ActTexts.waitingStart + project + ": " + label + (when ? ActTexts.sent + when : "")));
     const note = asText(request.note);
     if (action === "rework" && note) {
       section.appendChild(element("p", "act-note-text", note));

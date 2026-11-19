@@ -82,6 +82,32 @@ public sealed class JobActApiTests
         Assert.Equal(new JobRequest("rework", 3, "Fix the \"label\" text", Requested), parsed);
     }
 
+    [Theory]
+    [InlineData("\U0001F697", "\U0001F697")]
+    [InlineData("\u00FC", "\u00FC")]
+    [InlineData("<", "<")]
+    [InlineData("\"", "\\\"")]
+    public async Task ANoteOf1000NonAsciiOrHtmlRunes_IsWrittenWithin4KiBAndReadBack(string rune, string jsonRune)
+    {
+        using TempFactoryRoot root = new();
+        string folder = root.AddJob(Id, State("needs-human", 2));
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+        string note = string.Concat(Enumerable.Repeat(rune, 1000));
+
+        (HttpStatusCode code, _, _) = await Post(client,
+            "{\"id\":\"" + Id + "\",\"action\":\"rework\",\"round\":2,\"note\":\""
+            + string.Concat(Enumerable.Repeat(jsonRune, 1000)) + "\"}");
+
+        Assert.Equal(HttpStatusCode.OK, code);
+        byte[] written = File.ReadAllBytes(Path.Combine(folder, "human.json"));
+        Assert.True(written.Length <= JobAction.MaxFileBytes, "wrote " + written.Length + " bytes");
+        Assert.Equal(new JobRequest("rework", 2, note, Requested), JobAction.Parse(written));
+        string job = await client.GetStringAsync("/api/job?id=" + Id);
+        Assert.Contains("\"request\":{\"action\":\"rework\",\"round\":2,\"note\":", job, StringComparison.Ordinal);
+        Assert.DoesNotContain("unreadable", job, StringComparison.Ordinal);
+    }
+
     public static TheoryData<string> InvalidBodies()
     {
         return

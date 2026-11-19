@@ -54,7 +54,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `round` matches), then writes `human.json` through `SafeFileWriter` or deletes it (no-follow). A request is pending
     while `human.json` is a regular file (`lstat`): `approve`/`rework` then give `409 pending`, `cancel` without a file
     `409 not_pending`; a symlinked (even dangling) or non-file `human.json` gives `500 write_failed` and is left as it
-    is; a bad body `400 invalid`. The file is exactly `{"action":"approve","round":R,"requested":"YYYY-MM-DDTHH:MM:SSZ"}`
+    is; a bad body `400 invalid` (a non-JSON `Content-Type` `415 invalid`). The file is exactly `{"action":"approve","round":R,"requested":"YYYY-MM-DDTHH:MM:SSZ"}`
     or `{"action":"rework","round":R,"note":"…","requested":"…"}` (UTF-8, one line break, at most 4 KiB; `R` the
     state's `round` (0 when missing), `requested` UTC from `TimeProvider`), not committed; the factory (`job.py human`)
     drops a stale one. The note is the user's own text and is never passed to a shell.

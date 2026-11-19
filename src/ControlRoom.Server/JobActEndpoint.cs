@@ -122,7 +122,13 @@ internal static class JobActEndpoint
             }
 
             JobRequest written = new(request.Action, round, request.Note, JobAction.FormatTime(time.GetUtcNow()));
-            SafeFileWriter.Write(path, JobAction.Render(written));
+            byte[] bytes = JobAction.Render(written);
+            if (bytes.Length > JobAction.MaxFileBytes)
+            {
+                return Error(StatusCodes.Status400BadRequest, Invalid);
+            }
+
+            SafeFileWriter.Write(path, bytes);
             return Results.Json(new JobActResponse(JobRequestView.Of(written)));
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)

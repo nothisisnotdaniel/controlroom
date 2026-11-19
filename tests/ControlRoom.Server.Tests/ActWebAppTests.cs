@@ -32,7 +32,8 @@ public sealed class ActWebAppTests
         Assert.Contains("  cancel: \"Cancel request\",\n", texts, StringComparison.Ordinal);
         Assert.Contains("  hintStart: \"Nothing happens until the next /factory session for \",\n", texts,
             StringComparison.Ordinal);
-        Assert.Contains("ActTexts.waitingStart + project + \": \" + label + ActTexts.sent + actLocalTime(", js,
+        Assert.Contains("const when = actLocalTime(asText(request.requested));", js, StringComparison.Ordinal);
+        Assert.Contains("ActTexts.waitingStart + project + \": \" + label + (when ? ActTexts.sent + when : \"\")", js,
             StringComparison.Ordinal);
     }
 

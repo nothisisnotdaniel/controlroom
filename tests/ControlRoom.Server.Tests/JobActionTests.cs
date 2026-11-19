@@ -36,6 +36,34 @@ public sealed class JobActionTests
     }
 
     [Theory]
+    [InlineData("\U0001F697")]
+    [InlineData("\u00FC")]
+    [InlineData("<")]
+    [InlineData("&")]
+    [InlineData("\"")]
+    [InlineData("\\")]
+    public void Render_ANoteOf1000RunesOfAnyKind_FitsIn4KiBAndRoundTrips(string rune)
+    {
+        string note = string.Concat(Enumerable.Repeat(rune, 1000));
+        Assert.Equal(note, BacklogEditor.CleanNote(note));
+        JobRequest request = new("rework", int.MaxValue, note, Time);
+
+        byte[] bytes = JobAction.Render(request);
+
+        Assert.True(bytes.Length <= JobAction.MaxFileBytes, "rendered " + bytes.Length + " bytes");
+        Assert.Equal(request, JobAction.Parse(bytes));
+    }
+
+    [Fact]
+    public void Render_WritesNonAsciiAndHtmlCharactersUnescaped()
+    {
+        byte[] bytes = JobAction.Render(new JobRequest("rework", 1, "<\u00FC> & \U0001F697", Time));
+
+        Assert.Equal("{\"action\":\"rework\",\"round\":1,\"note\":\"<\u00FC> & \U0001F697\",\"requested\":\"" + Time + "\"}\n",
+            Encoding.UTF8.GetString(bytes));
+    }
+
+    [Theory]
     [InlineData("{\"action\":\"approve\",\"round\":1,\"requested\":\"2026-03-01T09:30:00Z\",\"extra\":1}")]
     [InlineData("{\"action\":\"approve\",\"round\":1,\"note\":\"x\",\"requested\":\"2026-03-01T09:30:00Z\"}")]
     [InlineData("{\"action\":\"rework\",\"round\":1,\"requested\":\"2026-03-01T09:30:00Z\"}")]

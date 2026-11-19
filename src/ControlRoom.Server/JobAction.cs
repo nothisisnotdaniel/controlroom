@@ -45,6 +45,7 @@ internal static partial class JobAction
 
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
+
     /// <summary>The request in a <c>human.json</c> file's bytes, or <c>null</c> when the bytes are over the cap, not
     /// UTF-8, not one JSON object with exactly the keys of its action, or a value is of the wrong type or form.</summary>
     public static JobRequest? Parse(byte[] bytes)
@@ -81,18 +82,45 @@ internal static partial class JobAction
         }
     }
 
-    /// <summary>The file bytes of a request: the approve or rework form, UTF-8, followed by one line break.</summary>
+    // A JSON string that escapes only what JSON needs (quote, backslash, control characters) and keeps every other
+    // character as itself, so a 1000-rune note (at most 4 UTF-8 bytes per rune) keeps the file under MaxFileBytes.
+    // JsonSerializer's encoders write non-ASCII as \uXXXX, up to 12 bytes for a rune outside the BMP.
+    private static string JsonString(string value)
+    {
+        StringBuilder text = new(value.Length + 2);
+        text.Append('"');
+        foreach (char c in value)
+        {
+            if (c == '"' || c == '\\')
+            {
+                text.Append('\\').Append(c);
+            }
+            else if (c < ' ')
+            {
+                text.Append("\\u").Append(((int)c).ToString("x4", CultureInfo.InvariantCulture));
+            }
+            else
+            {
+                text.Append(c);
+            }
+        }
+
+        return text.Append('"').ToString();
+    }
+
+    /// <summary>The file bytes of a request: the approve or rework form, UTF-8, followed by one line break. Non-ASCII
+    /// characters are written as UTF-8, not escaped; callers check the length against <see cref="MaxFileBytes"/>.</summary>
     public static byte[] Render(JobRequest request)
     {
         StringBuilder text = new();
-        text.Append("{\"action\":").Append(JsonSerializer.Serialize(request.Action));
+        text.Append("{\"action\":").Append(JsonString(request.Action));
         text.Append(",\"round\":").Append(request.Round.ToString(CultureInfo.InvariantCulture));
         if (request.Note is not null)
         {
-            text.Append(",\"note\":").Append(JsonSerializer.Serialize(request.Note));
+            text.Append(",\"note\":").Append(JsonString(request.Note));
         }
 
-        text.Append(",\"requested\":").Append(JsonSerializer.Serialize(request.Requested)).Append("}\n");
+        text.Append(",\"requested\":").Append(JsonString(request.Requested)).Append("}\n");
         return StrictUtf8.GetBytes(text.ToString());
     }
 
