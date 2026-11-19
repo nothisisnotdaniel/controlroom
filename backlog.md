@@ -79,3 +79,6 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#68](backlog/068-browser-check-of-the-approval-inbox.md) Browser check of the approval inbox
 - [?] [#70](backlog/070-guard-updatechecker-startasync-after-dispose.md) Guard UpdateChecker.StartAsync after Dispose
 - [?] [#71](backlog/071-name-the-task-in-the-done.md) Name the task in the Done confirmation
+- [?] [#72](backlog/072-fill-the-search-project-filter-before.md) Fill the search project filter before the first search
+- [?] [#73](backlog/073-browser-check-of-the-search-view.md) Browser check of the Search view and five-link nav
+- [?] [#74](backlog/074-notice-when-a-live-search-refresh.md) Notice when a live search refresh fails
