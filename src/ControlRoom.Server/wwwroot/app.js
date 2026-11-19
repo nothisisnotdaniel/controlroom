@@ -12,6 +12,12 @@ const Texts = {
   back: "Back",
   waiting: "Waiting",
   after: "After:",
+  next: "Next:",
+  nothingReady: "Nothing ready to run.",
+  stopped: "The factory can't pick a next item until the missing items below are fixed.",
+  spike: "Spike",
+  waitsFor: "Waits for",
+  missing: "No such item",
 };
 
 const Groups = [
@@ -184,10 +190,88 @@ function renderGroup(projectName, version, group, entries) {
   return section;
 }
 
+// A link "#N Title" to a story; the title is set as text.
+function planItemLink(projectName, number, title) {
+  const link = element("a", "plan-item");
+  link.href = storyHash(projectName, number);
+  link.appendChild(element("span", "number", "#" + number));
+  link.appendChild(titleElement(title));
+  return link;
+}
+
+// "Waits for" and one link per unmet dependency; a missing one is plain text with the fixed warning.
+function renderWaitsFor(projectName, after) {
+  const line = element("span", "after");
+  line.appendChild(element("span", "after-label", Texts.waitsFor));
+  for (const dependency of after) {
+    const number = asNumber(dependency && dependency.number);
+    if (number === null) {
+      continue;
+    }
+    const target = asText(dependency.project) || projectName;
+    const label = (target === projectName ? "" : target) + "#" + number;
+    if (dependency.missing === true) {
+      line.appendChild(element("span", "dependency-missing", label));
+      line.appendChild(element("span", "missing", Texts.missing));
+      continue;
+    }
+    const link = element("a", "dependency", label);
+    link.href = storyHash(target, number);
+    line.appendChild(link);
+  }
+  return line;
+}
+
+// What /factory next would take now, and the open items that wait (BacklogPlan on the server).
+function renderPlan(projectName, project) {
+  const plan = element("div", "plan");
+  const next = element("p", "next");
+  const item = project.next;
+  const number = asNumber(item && item.number);
+  if (project.stopped === true) {
+    next.classList.add("next-stopped");
+    next.textContent = Texts.stopped;
+  } else if (number !== null) {
+    next.appendChild(element("span", "next-label", Texts.next));
+    next.appendChild(planItemLink(projectName, number, item.title));
+    if (item.spike === true) {
+      next.appendChild(element("span", "badge badge-spike", Texts.spike));
+    }
+  } else {
+    next.textContent = Texts.nothingReady;
+  }
+  plan.appendChild(next);
+  const blocked = asList(project.blocked).filter((entry) => asNumber(entry && entry.number) !== null);
+  if (blocked.length > 0) {
+    const group = element("section", "group waiting-group");
+    group.appendChild(element("h3", null, Texts.waiting + " (" + blocked.length + ")"));
+    const list = element("ul", "lines");
+    for (const entry of blocked) {
+      const row = element("li");
+      row.appendChild(planItemLink(projectName, entry.number, entry.title));
+      row.appendChild(renderWaitsFor(projectName, asList(entry.after)));
+      list.appendChild(row);
+    }
+    group.appendChild(list);
+    plan.appendChild(group);
+  }
+  return plan;
+}
+
+// The plan as one string: a section whose signature changed is replaced on a live refresh, even when only another
+// project's backlog changed.
+function planSignature(project) {
+  if (!project || project.readable !== true) {
+    return "";
+  }
+  return JSON.stringify([project.next || null, project.stopped === true, asList(project.blocked)]);
+}
+
 function renderProject(project) {
   const section = element("section", "project");
   const name = asText(project && project.name);
   section.dataset.project = name;
+  section.dataset.plan = planSignature(project);
   const version = asText(project && project.version);
   const head = element("div", "project-head");
   head.appendChild(element("h2", null, asText(project && project.name)));
@@ -199,6 +283,7 @@ function renderProject(project) {
   if (version !== "") {
     head.appendChild(editToggle(name, section));
   }
+  section.appendChild(renderPlan(name, project));
   let shown = 0;
   for (const group of Groups) {
     const entries = asList(project[group.key]);
@@ -247,9 +332,10 @@ async function load() {
   show(projects.map(renderProject));
 }
 
-// Live refresh (live.js): only the sections of the named projects are replaced, each in place, so scroll, edit mode
-// and an open Done group stay. A section with an open Add or title form, or with focus inside, is left alone; its
-// name is returned so the next check tries again. A failed request returns every name.
+// Live refresh (live.js): only the sections of the named projects, and those whose plan signature changed, are
+// replaced, each in place, so scroll, edit mode and an open Done group stay. A section with an open Add or title
+// form, or with focus inside, is left alone; its name is returned so the next check tries again. A failed request
+// returns every name.
 async function refreshBacklogs(names) {
   let data;
   try {
@@ -278,8 +364,9 @@ async function refreshBacklogs(names) {
     const name = asText(project && project.name);
     listed.add(name);
     const old = sections.get(name);
-    if (old && (!wanted.has(name) || sectionBusy(old))) {
-      if (wanted.has(name)) {
+    const changed = wanted.has(name) || (old !== undefined && old.dataset.plan !== planSignature(project));
+    if (old && (!changed || sectionBusy(old))) {
+      if (changed) {
         left.push(name);
       }
       previous = old;

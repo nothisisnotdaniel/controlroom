@@ -210,6 +210,25 @@ public sealed class TasksApiTests
         Assert.Equal(["Alpha:4"], Keys(json.RootElement.GetProperty("waiting")));
     }
 
+    [Fact]
+    public async Task Tasks_ProjectNamesInDependenciesMatchIgnoringCase()
+    {
+        using TempFactoryRoot root = new();
+        root.AddProject(
+            "Alpha",
+            "- [h] [#1](backlog/001-a.md) Met (after: times#5)\n"
+            + "- [h] [#2](backlog/002-a.md) Unmet (after: TIMES#6)\n");
+        root.AddProject("Times", "- [x] [#5](backlog/005-t.md) Five\n- [ ] [#6](backlog/006-t.md) Six\n");
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+
+        using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync(Route));
+
+        Assert.Equal(["Alpha:0"], Keys(json.RootElement.GetProperty("ready")));
+        JsonElement waiting = json.RootElement.GetProperty("waiting")[0];
+        Assert.Equal(["Times#6"], After(waiting));
+    }
+
     private static string[] Keys(JsonElement items)
     {
         return items.EnumerateArray()

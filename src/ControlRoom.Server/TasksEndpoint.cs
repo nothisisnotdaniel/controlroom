@@ -59,7 +59,7 @@ internal static class TasksEndpoint
             foreach (BacklogEntry entry in file.Backlog.User)
             {
                 List<TaskDependency> unmet = rule.Unmet(entry, project.Name)
-                    .Select(dependency => new TaskDependency(dependency.Project ?? project.Name, dependency.Number))
+                    .Select(dependency => new TaskDependency(rule.ProjectName(dependency, project.Name), dependency.Number))
                     .ToList();
                 TaskItem item = new(
                     project.Name,
