@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.StaticFiles;
 namespace ControlRoom.Server;
 
 /// <summary>Builds the web app: loopback-only Kestrel, security headers, the <c>Host</c> check, GET/HEAD only (plus POST on
-/// the backlog change route, the update settings route and the push routes), static files from the
+/// the backlog change route, the update settings route, the job act route and the push routes), static files from the
 /// server's own <c>wwwroot</c>, an access token on every <c>/api/</c> request, the backlogs, story, board, changes, job,
 /// push, version and update APIs, the public <c>/health</c> route, the push watcher and the update check.</summary>
 internal static class ServerApp
@@ -88,6 +88,7 @@ internal static class ServerApp
         });
         builder.Services.AddSingleton(new FactoryRoot(root));
         builder.Services.AddSingleton(new BacklogWriteLock());
+        builder.Services.AddSingleton(new JobActLock());
         AddPush(builder, tokenPath);
 
         WebApplication app = builder.Build();
@@ -126,6 +127,7 @@ internal static class ServerApp
         BoardEndpoint.Map(app);
         ChangesEndpoint.Map(app);
         JobEndpoint.Map(app);
+        JobActEndpoint.Map(app);
         BacklogChangeEndpoint.Map(app);
         PushEndpoint.Map(app);
         VersionEndpoint.Map(app);
@@ -166,7 +168,7 @@ internal static class ServerApp
     }
 
     /// <summary>GET and HEAD everywhere; POST only on exactly <see cref="BacklogChangeEndpoint.Route"/>,
-    /// <see cref="UpdateEndpoint.SettingsRoute"/> and the <see cref="PushEndpoint.PostRoutes"/>.</summary>
+    /// <see cref="UpdateEndpoint.SettingsRoute"/>, <see cref="JobActEndpoint.Route"/> and the <see cref="PushEndpoint.PostRoutes"/>.</summary>
     private static bool IsAllowedMethod(HttpRequest request)
     {
         if (HttpMethods.IsGet(request.Method) || HttpMethods.IsHead(request.Method))
@@ -177,6 +179,7 @@ internal static class ServerApp
         return HttpMethods.IsPost(request.Method)
             && (string.Equals(request.Path.Value, BacklogChangeEndpoint.Route, StringComparison.Ordinal)
                 || string.Equals(request.Path.Value, UpdateEndpoint.SettingsRoute, StringComparison.Ordinal)
+                || string.Equals(request.Path.Value, JobActEndpoint.Route, StringComparison.Ordinal)
                 || (request.Path.Value is string path && PushEndpoint.PostRoutes.Contains(path)));
     }
 

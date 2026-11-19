@@ -9,7 +9,9 @@ internal sealed record JobFolder(string Id, string Path);
 /// <summary>One job as the board shows it, mapped field by field from its <c>state.json</c>. A field that is
 /// missing or of the wrong type is <c>null</c> (or an empty list or map); fields it doesn't know are dropped.
 /// <c>CiStatus</c> comes from <c>ci.status</c>, <c>Tokens</c> is the sum of <c>input</c>, <c>cacheRead</c> and
-/// <c>output</c> over every agent in <c>tokens</c>.</summary>
+/// <c>output</c> over every agent in <c>tokens</c>. <c>Request</c> is the action of a pending <c>human.json</c>
+/// (<c>approve</c>, <c>rework</c> or <c>unreadable</c>), filled by <see cref="JobAction.WithRequest"/> only for a
+/// <c>needs-human</c> job.</summary>
 internal sealed record JobSummary(
     string Id,
     string? Project,
@@ -27,7 +29,8 @@ internal sealed record JobSummary(
     string? Decision,
     string? Note,
     string? CiStatus,
-    long? Tokens);
+    long? Tokens,
+    string? Request = null);
 
 /// <summary>Reads the jobs folder <c>&lt;root&gt;/factory/jobs</c>. The folder is refused when <c>factory</c> or
 /// <c>jobs</c> is a symlink; only job folders that are not symlinks and whose name matches

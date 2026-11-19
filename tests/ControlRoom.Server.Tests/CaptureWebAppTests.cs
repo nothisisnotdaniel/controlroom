@@ -133,7 +133,7 @@ public sealed class CaptureWebAppTests
     {
         string js = await Fetch("/sw.js");
 
-        Assert.Contains("const CacheVersion = \"v12\";", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v13\";", js, StringComparison.Ordinal);
         Assert.Contains("  \"/search.js\",\n  \"/capture.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
     }
 

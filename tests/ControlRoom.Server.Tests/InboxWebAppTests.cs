@@ -25,14 +25,14 @@ public sealed partial class InboxWebAppTests
     public async Task IndexHtml_LoadsInboxJsBetweenEditJsAndLiveJs()
     {
         string html = await Fetch("/index.html");
-        string[] scripts = ["/token.js", "/board.js", "/push.js", "/edit.js", "/inbox.js", "/tasks.js", "/search.js", "/capture.js", "/live.js", "/app.js"];
+        string[] scripts = ["/token.js", "/board.js", "/act.js", "/push.js", "/edit.js", "/inbox.js", "/tasks.js", "/search.js", "/capture.js", "/live.js", "/app.js"];
 
         int[] positions = scripts
             .Select(script => html.IndexOf("<script src=\"" + script + "\" defer></script>", StringComparison.Ordinal))
             .ToArray();
         Assert.All(positions, position => Assert.True(position >= 0));
         Assert.Equal(positions.OrderBy(position => position), positions);
-        Assert.Equal(10, ScriptTag().Matches(html).Count);
+        Assert.Equal(11, ScriptTag().Matches(html).Count);
     }
 
     [Fact]
@@ -56,7 +56,7 @@ public sealed partial class InboxWebAppTests
     {
         string js = await Fetch("/sw.js");
 
-        Assert.Contains("const CacheVersion = \"v12\";", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v13\";", js, StringComparison.Ordinal);
         Assert.Contains("  \"/inbox.js\",\n", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/inbox", js, StringComparison.Ordinal);
         Assert.Contains("if (url.pathname.startsWith(\"/api/\") || url.pathname === \"/health\") {\n    return false;", js,

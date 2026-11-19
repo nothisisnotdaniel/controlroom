@@ -43,8 +43,21 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     text cut at the last space at or before character 60 (else at 60), trailing `.,;:!?` and spaces removed, and must
     pass the title rule; with the `add` checks a `- [?] [#N](backlog/NNN-slug.md) <title>` line goes after the last item
     and a draft story (`## What` the text, a fixed `## Why`, `## Notes` with `- YYYY-MM-DD: Draft from ControlRoom`) is
-    created; committed as `backlog: capture #N`). Nothing else in the
-    factory root is written.
+    created; committed as `backlog: capture #N`). The one other file the server writes in the factory root is a
+    job's request file `factory/jobs/<id>/human.json`, only through `POST /api/job/act` (see below). Nothing else in
+    the factory root is written.
+  - `POST /api/job/act` (body `{"id","action","round","note"?}`, at most 8 KiB, exact fields; `action` `approve`,
+    `rework` (with `note`, cleaned like a backlog note) or `cancel`) asks the next `/factory` session for the project to
+    approve or rework a `needs-human` job; the server itself runs nothing (no git, no `claude`). Under one lock
+    (`JobActLock`) it matches `id` exactly against `JobReader.ListFolders` (never joined into a path; else
+    `404 {"error":"not found"}`), reads `state.json` again (`409 not_waiting` unless `needs-human`, `409 changed` unless
+    `round` matches), then writes `human.json` through `SafeFileWriter` or deletes it (no-follow). A request is pending
+    while `human.json` is a regular file (`lstat`): `approve`/`rework` then give `409 pending`, `cancel` without a file
+    `409 not_pending`; a symlinked (even dangling) or non-file `human.json` gives `500 write_failed` and is left as it
+    is; a bad body `400 invalid` (a non-JSON `Content-Type` `415 invalid`). The file is exactly `{"action":"approve","round":R,"requested":"YYYY-MM-DDTHH:MM:SSZ"}`
+    or `{"action":"rework","round":R,"note":"…","requested":"…"}` (UTF-8, one line break, at most 4 KiB; `R` the
+    state's `round` (0 when missing), `requested` UTC from `TimeProvider`), not committed; the factory (`job.py human`)
+    drops a stale one. The note is the user's own text and is never passed to a shell.
   - Text from files (backlog lines, job records) is shown as text, never as raw HTML; Markdown is rendered
     with raw HTML turned off.
   - Push files live next to the token file (never in the factory root): `push-keys.json` (VAPID P-256 key pair,
@@ -117,7 +130,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   - `ControlRoom.slnx`, `Directory.Build.props` (nullable, implicit usings, code style in build), `.editorconfig`.
   - `src/ControlRoom.Server/`: `Program.cs` (entry; `token` runs `TokenCommand`,
     `version` runs `VersionCommand`), `ServerApp` (builds the app:
-    Kestrel, headers, the `HostCheck`, GET/HEAD only (POST only on `/api/backlog/change`, `/api/update/settings` and the four `/api/push/*` POST routes), the `/api/` token gate, static files, endpoints, push services), `AccessToken` (token file
+    Kestrel, headers, the `HostCheck`, GET/HEAD only (POST only on `/api/backlog/change`, `/api/job/act`, `/api/update/settings` and the four `/api/push/*` POST routes), the `/api/` token gate, static files, endpoints, push services), `AccessToken` (token file
     path, create, safe read, atomic replace, constant-time check), `TokenCommand` (`token`, `token --new`), `HostCheck` (allowed `Host` values, `TailnetHost` rule, fixed
     `421` body), `ServerEndpoint` (the one listen address), `FactoryRootLocator`,
     `ProjectFinder` (project discovery), `SafeFileReader` (no-follow, regular-file, size-capped text or bytes read, SHA-256 version),
@@ -148,12 +161,14 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     passes the filters and missed on title); `mark` (`open|approval|task|done`) and `project` (exact name) filters; order
     number, title, story, filter, each by project then file line; at most 100 items; a repeated parameter, unknown mark or
     project, or `q` over 200 chars gives `400 {"error":"invalid"}`), `JobReader` (`factory/jobs/<id>/state.json` to a typed
-    `JobSummary`), `BoardEndpoint` (`GET /api/board`: jobs and `[h]` tasks), `ChangeFingerprint` (SHA-256 fingerprints from `lstat`
-    metadata only: `jobs` over each `state.json` of `JobReader.ListFolders`, per project `backlog` over `backlog.md`
+    `JobSummary`; `request` is the `human.json` action, filled only for `needs-human`), `BoardEndpoint` (`GET /api/board`: jobs and `[h]` tasks), `ChangeFingerprint` (SHA-256 fingerprints from `lstat`
+    metadata only: `jobs` over each `state.json` and `human.json` of `JobReader.ListFolders`, per project `backlog` over `backlog.md`
     and `stories` over `backlog/*.md`; a symlink adds only a `link` marker, a missing path `missing`; `NoFollowStat`:
     `lstat`, `O_NOFOLLOW` folder listing and `fstatat` via P/Invoke, never a file opened or a target followed),
     `ChangesEndpoint` (`GET /api/changes`: `{"jobs":…,"projects":{"<name>":{"backlog":…,"stories":…}}}`, `no-store`), `JobEndpoint` (`GET /api/job?id=`:
-    a job and its records from a fixed list), `PushCrypto` (RFC 8291 `aes128gcm`, RFC 8292 VAPID ES256 JWT, P-256
+    a job and its records from a fixed list, and `request`: `null`, the parsed `human.json` or `{"action":"unreadable"}`
+    for a bad, symlinked or oversized file, read only through `SafeFileReader`), `JobAction` (the `human.json` schema:
+    `Parse` (exact keys, at most 4 KiB), `Render`, no-follow `Read`), `JobActEndpoint` (`POST /api/job/act`), `PushCrypto` (RFC 8291 `aes128gcm`, RFC 8292 VAPID ES256 JWT, P-256
     point check, `Base64Url`), `PrivateFolder` (the `0700` folder next to the token file: no-follow `0600` reads,
     atomic writes, `PrivateFileException`), `PushStore` (`push-keys.json`/`push.json` next to the token file;
     `PushSubscriptionRules`: endpoint host allowlist and key checks), `PushSender` (`PushPayload` with the fixed
@@ -170,13 +185,17 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     with a `Spike` badge, `Nothing ready to run.` or the fixed stopped text, and a `Waiting (k)` group with `Waits for`
     links, a missing one as text plus `No such item`; the plan's signature in `data-plan`, and a live refresh also
     replaces a section whose signature changed), story), `edit.js` (per-project edit mode, the Add form, Edit story and Add note (`add-note-button` in the story bar; only
-    one of the two forms open at a time), fixed texts per error code), `board.js` (jobs board and job page (a read-only state section between the facts and the record tabs: stage and round, review rows per round with visible values, decision chip, CI and note), `pollBoard` fetched by `live.js`; the `ControlRoom <version>`
+    one of the two forms open at a time), fixed texts per error code), `board.js` (jobs board and job page (a read-only state section between the facts and the record tabs: stage and round, review rows per round with visible values, decision chip, CI and note; a board card of a `needs-human` job with a request shows `Approve sent` or `Rework sent`), `pollBoard` fetched by `live.js`; a live refresh of the job page is held back while `act.js` says the decision section is in use; the `ControlRoom <version>`
     line at the foot of Jobs and the update banner under its heading, each asked once per page load), `live.js` (the one `setInterval`: asks `/api/changes` every 5 s while visible, no token view and nothing
     pending, and at once on becoming visible; refetches only the board, the changed backlog sections (kept while a form
     is open or focus is inside) and the open story (in place, never while Edit story or Add note is open); a failed check shows
     the fixed `Connection lost. Reconnecting…` notice under the header, or in the `board-status` line on the board;
-    script order `token.js`, `board.js`, `push.js`, `edit.js`, `inbox.js`, `tasks.js`, `search.js`, `capture.js`, `live.js`, `app.js`; a changed
-    `backlog` or `stories` fingerprint refetches the inbox and the tasks and their counts and re-runs the current search), `inbox.js` (the `#inbox` view: every `[?]` item with project,
+    script order `token.js`, `board.js`, `act.js`, `push.js`, `edit.js`, `inbox.js`, `tasks.js`, `search.js`, `capture.js`, `live.js`, `app.js`; a changed
+    `backlog` or `stories` fingerprint refetches the inbox and the tasks and their counts and re-runs the current search), `act.js` (the "Your decision" section under the state section of a `needs-human` job page only: Approve (after a
+    confirm), Rework with a note box (`maxlength` 1000) and Send (off while blank); with a pending request the fixed
+    `Waiting for the next /factory session for <project>: <Approve|Rework> sent <local time>` text, the note as text and
+    Cancel request; fixed texts per error code in `ActErrors`; `jobDecisionBusy` (a send in flight, or the note box has
+    text or focus) keeps a live refresh from rebuilding it), `inbox.js` (the `#inbox` view: every `[?]` item with project,
     `#N Title`, `Proposed by <job>` link, Approve and Drop through `sendChange` (never rebuilt while `changeBusy`), fixed
     texts; the nav count, hidden at 0 or unknown, fetched once per page load, after a token is saved and after every
     committed change), `tasks.js` (the `#tasks` view: `Ready now` and `Waiting` sections of `[h]` items with project,

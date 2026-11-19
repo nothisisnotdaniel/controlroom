@@ -610,7 +610,7 @@ a.card:focus-visible {
 
 .card-note {
   display: block;
-  margin-top: 6px;
+  margin: 0 0 8px;
   color: var(--human);
   font-size: 0.9rem;
 }
@@ -683,6 +683,15 @@ a.card:focus-visible {
 .chip-pending {
   background: var(--pending-bg);
   color: var(--pending-fg);
+}
+
+.chip-sent {
+  background: var(--waiting-bg);
+  color: var(--waiting-fg);
+}
+
+.card-request {
+  margin: 0 0 8px;
 }
 
 /* Job page */
@@ -1490,4 +1499,74 @@ body:has(#edit-notice:not([hidden])) {
 .capture-saved {
   color: var(--pass-fg);
   font-weight: 600;
+}
+
+/* "Your decision" section on a needs-human job page (act.js) */
+.act {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid var(--human);
+  border-radius: 10px;
+  background: var(--human-bg);
+  min-width: 0;
+}
+
+.act-heading {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--human);
+}
+
+.act-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.act-waiting,
+.act-note-text {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.act-note-text {
+  padding-left: 10px;
+  border-left: 3px solid var(--line);
+  white-space: pre-wrap;
+}
+
+.act-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.act-label {
+  font-weight: 600;
+}
+
+.act-note {
+  width: 100%;
+  min-height: 5em;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.act-note:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.act-status {
+  margin: 0;
 }
