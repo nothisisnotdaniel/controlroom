@@ -121,7 +121,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     environment. `install --release` reads `<repo>/signing-cert.sha1` before any download and writes its copy
     `<support>/signing-cert.sha1` (`0600`, `put_file`; removed when signing is off and with the updater); the updater
     reads that copy (must be `0600`, owned by the user, not a symlink, else `check_failed`). The private key is only
-    in the `SIGNING_CERT_P12`/`SIGNING_CERT_PASSWORD` secrets and a per-run temp keychain.
+    in the `SIGNING_CERT_P12`/`SIGNING_CERT_PASSWORD` secrets and a per-run temp keychain. The pin covers only the
+    Mach-O files (identity for macOS permissions), not the managed `*.dll` files: it is not tamper protection.
 - **Stack:** .NET 10 ASP.NET Core minimal API (`Microsoft.NET.Sdk.Web`, no extra packages) serving a plain
   HTML/CSS/JS web app from its own `wwwroot` (no CDN, no build step, strict CSP), xUnit tests with
   `Microsoft.AspNetCore.Mvc.Testing` to host the app in memory. No new package without a reason in the spec.

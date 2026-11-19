@@ -121,7 +121,10 @@ and macOS keeps the permission you grant once: automatic updates then finish wit
 no Apple Developer ID and no notarization. Signing is off until `signing-cert.sha1` is committed at the repo root;
 until then builds are only ad-hoc signed (the workflow warns) and nothing checks signatures. Once it is committed,
 the release workflow must sign every build (steps `Sign` and `Verify signature`), and `install --release` and the
-updater refuse any build that is not signed with that certificate. A `signing-cert.sha1` that is present but not
+updater refuse any build whose native files (the `ControlRoom.Server` executable, the `*.dylib` libraries and
+`createdump`) are not signed with that certificate. This pins the app's identity; it is not tamper protection for
+the whole build, because the managed `*.dll` files are not covered by any signature (the checksum and the
+build-provenance attestation are what vouch for the tarball). A `signing-cert.sha1` that is present but not
 exactly 40 hex characters (plus at most one line break) always fails; it never turns signing off.
 
 One-time setup:

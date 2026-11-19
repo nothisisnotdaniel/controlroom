@@ -6,8 +6,9 @@
 #          (installs the ready-built release from GitHub instead of publishing: the latest one, or vX.Y.Z,
 #          plus the updater LaunchAgent local.controlroom.updater that runs <support>/updater.sh every 6 h)
 # POSIX sh. Runs only dotnet (publish), launchctl, sleep and, with --release, curl, tar, shasum and (once
-# signing-cert.sha1 is committed next to ControlRoom.slnx) codesign --verify, all with fixed arguments. Never reads the access token file. After every bootout it waits until launchd has removed the service,
-# and a failed bootstrap is tried again a few times.
+# signing-cert.sha1 is committed next to ControlRoom.slnx) codesign --verify, all with fixed arguments. Never reads
+# the access token file. After every bootout it waits until launchd has removed the service, and a failed bootstrap
+# is tried again a few times.
 
 set -u
 
@@ -616,7 +617,8 @@ do_install() {
 }
 
 # Copies updater.sh (0700) and writes the release marker (the tag, 0600), the fingerprint copy (0600, or removes
-# it when signing is off) and the updater plist (0644), then bootstraps it. The updater runs only when "Install updates automatically" is on in the app.
+# it when signing is off) and the updater plist (0644), then bootstraps it. The updater runs only when "Install
+# updates automatically" is on in the app.
 install_updater() {
     put_file "$UPDATER_SCRIPT" 700 <"$UPDATER_SOURCE" || fail "Can't write $UPDATER_SCRIPT"
     printf '%s\n' "$TAG" | put_file "$MARKER" 600 || fail "Can't write $MARKER"
