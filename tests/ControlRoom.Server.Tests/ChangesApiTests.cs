@@ -334,12 +334,32 @@ public sealed partial class ChangesApiTests
         Assert.Equal(PathKind.Link, NoFollowStat.Of(link).Kind);
         Assert.Equal(PathKind.Directory, NoFollowStat.Of(root.Path).Kind);
         Assert.Equal(PathKind.Missing, NoFollowStat.Of(Path.Combine(root.Path, "none")).Kind);
-        IReadOnlyList<(string Name, PathStat Stat)>? listed = NoFollowStat.ListFolder(root.Path, ".md");
+        IReadOnlyList<(string Name, PathStat Stat)>? listed =
+            NoFollowStat.ListFolder(root.Path, ".md", NoFollowStat.MaxEntries, out bool tooMany);
         Assert.NotNull(listed);
+        Assert.False(tooMany);
         Assert.Equal(["file.md", "link.md"], listed.Select(entry => entry.Name).ToArray());
         Assert.Equal(new PathStat(PathKind.File, 12, Later.Ticks), listed[0].Stat);
         Assert.Equal(PathKind.Link, listed[1].Stat.Kind);
-        Assert.Null(NoFollowStat.ListFolder(link, ".md"));
+        Assert.Null(NoFollowStat.ListFolder(link, ".md", NoFollowStat.MaxEntries, out _));
+    }
+
+    [Fact]
+    public void NoFollowStat_FolderOverTheCapIsReportedWithoutEntries()
+    {
+        using TempFactoryRoot root = new();
+        foreach (string name in new[] { "a.md", "b.md", "c.md" })
+        {
+            File.WriteAllText(Path.Combine(root.Path, name), "x");
+        }
+
+        IReadOnlyList<(string Name, PathStat Stat)>? listed = NoFollowStat.ListFolder(root.Path, ".md", 2, out bool tooMany);
+
+        Assert.True(tooMany);
+        Assert.NotNull(listed);
+        Assert.Empty(listed);
+        Assert.NotNull(NoFollowStat.ListFolder(root.Path, ".md", 3, out bool fits));
+        Assert.False(fits);
     }
 
     private static string OutsideFile(TempFactoryRoot root, string name)

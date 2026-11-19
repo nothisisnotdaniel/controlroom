@@ -63,7 +63,8 @@ internal static class ChangeFingerprint
     }
 
     /// <summary>Over every <c>backlog/*.md</c> of the project, by name (ordinal). A <c>backlog</c> that is not a
-    /// folder adds one marker for the folder itself.</summary>
+    /// folder, or one with more than <see cref="NoFollowStat.MaxEntries"/> such names, adds one marker for the folder
+    /// itself.</summary>
     public static string Stories(ProjectFolder project)
     {
         StringBuilder text = new();
@@ -75,10 +76,11 @@ internal static class ChangeFingerprint
             return Hash(text);
         }
 
-        IReadOnlyList<(string Name, PathStat Stat)>? entries = NoFollowStat.ListFolder(folder, StoryExtension);
-        if (entries is null)
+        IReadOnlyList<(string Name, PathStat Stat)>? entries =
+            NoFollowStat.ListFolder(folder, StoryExtension, NoFollowStat.MaxEntries, out bool tooMany);
+        if (entries is null || tooMany)
         {
-            Append(text, StoriesFolderName, PathStat.Missing);
+            Append(text, StoriesFolderName, tooMany ? new PathStat(PathKind.Other, 0, 0) : PathStat.Missing);
             return Hash(text);
         }
 
@@ -90,9 +92,10 @@ internal static class ChangeFingerprint
         return Hash(text);
     }
 
+    /// <summary>One line per name; the name is length-prefixed so no name can imitate a separator.</summary>
     private static void Append(StringBuilder text, string name, PathStat stat)
     {
-        text.Append(name).Append('\0');
+        text.Append(name.Length).Append(':').Append(name).Append('\0');
         switch (stat.Kind)
         {
             case PathKind.File:
@@ -147,13 +150,30 @@ internal static class NoFollowStat
     private const uint TypeFile = 0x8000;
     private const uint TypeDirectory = 0x4000;
 
-    /// <summary>The path itself, without following a final symlink.</summary>
+    /// <summary>At most this many names are listed in one folder; a folder with more counts as one marker.</summary>
+    public const int MaxEntries = 10000;
+
+    /// <summary>The path itself, without following a final symlink. A libc without the expected entry points (older
+    /// glibc, musl) counts as missing.</summary>
     public static PathStat Of(string path)
     {
         if (OperatingSystem.IsWindows())
         {
             return ManagedOf(path);
         }
+
+        try
+        {
+            return NativeOf(path);
+        }
+        catch (Exception exception) when (exception is EntryPointNotFoundException or DllNotFoundException)
+        {
+            return PathStat.Missing;
+        }
+    }
+
+    private static PathStat NativeOf(string path)
+    {
 
         byte[] buffer = new byte[StatBufferBytes];
         int result;
@@ -173,13 +193,31 @@ internal static class NoFollowStat
 
     /// <summary>The names in the folder that end with <paramref name="extension"/> (ordinal), sorted ordinally,
     /// each with its own no-follow stat; <c>null</c> when the folder can't be opened (missing, a symlink, not a
-    /// folder).</summary>
-    public static IReadOnlyList<(string Name, PathStat Stat)>? ListFolder(string folder, string extension)
+    /// folder, or no usable libc). With more than <paramref name="maxEntries"/> names, <paramref name="tooMany"/> is
+    /// set and the list is empty (nothing is <c>stat</c>ed).</summary>
+    public static IReadOnlyList<(string Name, PathStat Stat)>? ListFolder(
+        string folder, string extension, int maxEntries, out bool tooMany)
     {
+        tooMany = false;
         if (OperatingSystem.IsWindows())
         {
-            return ManagedList(folder, extension);
+            return ManagedList(folder, extension, maxEntries, out tooMany);
         }
+
+        try
+        {
+            return NativeList(folder, extension, maxEntries, out tooMany);
+        }
+        catch (Exception exception) when (exception is EntryPointNotFoundException or DllNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    private static List<(string Name, PathStat Stat)>? NativeList(
+        string folder, string extension, int maxEntries, out bool tooMany)
+    {
+        tooMany = false;
 
         bool mac = OperatingSystem.IsMacOS();
         bool macX64 = mac && RuntimeInformation.OSArchitecture == Architecture.X64;
@@ -219,6 +257,11 @@ internal static class NoFollowStat
                 if (name is not null && name.Length > extension.Length && name.EndsWith(extension, StringComparison.Ordinal))
                 {
                     names.Add(name);
+                    if (names.Count > maxEntries)
+                    {
+                        tooMany = true;
+                        return [];
+                    }
                 }
             }
 
@@ -302,14 +345,22 @@ internal static class NoFollowStat
         }
     }
 
-    private static List<(string Name, PathStat Stat)>? ManagedList(string folder, string extension)
+    private static List<(string Name, PathStat Stat)>? ManagedList(
+        string folder, string extension, int maxEntries, out bool tooMany)
     {
+        tooMany = false;
         try
         {
             List<string> names = new DirectoryInfo(folder).EnumerateFileSystemInfos()
                 .Select(entry => entry.Name)
                 .Where(name => name.Length > extension.Length && name.EndsWith(extension, StringComparison.Ordinal))
                 .ToList();
+            if (names.Count > maxEntries)
+            {
+                tooMany = true;
+                return [];
+            }
+
             names.Sort(string.CompareOrdinal);
             return names.Select(name => (name, ManagedOf(Path.Combine(folder, name)))).ToList();
         }
