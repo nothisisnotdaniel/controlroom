@@ -13,7 +13,8 @@
 # "<UTC ISO-8601> <word>[ <tags>]", which launchd appends to ~/Library/Logs/ControlRoom/updater.log. The words:
 # off, not_release, busy, job_running, current, latest_failed, download_failed, check_failed, skipped_failed,
 # updated, rolled_back, bootstrap_failed, swap_failed, rollback_failed.
-# POSIX sh. Runs only launchctl, curl, lsof, tar and shasum (plus standard tools), all with fixed arguments.
+# POSIX sh. Runs only launchctl, curl, lsof, tar, shasum and (once <support>/signing-cert.sha1 pins the signing
+# certificate) codesign --verify (plus standard tools), all with fixed arguments.
 # Never reads, copies or sends the access token. Nothing from the download runs here.
 
 set -u
@@ -51,11 +52,16 @@ LOCK_MINUTES=60
 TAB=$(printf '\t')
 # A job's state.json larger than this counts as a running job (it is never read).
 MAX_STATE_BYTES=65536
+# The fingerprint copy is 40 hex characters plus one line break.
+MAX_FINGERPRINT_BYTES=41
 
 INSTALLED=""
 TAG=""
 WORK=""
 LOCKED=no
+# The pinned signing certificate; empty means the signature check is off. Set only from the support folder's
+# signing-cert.sha1 (written by launch-agent.sh install --release), never from the environment.
+SIGNING_CERT_SHA1=""
 
 # Prints the one log line: the time, the word, then the installed and the latest tag once they are known and
 # checked. Only v+SemVer tags ever follow the word.
@@ -517,6 +523,56 @@ check_and_extract() {
         || [ ! -f "$WORK/out/$TOP/wwwroot/index.html" ]; then
         fail "$RELEASE_BAD"
     fi
+    verify_signature
+}
+
+# Sets SIGNING_CERT_SHA1 from the fingerprint file $1: empty when the file is missing. Returns 1 when it is present
+# but not a regular file (a symlink counts as present) holding exactly 40 hex characters and at most one trailing
+# line break, so an invalid file never turns the check off.
+fingerprint_file() {
+    SIGNING_CERT_SHA1=""
+    if [ ! -e "$1" ] && [ ! -L "$1" ]; then
+        return 0
+    fi
+    if [ ! -f "$1" ] || [ -L "$1" ]; then
+        return 1
+    fi
+    size=$(wc -c <"$1") || return 1
+    case $((size + 0)) in
+        40) ;;
+        41) [ "$(tail -c 1 "$1" | od -An -tx1 | tr -d ' \n')" = 0a ] || return 1 ;;
+        *) return 1 ;;
+    esac
+    fingerprint=$(head -c 40 "$1") || return 1
+    case $fingerprint in
+        *[!0123456789abcdefABCDEF]*) return 1 ;;
+    esac
+    [ ${#fingerprint} -eq 40 ] || return 1
+    SIGNING_CERT_SHA1=$fingerprint
+}
+
+# With a pinned certificate, checks the extracted server and every *.dylib and createdump in the top folder with
+# codesign --verify --strict against a requirement naming that certificate (and the identifier for the server).
+# Any failure, or no absolute codesign on PATH, is RELEASE_BAD. Without one, runs nothing.
+verify_signature() {
+    if [ -z "$SIGNING_CERT_SHA1" ]; then
+        return 0
+    fi
+    CODESIGN=$(command -v codesign) || fail "$RELEASE_BAD"
+    case $CODESIGN in
+        /*) ;;
+        *) fail "$RELEASE_BAD" ;;
+    esac
+    "$CODESIGN" --verify --strict \
+        "-R=identifier \"ControlRoom.Server\" and certificate leaf = H\"$SIGNING_CERT_SHA1\"" \
+        "$WORK/out/$TOP/ControlRoom.Server" >/dev/null 2>&1 || fail "$RELEASE_BAD"
+    for signed in "$WORK/out/$TOP"/*.dylib "$WORK/out/$TOP/createdump"; do
+        if [ ! -e "$signed" ] && [ ! -L "$signed" ]; then
+            continue
+        fi
+        "$CODESIGN" --verify --strict "-R=certificate leaf = H\"$SIGNING_CERT_SHA1\"" "$signed" >/dev/null 2>&1 \
+            || fail "$RELEASE_BAD"
+    done
 }
 
 # --- Main -----------------------------------------------------------------------------------------------------
@@ -536,6 +592,7 @@ USER_ID=$(id -u) || finish off
 SUPPORT="$HOME/Library/Application Support/ControlRoom"
 SETTINGS="$SUPPORT/settings.json"
 MARKER="$SUPPORT/installed-release"
+SIGNING_CERT="$SUPPORT/signing-cert.sha1"
 RESULT="$SUPPORT/update-result.json"
 LOCK="$SUPPORT/.update.lock"
 SERVER="$SUPPORT/server"
@@ -613,6 +670,12 @@ TOP="controlroom-${TAG#v}-osx-arm64"
 TARBALL="$TOP.tar.gz"
 TAR=$(find_program tar) || fail "$RELEASE_BAD"
 SHASUM=$(find_program shasum) || fail "$RELEASE_BAD"
+# The pinned signing certificate: missing is off; present but not a private 0600 file of this user holding a valid
+# fingerprint is a failed check, so a broken copy never turns the check off.
+if [ -e "$SIGNING_CERT" ] || [ -L "$SIGNING_CERT" ]; then
+    private_file "$SIGNING_CERT" "$MAX_FINGERPRINT_BYTES" || fail "$RELEASE_BAD"
+fi
+fingerprint_file "$SIGNING_CERT" || fail "$RELEASE_BAD"
 download "$TARBALL" "$MAX_TARBALL_BYTES"
 download SHA256SUMS "$MAX_SUMS_BYTES"
 check_and_extract

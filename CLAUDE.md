@@ -111,6 +111,17 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     latest-release redirect (`stable`) or the release list `GET` above (`develop`, `curl --proto =https --tlsv1.2
     -fsS --max-time 30 --max-filesize 1048576`, no `-L`), the release download (as `install --release`) and
     `GET http://127.0.0.1:8100/health`, without `Authorization`.
+  - Release signing (self-signed certificate, no Developer ID or notarization) is off until `signing-cert.sha1` (the
+    certificate's SHA-1 fingerprint) is committed at the repo root. The rule everywhere: a regular file (not a
+    symlink) of exactly 40 hex characters plus at most one trailing line break; missing is off, present but invalid
+    always fails. Once on, `check_and_extract` (both scripts) runs `codesign --verify --strict` with
+    `-R=identifier "ControlRoom.Server" and certificate leaf = H"<sha1>"` on the server and
+    `-R=certificate leaf = H"<sha1>"` on every top-level `*.dylib` and `createdump`; a failure or no absolute
+    `codesign` on `PATH` is the check-failed result. `SIGNING_CERT_SHA1` is set only from the file, never from the
+    environment. `install --release` reads `<repo>/signing-cert.sha1` before any download and writes its copy
+    `<support>/signing-cert.sha1` (`0600`, `put_file`; removed when signing is off and with the updater); the updater
+    reads that copy (must be `0600`, owned by the user, not a symlink, else `check_failed`). The private key is only
+    in the `SIGNING_CERT_P12`/`SIGNING_CERT_PASSWORD` secrets and a per-run temp keychain.
 - **Stack:** .NET 10 ASP.NET Core minimal API (`Microsoft.NET.Sdk.Web`, no extra packages) serving a plain
   HTML/CSS/JS web app from its own `wwwroot` (no CDN, no build step, strict CSP), xUnit tests with
   `Microsoft.AspNetCore.Mvc.Testing` to host the app in memory. No new package without a reason in the spec.
@@ -136,7 +147,10 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   `refs/heads/develop` and `HEAD`); the version and commit reach later steps as `RELEASE_VERSION` and
   `RELEASE_TARGET`, never `VERSION`, so MSBuild can't read them as `$(Version)`. On a `macos-15` (arm64)
   runner it re-checks the PR, runs `dotnet test -c Release`, publishes `-r osx-arm64 --self-contained
-  -p:Version=X.Y.Z`, smoke-checks `ControlRoom.Server version`, packs `controlroom-X.Y.Z-osx-arm64.tar.gz` (one top
+  -p:Version=X.Y.Z`, signs and verifies it when `signing-cert.sha1` is committed (steps `Sign`, `Verify signature`,
+  `Remove signing keychain` with `if: always()`; README "Signing"; `.github/scripts/signing-cert.sh` reads the file,
+  `.github/signing/entitlements.plist` holds the three hardened-runtime entitlements; the secrets reach only `Sign`
+  through its `env:`; missing file is a `::warning::` and an ad-hoc build), smoke-checks `ControlRoom.Server version`, packs `controlroom-X.Y.Z-osx-arm64.tar.gz` (one top
   folder), writes `SHA256SUMS`, attests build provenance and runs `gh release create vX.Y.Z` on the merge commit or pushed commit
   (`--title "ControlRoom X.Y.Z" --generate-notes`, plus `--prerelease` for a prerelease version). After a stable
   release, `Prune old prereleases` (`continue-on-error`) deletes every `-develop` prerelease and tag at or below
@@ -289,7 +303,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     in the support folder (removed on every exit), `curl --max-filesize` 200 MiB for the tarball and 4 KiB
     for `SHA256SUMS`, one matching `SHA256SUMS` line, archive entries only regular files and folders under
     `controlroom-<ver>-osx-arm64/`, at most 10000 entries and 512 MiB of unpacked content (counted through a pipe
-    before extraction), checked again after extraction. Not part of the server.
+    before extraction), checked again after extraction, then `verify_signature` when `signing-cert.sha1` pins the
+    signing certificate. Not part of the server.
   - `scripts/updater.sh`: POSIX `sh` updater run by launchd (`--factory-root <root>`); prints exactly one log line
     `<UTC> <word>[ <tags>]` (`off`, `not_release`, `busy`, `job_running`, `current`, `latest_failed`,
     `download_failed`, `check_failed`, `skipped_failed`, `updated`, `rolled_back`, `bootstrap_failed`, `swap_failed`,
@@ -302,16 +317,19 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `launchctl print` shows the server running and its pid is the only listener `lsof` shows on port 8100); rolls
     back when it does not answer, and (as `swap_failed`) when the marker can't be updated. A `state.json` over
     64 KiB counts as a running job. `valid_tag` (`v`+SemVer, `-develop.N` allowed, no build
-    metadata), `latest_tag`, `download` and `check_and_extract` are byte-identical to `launch-agent.sh` (a test
+    metadata), `latest_tag`, `download`, `check_and_extract`, `fingerprint_file` and `verify_signature` are byte-identical to `launch-agent.sh` (a test
     compares them). The channel comes from `settings.json` (at most 64 bytes).
   - `.github/workflows/release.yml` and `.github/scripts/release-version.sh` (title `release vX.Y.Z` to `X.Y.Z`;
     existing tags on stdin), `.github/scripts/develop-version.sh` (run number to the next `-develop.<run>`
-    version; tags on stdin) and `.github/scripts/old-prereleases.sh` (version to the `-develop` tags at or below
-    it; tags on stdin).
+    version; tags on stdin), `.github/scripts/old-prereleases.sh` (version to the `-develop` tags at or below
+    it; tags on stdin) and `.github/scripts/signing-cert.sh` (prints the fingerprint from `signing-cert.sha1`,
+    nothing when it is missing, exit 1 when invalid); `.github/signing/entitlements.plist`.
   - `tests/ControlRoom.Server.Tests/`: one test class per unit or concern (`LaunchAgentScriptTests` runs the script with fake
-    `launchctl`/`dotnet`/`curl` in a temp `HOME` and builds release tarballs with `/usr/bin/tar`; `UpdaterScriptTests` runs `updater.sh` with fake
-    `launchctl`/`curl`/`sleep`/`mv`;
-    `ReleaseWorkflowTests` reads `release.yml` as text); `TempFactoryRoot` (`InitGit`, `AddBareRemote`
+    `launchctl`/`dotnet`/`curl`/`codesign` in a temp `HOME`, runs every `install --release` from its own copy of the
+    scripts (`ScriptFixtures.BuildReleaseTree`, so the real `signing-cert.sha1` is never read) and builds release
+    tarballs with `/usr/bin/tar`; `UpdaterScriptTests` runs `updater.sh` with fake
+    `launchctl`/`curl`/`sleep`/`mv`/`codesign`; `ScriptFixtures` holds the fake `codesign` and a `PATH` folder without it;
+    `ReleaseWorkflowTests` reads `release.yml` as text and runs `.github/scripts/signing-cert.sh`); `TempFactoryRoot` (`InitGit`, `AddBareRemote`
     and `Git` for a real local repo), `TempTokenFolder` and `ServerFactory` (own temp token file; clients send `Host: 127.0.0.1:8100`; optional tailnet name;
     `CreateTokenClient()` for API calls; `Push` fake push service, `Update` fake GitHub (`FakeUpdateHandler`), `CurrentVersion` (default `dev`),
     `Time` fixed clock whose timers never fire (it records their due time and period; `Zone` sets its

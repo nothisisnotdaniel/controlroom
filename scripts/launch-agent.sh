@@ -5,8 +5,8 @@
 #        scripts/launch-agent.sh install --release [vX.Y.Z] [--tailnet-host <name>]
 #          (installs the ready-built release from GitHub instead of publishing: the latest one, or vX.Y.Z,
 #          plus the updater LaunchAgent local.controlroom.updater that runs <support>/updater.sh every 6 h)
-# POSIX sh. Runs only dotnet (publish), launchctl, sleep and, with --release, curl, tar and shasum, all with fixed
-# arguments. Never reads the access token file. After every bootout it waits until launchd has removed the service,
+# POSIX sh. Runs only dotnet (publish), launchctl, sleep and, with --release, curl, tar, shasum and (once
+# signing-cert.sha1 is committed next to ControlRoom.slnx) codesign --verify, all with fixed arguments. Never reads the access token file. After every bootout it waits until launchd has removed the service,
 # and a failed bootstrap is tried again a few times.
 
 set -u
@@ -22,6 +22,10 @@ RELEASES="https://github.com/nothisisnotdaniel/controlroom/releases"
 LATEST_FAILED="Can't find the latest release. Nothing was changed."
 DOWNLOAD_FAILED="Download failed. Nothing was changed."
 RELEASE_BAD="The release download doesn't check out. Nothing was changed."
+SIGNING_CERT_BAD="signing-cert.sha1 must hold one 40-character SHA-1 fingerprint. Nothing was changed."
+# The pinned signing certificate (its SHA-1 fingerprint) every release file must be signed with; empty means the
+# signature check is off. Set only from <repo>/signing-cert.sha1, never from the environment.
+SIGNING_CERT_SHA1=""
 # Size caps for --release (the real tarball is about 42 MiB, unpacked about 112 MiB in under 400 entries).
 MAX_TARBALL_BYTES=209715200
 MAX_SUMS_BYTES=4096
@@ -167,6 +171,7 @@ UPDATER_PLIST="$AGENTS/$UPDATER_LABEL.plist"
 UPDATER_SCRIPT="$SUPPORT/updater.sh"
 UPDATER_LOG="$LOG_DIR/updater.log"
 MARKER="$SUPPORT/installed-release"
+SIGNING_COPY="$SUPPORT/signing-cert.sha1"
 UPDATE_LOCK="$SUPPORT/.update.lock"
 
 LAUNCHCTL=$(command -v launchctl) || fail "launchctl not found on PATH."
@@ -240,10 +245,10 @@ put_file() {
     return 1
 }
 
-# Boots out the updater and removes its plist, the copied script and the release marker.
+# Boots out the updater and removes its plist, the copied script, the release marker and the fingerprint copy.
 remove_updater() {
     bootout_service "$UPDATER_SERVICE"
-    rm -f "$UPDATER_PLIST" "$UPDATER_SCRIPT" "$MARKER" || fail "Can't remove the updater."
+    rm -f "$UPDATER_PLIST" "$UPDATER_SCRIPT" "$MARKER" "$SIGNING_COPY" || fail "Can't remove the updater."
 }
 
 do_status() {
@@ -399,6 +404,56 @@ check_and_extract() {
         || [ ! -f "$WORK/out/$TOP/wwwroot/index.html" ]; then
         fail "$RELEASE_BAD"
     fi
+    verify_signature
+}
+
+# Sets SIGNING_CERT_SHA1 from the fingerprint file $1: empty when the file is missing. Returns 1 when it is present
+# but not a regular file (a symlink counts as present) holding exactly 40 hex characters and at most one trailing
+# line break, so an invalid file never turns the check off.
+fingerprint_file() {
+    SIGNING_CERT_SHA1=""
+    if [ ! -e "$1" ] && [ ! -L "$1" ]; then
+        return 0
+    fi
+    if [ ! -f "$1" ] || [ -L "$1" ]; then
+        return 1
+    fi
+    size=$(wc -c <"$1") || return 1
+    case $((size + 0)) in
+        40) ;;
+        41) [ "$(tail -c 1 "$1" | od -An -tx1 | tr -d ' \n')" = 0a ] || return 1 ;;
+        *) return 1 ;;
+    esac
+    fingerprint=$(head -c 40 "$1") || return 1
+    case $fingerprint in
+        *[!0123456789abcdefABCDEF]*) return 1 ;;
+    esac
+    [ ${#fingerprint} -eq 40 ] || return 1
+    SIGNING_CERT_SHA1=$fingerprint
+}
+
+# With a pinned certificate, checks the extracted server and every *.dylib and createdump in the top folder with
+# codesign --verify --strict against a requirement naming that certificate (and the identifier for the server).
+# Any failure, or no absolute codesign on PATH, is RELEASE_BAD. Without one, runs nothing.
+verify_signature() {
+    if [ -z "$SIGNING_CERT_SHA1" ]; then
+        return 0
+    fi
+    CODESIGN=$(command -v codesign) || fail "$RELEASE_BAD"
+    case $CODESIGN in
+        /*) ;;
+        *) fail "$RELEASE_BAD" ;;
+    esac
+    "$CODESIGN" --verify --strict \
+        "-R=identifier \"ControlRoom.Server\" and certificate leaf = H\"$SIGNING_CERT_SHA1\"" \
+        "$WORK/out/$TOP/ControlRoom.Server" >/dev/null 2>&1 || fail "$RELEASE_BAD"
+    for signed in "$WORK/out/$TOP"/*.dylib "$WORK/out/$TOP/createdump"; do
+        if [ ! -e "$signed" ] && [ ! -L "$signed" ]; then
+            continue
+        fi
+        "$CODESIGN" --verify --strict "-R=certificate leaf = H\"$SIGNING_CERT_SHA1\"" "$signed" >/dev/null 2>&1 \
+            || fail "$RELEASE_BAD"
+    done
 }
 
 # Downloads, checks and extracts release TAG (the latest one when empty) into server.new; launchd runs its
@@ -432,6 +487,8 @@ do_install() {
         if [ ! -f "$UPDATER_SOURCE" ] || [ -L "$UPDATER_SOURCE" ]; then
             fail "Can't find scripts/updater.sh. Nothing was changed."
         fi
+        # The pinned signing certificate, read before any download: missing is off, invalid stops here.
+        fingerprint_file "$REPO/signing-cert.sha1" || fail "$SIGNING_CERT_BAD"
         CURL=$(find_program curl) || exit 1
         TAR=$(find_program tar) || exit 1
         SHASUM=$(find_program shasum) || exit 1
@@ -459,6 +516,7 @@ do_install() {
     refuse_link "$UPDATER_SCRIPT"
     refuse_link "$UPDATER_LOG"
     refuse_link "$MARKER"
+    refuse_link "$SIGNING_COPY"
     refuse_while_updating
 
     mkdir -p "$AGENTS" || fail "Can't create $AGENTS"
@@ -557,11 +615,16 @@ do_install() {
     exit 0
 }
 
-# Copies updater.sh (0700) and writes the release marker (the tag, 0600) and the updater plist (0644), then
-# bootstraps it. The updater runs only when "Install updates automatically" is on in the app.
+# Copies updater.sh (0700) and writes the release marker (the tag, 0600), the fingerprint copy (0600, or removes
+# it when signing is off) and the updater plist (0644), then bootstraps it. The updater runs only when "Install updates automatically" is on in the app.
 install_updater() {
     put_file "$UPDATER_SCRIPT" 700 <"$UPDATER_SOURCE" || fail "Can't write $UPDATER_SCRIPT"
     printf '%s\n' "$TAG" | put_file "$MARKER" 600 || fail "Can't write $MARKER"
+    if [ -n "$SIGNING_CERT_SHA1" ]; then
+        printf '%s\n' "$SIGNING_CERT_SHA1" | put_file "$SIGNING_COPY" 600 || fail "Can't write $SIGNING_COPY"
+    else
+        rm -f "$SIGNING_COPY" || fail "Can't remove $SIGNING_COPY"
+    fi
     {
         printf '<?xml version="1.0" encoding="UTF-8"?>\n'
         printf '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'

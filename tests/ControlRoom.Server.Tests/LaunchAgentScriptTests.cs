@@ -28,6 +28,9 @@ public sealed class LaunchAgentScriptTests
 
     private const string ReleaseBadText = "The release download doesn't check out. Nothing was changed.\n";
 
+    private const string SigningCertBadText =
+        "signing-cert.sha1 must hold one 40-character SHA-1 fingerprint. Nothing was changed.\n";
+
     private const string PublishFailedText = "dotnet publish failed. Nothing was changed.\n";
 
     private const string SymlinkText = "Refusing to write through a symlink: ";
@@ -441,7 +444,7 @@ public sealed class LaunchAgentScriptTests
         home.SetLinger(1);
         home.FailBootstraps(1);
 
-        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.3");
+        ScriptRun run = home.Run(home.ReleaseScript, "install", "--release", "v1.2.3");
 
         Assert.Equal(0, run.ExitCode);
         string user = ScriptHome.UserId();
@@ -467,12 +470,12 @@ public sealed class LaunchAgentScriptTests
 
         using ScriptHome home = new();
         home.AddRelease("1.2.3", ReleaseFault.None);
-        Assert.Equal(0, home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.3").ExitCode);
+        Assert.Equal(0, home.Run(home.ReleaseScript, "install", "--release", "v1.2.3").ExitCode);
         int before = home.LaunchctlCalls().Count;
         home.SetLinger(1);
         home.FailBootstraps(2);
 
-        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.3");
+        ScriptRun run = home.Run(home.ReleaseScript, "install", "--release", "v1.2.3");
 
         Assert.Equal(0, run.ExitCode);
         string user = ScriptHome.UserId();
@@ -516,7 +519,7 @@ public sealed class LaunchAgentScriptTests
         home.AddRelease("1.2.3", ReleaseFault.None);
         home.FailBootstrapsOf("/" + UpdaterLabel + ".plist");
 
-        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.3");
+        ScriptRun run = home.Run(home.ReleaseScript, "install", "--release", "v1.2.3");
 
         Assert.Equal(1, run.ExitCode);
         Assert.EndsWith(
@@ -539,7 +542,7 @@ public sealed class LaunchAgentScriptTests
         home.AddRelease("1.2.3", ReleaseFault.None);
         home.SetExit("bootstrap", 5);
 
-        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.3");
+        ScriptRun run = home.Run(home.ReleaseScript, "install", "--release", "v1.2.3");
 
         Assert.Equal(1, run.ExitCode);
         Assert.Equal(
@@ -728,7 +731,7 @@ public sealed class LaunchAgentScriptTests
         home.AddRelease("1.2.3", ReleaseFault.None);
         Directory.CreateDirectory(Path.Combine(home.Server, "old"));
 
-        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.3");
+        ScriptRun run = home.Run(home.ReleaseScript, "install", "--release", "v1.2.3");
 
         Assert.Equal(0, run.ExitCode);
         Assert.Equal(
@@ -751,7 +754,7 @@ public sealed class LaunchAgentScriptTests
         Assert.Empty(home.WorkFolders());
         Assert.Equal(
             [Path.Combine(home.Server, "ControlRoom.Server"), "--FactoryRoot",
-                Directory.GetParent(ScriptHome.RepoFolder())!.FullName],
+                home.TreeRoot],
             ProgramArguments(home.Plist));
         Assert.Equal(
             UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead,
@@ -775,7 +778,7 @@ public sealed class LaunchAgentScriptTests
         using ScriptHome home = new();
         home.AddRelease("1.2.4-develop.7", ReleaseFault.None);
 
-        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.4-develop.7");
+        ScriptRun run = home.Run(home.ReleaseScript, "install", "--release", "v1.2.4-develop.7");
 
         Assert.Equal(0, run.ExitCode);
         Assert.Equal(
@@ -817,7 +820,7 @@ public sealed class LaunchAgentScriptTests
         home.AddRelease("2.0.0-rc.1", ReleaseFault.None);
         home.SetRedirect(Releases + "/tag/v2.0.0-rc.1");
 
-        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--release");
+        ScriptRun run = home.Run(home.ReleaseScript, "install", "--release");
 
         Assert.Equal(0, run.ExitCode);
         Assert.Equal(
@@ -848,7 +851,7 @@ public sealed class LaunchAgentScriptTests
         using ScriptHome home = new();
         home.AddRelease(version, ReleaseFault.None);
 
-        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--release", "v" + version);
+        ScriptRun run = home.Run(home.ReleaseScript, "install", "--release", "v" + version);
 
         Assert.Equal(0, run.ExitCode);
         IReadOnlyList<string> curl = home.CurlCalls();
@@ -872,12 +875,12 @@ public sealed class LaunchAgentScriptTests
         home.AddRelease("1.2.3", ReleaseFault.None);
         home.SetRedirect(Releases + "/tag/v1.2.3");
 
-        ScriptRun run = home.Run(ScriptHome.ScriptPath(), joined.Split(' '));
+        ScriptRun run = home.Run(home.ReleaseScript, joined.Split(' '));
 
         Assert.Equal(0, run.ExitCode);
         Assert.Equal(
             [Path.Combine(home.Server, "ControlRoom.Server"), "--FactoryRoot",
-                Directory.GetParent(ScriptHome.RepoFolder())!.FullName, "--TailnetHost", "mac.tail1234.ts.net"],
+                home.TreeRoot, "--TailnetHost", "mac.tail1234.ts.net"],
             ProgramArguments(home.Plist));
         Assert.Empty(home.DotnetArguments());
     }
@@ -892,7 +895,7 @@ public sealed class LaunchAgentScriptTests
 
         using ScriptHome home = new();
         home.AddRelease("1.2.3", ReleaseFault.None);
-        Assert.Equal(0, home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.3").ExitCode);
+        Assert.Equal(0, home.Run(home.ReleaseScript, "install", "--release", "v1.2.3").ExitCode);
 
         ScriptRun run = home.Run("install");
 
@@ -936,7 +939,7 @@ public sealed class LaunchAgentScriptTests
         home.AddRelease("1.2.3", ReleaseFault.None);
         IReadOnlyList<string> before = home.Snapshot();
 
-        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--release", tag);
+        ScriptRun run = home.Run(home.ReleaseScript, "install", "--release", tag);
 
         Assert.Equal(2, run.ExitCode);
         Assert.Equal(Usage, run.Error);
@@ -968,7 +971,7 @@ public sealed class LaunchAgentScriptTests
         using ScriptHome home = new();
         IReadOnlyList<string> before = home.Snapshot();
 
-        ScriptRun run = home.Run(ScriptHome.ScriptPath(), joined.Split(' '));
+        ScriptRun run = home.Run(home.ReleaseScript, joined.Split(' '));
 
         Assert.Equal(2, run.ExitCode);
         Assert.Equal(Usage, run.Error);
@@ -1090,7 +1093,7 @@ public sealed class LaunchAgentScriptTests
         using ScriptHome home = new();
         home.AddRelease("1.2.3", ReleaseFault.BadChecksum);
 
-        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.3");
+        ScriptRun run = home.Run(home.ReleaseScript, "install", "--release", "v1.2.3");
 
         Assert.Equal(1, run.ExitCode);
         Assert.Equal(ReleaseBadText, run.Error);
@@ -1112,7 +1115,7 @@ public sealed class LaunchAgentScriptTests
         using ScriptHome home = new();
         home.AddRelease("1.2.3", ReleaseFault.None);
 
-        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.3");
+        ScriptRun run = home.Run(home.ReleaseScript, "install", "--release", "v1.2.3");
 
         Assert.Equal(0, run.ExitCode);
         string user = ScriptHome.UserId();
@@ -1133,7 +1136,7 @@ public sealed class LaunchAgentScriptTests
             UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead,
             File.GetUnixFileMode(home.UpdaterPlist));
         Assert.Equal(
-            ["/bin/sh", home.UpdaterScript, "--factory-root", Directory.GetParent(ScriptHome.RepoFolder())!.FullName],
+            ["/bin/sh", home.UpdaterScript, "--factory-root", home.TreeRoot],
             ProgramArguments(home.UpdaterPlist));
         string plist = File.ReadAllText(home.UpdaterPlist);
         Assert.DoesNotContain("RunAtLoad", plist, StringComparison.Ordinal);
@@ -1162,7 +1165,7 @@ public sealed class LaunchAgentScriptTests
 
         using ScriptHome home = new();
         home.AddRelease("1.2.3", ReleaseFault.None);
-        Assert.Equal(0, home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.3").ExitCode);
+        Assert.Equal(0, home.Run(home.ReleaseScript, "install", "--release", "v1.2.3").ExitCode);
         home.SetExit("print", 0);
 
         ScriptRun run = home.Run("status");
@@ -1181,7 +1184,7 @@ public sealed class LaunchAgentScriptTests
 
         using ScriptHome home = new();
         home.AddRelease("1.2.3", ReleaseFault.None);
-        Assert.Equal(0, home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.3").ExitCode);
+        Assert.Equal(0, home.Run(home.ReleaseScript, "install", "--release", "v1.2.3").ExitCode);
         int before = home.LaunchctlCalls().Count;
 
         ScriptRun run = home.Run("install");
@@ -1208,7 +1211,7 @@ public sealed class LaunchAgentScriptTests
 
         using ScriptHome home = new();
         home.AddRelease("1.2.3", ReleaseFault.None);
-        Assert.Equal(0, home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.3").ExitCode);
+        Assert.Equal(0, home.Run(home.ReleaseScript, "install", "--release", "v1.2.3").ExitCode);
         Directory.CreateDirectory(home.Previous);
         File.WriteAllText(System.IO.Path.Combine(home.Previous, "ControlRoom.Server"), "old");
 
@@ -1242,7 +1245,7 @@ public sealed class LaunchAgentScriptTests
         File.WriteAllText(target, "keep");
         File.CreateSymbolicLink(home.UpdaterScript, target);
 
-        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.3");
+        ScriptRun run = home.Run(home.ReleaseScript, "install", "--release", "v1.2.3");
 
         Assert.Equal(1, run.ExitCode);
         Assert.Equal(SymlinkText + home.UpdaterScript + "\n", run.Error);
@@ -1266,7 +1269,7 @@ public sealed class LaunchAgentScriptTests
         Directory.CreateDirectory(home.Lock);
         IReadOnlyList<string> before = home.Snapshot();
 
-        ScriptRun run = home.Run(ScriptHome.ScriptPath(), joined.Split(' '));
+        ScriptRun run = home.Run(home.ReleaseScript, joined.Split(' '));
 
         Assert.Equal(1, run.ExitCode);
         Assert.Equal("An update is running. Try again in a few minutes.\n", run.Error);
@@ -1295,15 +1298,205 @@ public sealed class LaunchAgentScriptTests
         Assert.True(File.Exists(home.Plist));
     }
 
+    [Fact]
+    public void InstallRelease_WithSigningOff_RunsNoCodesignAndRemovesTheSupportCopy()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.AddRelease("1.2.3", ReleaseFault.None);
+        Directory.CreateDirectory(home.Support);
+        File.WriteAllText(home.SigningCopy, ScriptFixtures.Fingerprint + "\n");
+
+        ScriptRun run = home.Run(home.ReleaseScript, "install", "--release", "v1.2.3");
+
+        Assert.Equal(0, run.ExitCode);
+        Assert.Equal("", run.Error);
+        Assert.Empty(home.CodesignCalls());
+        Assert.False(File.Exists(home.SigningCopy));
+        Assert.Equal("v1.2.3\n", File.ReadAllText(home.Marker));
+        Assert.True(File.Exists(Path.Combine(home.Server, "ControlRoom.Server")));
+    }
+
+    [Theory]
+    [InlineData(ScriptFixtures.Fingerprint + "\n")]
+    [InlineData(ScriptFixtures.Fingerprint)]
+    [InlineData("0123456789ABCDEF0123456789abcdefABCDEF01\n")]
+    public void InstallRelease_WithAValidFingerprint_VerifiesEveryTopLevelNativeFileAndWritesTheSupportCopy(
+        string content)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.AddRelease("1.2.3", ReleaseFault.None);
+        home.SetSigningFile(content);
+        string fingerprint = content.TrimEnd('\n');
+
+        ScriptRun run = home.Run(home.ReleaseScript, "install", "--release", "v1.2.3");
+
+        Assert.Equal(0, run.ExitCode);
+        Assert.Equal("", run.Error);
+        IReadOnlyList<string[]> calls = home.CodesignCalls();
+        string[] expected = ["ControlRoom.Server", "libclrjit.dylib", "libcoreclr.dylib", "createdump"];
+        Assert.Equal(expected.Length, calls.Count);
+        for (int index = 0; index < expected.Length; index++)
+        {
+            string requirement = index == 0
+                ? ScriptFixtures.ServerRequirement(fingerprint)
+                : ScriptFixtures.LibraryRequirement(fingerprint);
+            Assert.Equal(4, calls[index].Length);
+            Assert.Equal(["--verify", "--strict", requirement], calls[index][..3]);
+            string file = calls[index][3];
+            Assert.Equal(
+                Path.Combine("out", "controlroom-1.2.3-osx-arm64", expected[index]),
+                Path.GetRelativePath(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(file)!)!)!, file));
+            Assert.StartsWith(Path.Combine(home.Support, ".release."), file, StringComparison.Ordinal);
+        }
+
+        Assert.Equal(fingerprint + "\n", File.ReadAllText(home.SigningCopy));
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(home.SigningCopy));
+        Assert.Empty(Directory.GetFiles(home.Support, ".controlroom.*"));
+        Assert.Equal("v1.2.3\n", File.ReadAllText(home.Marker));
+    }
+
+    [Theory]
+    [InlineData("0123456789abcdef0123456789abcdef0123456")]
+    [InlineData("0123456789abcdef0123456789abcdef012345678")]
+    [InlineData(ScriptFixtures.Fingerprint + "\n\n")]
+    [InlineData(ScriptFixtures.Fingerprint + "\r\n")]
+    [InlineData(ScriptFixtures.Fingerprint + " ")]
+    [InlineData(ScriptFixtures.Fingerprint + "\nx")]
+    [InlineData("0123456789abcdef0123456789abcdef0123456g")]
+    [InlineData(" 0123456789abcdef0123456789abcdef0123456")]
+    [InlineData("")]
+    [InlineData("\n")]
+    [InlineData("symlink")]
+    [InlineData("folder")]
+    public void InstallRelease_WithAnInvalidFingerprintFile_FailsBeforeAnyDownload(string content)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.AddRelease("1.2.3", ReleaseFault.None);
+        if (content == "symlink")
+        {
+            string target = Path.Combine(home.Path, "real-fingerprint");
+            File.WriteAllText(target, ScriptFixtures.Fingerprint + "\n");
+            File.CreateSymbolicLink(home.SigningFile, target);
+        }
+        else if (content == "folder")
+        {
+            Directory.CreateDirectory(home.SigningFile);
+        }
+        else
+        {
+            home.SetSigningFile(content);
+        }
+
+        AssertReleaseRefused(home, ["install", "--release", "v1.2.3"], SigningCertBadText);
+        Assert.Empty(home.CurlCalls());
+        Assert.Empty(home.CodesignCalls());
+    }
+
+    [Theory]
+    [InlineData("all")]
+    [InlineData("ControlRoom.Server")]
+    [InlineData("libcoreclr.dylib")]
+    [InlineData("createdump")]
+    public void InstallRelease_WhenTheSignatureCheckFails_ChangesNothing(string failing)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.AddRelease("1.2.3", ReleaseFault.None);
+        Assert.Equal(0, home.Run(home.ReleaseScript, "install", "--release", "v1.2.3").ExitCode);
+        home.AddRelease("1.2.4", ReleaseFault.None);
+        home.SetSigningFile(ScriptFixtures.Fingerprint + "\n");
+        if (failing == "all")
+        {
+            home.SetCodesignExit(1);
+        }
+        else
+        {
+            home.FailCodesignFor("/" + failing);
+        }
+
+        AssertReleaseRefused(home, ["install", "--release", "v1.2.4"], ReleaseBadText);
+        Assert.NotEmpty(home.CodesignCalls());
+        Assert.Equal("v1.2.3\n", File.ReadAllText(home.Marker));
+        Assert.False(File.Exists(home.SigningCopy));
+        Assert.True(File.Exists(home.UpdaterScript));
+    }
+
+    [Fact]
+    public void InstallRelease_WithSigningOnAndNoCodesignOnPath_ChangesNothing()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.AddRelease("1.2.3", ReleaseFault.None);
+        Assert.Equal(0, home.Run(home.ReleaseScript, "install", "--release", "v1.2.3").ExitCode);
+        home.AddRelease("1.2.4", ReleaseFault.None);
+        home.SetSigningFile(ScriptFixtures.Fingerprint + "\n");
+        home.RemoveFakeCodesign();
+
+        AssertReleaseRefused(home, ["install", "--release", "v1.2.4"], ReleaseBadText, withoutCodesign: true);
+        Assert.Empty(home.CodesignCalls());
+        Assert.Equal("v1.2.3\n", File.ReadAllText(home.Marker));
+    }
+
+    [Fact]
+    public void InstallRelease_RefusesASymlinkedSupportFingerprintCopy()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.AddRelease("1.2.3", ReleaseFault.None);
+        home.SetSigningFile(ScriptFixtures.Fingerprint + "\n");
+        Directory.CreateDirectory(home.Support);
+        string target = Path.Combine(home.Path, "elsewhere");
+        File.WriteAllText(target, "keep");
+        File.CreateSymbolicLink(home.SigningCopy, target);
+
+        ScriptRun run = home.Run(home.ReleaseScript, "install", "--release", "v1.2.3");
+
+        Assert.Equal(1, run.ExitCode);
+        Assert.Equal(SymlinkText + home.SigningCopy + "\n", run.Error);
+        Assert.Empty(home.CurlCalls());
+        Assert.Empty(home.LaunchctlCalls());
+        Assert.Equal("keep", File.ReadAllText(target));
+    }
+
     /// <summary>Runs a release install that must fail with <paramref name="text"/>: exit 1, no output, no new
     /// launchctl call (so no <c>bootout</c>), no dotnet, the work folder gone and HOME as before.</summary>
-    private static void AssertReleaseRefused(ScriptHome home, string[] arguments, string text)
+    private static void AssertReleaseRefused(
+        ScriptHome home, string[] arguments, string text, bool withoutCodesign = false)
     {
         IReadOnlyList<string> before = home.Snapshot();
         int calls = home.LaunchctlCalls().Count;
         int publishes = home.DotnetArguments().Count;
 
-        ScriptRun run = home.Run(ScriptHome.ScriptPath(), arguments);
+        ScriptRun run = withoutCodesign
+            ? home.RunWithoutCodesign(home.ReleaseScript, arguments)
+            : home.Run(home.ReleaseScript, arguments);
 
         Assert.Equal(1, run.ExitCode);
         Assert.Equal(text, run.Error);
@@ -1474,7 +1667,7 @@ public sealed class LaunchAgentScriptTests
 
         private static readonly string[] HarnessFiles =
             ["calls.log", "states.log", "dotnet.log", "curl.log", "sleep.log", "gone", "linger", "linger-left",
-                "bootstrap-fails", "bootstrap-fail-for"];
+                "bootstrap-fails", "bootstrap-fail-for", "codesign.log", "codesign-exit", "codesign-fail-for"];
 
         public ScriptHome()
         {
@@ -1486,6 +1679,51 @@ public sealed class LaunchAgentScriptTests
             WriteExecutable(System.IO.Path.Combine(bin, "dotnet"), FakeDotnet);
             WriteExecutable(System.IO.Path.Combine(bin, "curl"), FakeCurl);
             WriteExecutable(System.IO.Path.Combine(bin, "sleep"), FakeSleep);
+            WriteExecutable(System.IO.Path.Combine(bin, "codesign"), ScriptFixtures.FakeCodesign);
+            ReleaseScript = ScriptFixtures.BuildReleaseTree(Path, RepoFolder());
+        }
+
+        /// <summary>The copy of <c>launch-agent.sh</c> in this home's own tree (<c>tree/ControlRoom/scripts/</c>),
+        /// which every <c>install --release</c> test runs, so the real repo's <c>signing-cert.sha1</c> is never
+        /// read.</summary>
+        public string ReleaseScript { get; }
+
+        /// <summary>The factory root the <see cref="ReleaseScript"/> copy sees.</summary>
+        public string TreeRoot => System.IO.Path.Combine(Path, "tree");
+
+        public string SigningFile => System.IO.Path.Combine(TreeRoot, "ControlRoom", "signing-cert.sha1");
+
+        public string SigningCopy => System.IO.Path.Combine(Support, "signing-cert.sha1");
+
+        /// <summary>Writes the tree's <c>signing-cert.sha1</c> (or removes it for <c>null</c>).</summary>
+        public void SetSigningFile(string? content)
+        {
+            if (content is null)
+            {
+                File.Delete(SigningFile);
+                return;
+            }
+
+            File.WriteAllText(SigningFile, content);
+        }
+
+        /// <summary>Every fake <c>codesign</c> call, its arguments split at tabs.</summary>
+        public IReadOnlyList<string[]> CodesignCalls()
+        {
+            return [.. ReadLines("codesign.log").Select(line => line.Split('\t'))];
+        }
+
+        /// <summary>The fake <c>codesign</c> exits with <paramref name="code"/>.</summary>
+        public void SetCodesignExit(int code)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "codesign-exit"),
+                code.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n");
+        }
+
+        /// <summary>The fake <c>codesign</c> fails for a file whose path ends with <paramref name="suffix"/>.</summary>
+        public void FailCodesignFor(string suffix)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "codesign-fail-for"), suffix);
         }
 
         public string Path { get; }
@@ -1545,10 +1783,33 @@ public sealed class LaunchAgentScriptTests
 
         public ScriptRun Run(string script, params string[] arguments)
         {
+            return RunWithPath(System.IO.Path.Combine(Path, "bin") + ":/usr/bin:/bin", script, arguments);
+        }
+
+        /// <summary>Removes the fake <c>codesign</c> from <c>bin/</c>, for <see cref="RunWithoutCodesign"/>.</summary>
+        public void RemoveFakeCodesign()
+        {
+            File.Delete(System.IO.Path.Combine(Path, "bin", "codesign"));
+        }
+
+        /// <summary>Runs <paramref name="script"/> with the fakes' <c>bin/</c> first, then only a folder of links
+        /// to the system programs without <c>codesign</c>.</summary>
+        public ScriptRun RunWithoutCodesign(string script, params string[] arguments)
+        {
+            // Outside HOME, so it never shows up in Snapshot(); removed on dispose.
+            string system = Path + "-system-bin";
+            ScriptFixtures.LinkSystemProgramsWithoutCodesign(system);
+            return RunWithPath(System.IO.Path.Combine(Path, "bin") + ":" + system, script, arguments);
+        }
+
+        private ScriptRun RunWithPath(string path, string script, string[] arguments)
+        {
             Dictionary<string, string> environment = new()
             {
                 ["HOME"] = Path,
-                ["PATH"] = System.IO.Path.Combine(Path, "bin") + ":/usr/bin:/bin",
+                ["PATH"] = path,
+                // Must never turn the check on or off: only signing-cert.sha1 does.
+                ["SIGNING_CERT_SHA1"] = "ffffffffffffffffffffffffffffffffffffffff",
             };
             return RunProcess("/bin/sh", [script, .. arguments], environment);
         }
@@ -1678,6 +1939,10 @@ public sealed class LaunchAgentScriptTests
                 ? UnixFileMode.UserRead | UnixFileMode.UserWrite
                 : UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             File.WriteAllText(System.IO.Path.Combine(folder, "ControlRoom.Server.dll"), "dll");
+            // Native files like a real publish: verify_signature checks the top-level ones, not wwwroot/nested.dylib.
+            File.WriteAllText(System.IO.Path.Combine(folder, "libcoreclr.dylib"), "dylib");
+            File.WriteAllText(System.IO.Path.Combine(folder, "libclrjit.dylib"), "dylib");
+            File.WriteAllText(System.IO.Path.Combine(folder, "createdump"), "createdump");
             if (fault == ReleaseFault.TooManyEntries)
             {
                 string many = System.IO.Path.Combine(folder, "many");
@@ -1704,6 +1969,8 @@ public sealed class LaunchAgentScriptTests
             {
                 File.WriteAllText(System.IO.Path.Combine(folder, "wwwroot", "index.html"), "<!doctype html>");
             }
+
+            File.WriteAllText(System.IO.Path.Combine(folder, "wwwroot", "nested.dylib"), "not checked");
 
             List<string> arguments = [];
             List<string> entries = [top];
@@ -1802,6 +2069,10 @@ public sealed class LaunchAgentScriptTests
             }
 
             Directory.Delete(Path, recursive: true);
+            if (Directory.Exists(Path + "-system-bin"))
+            {
+                Directory.Delete(Path + "-system-bin", recursive: true);
+            }
         }
 
         private List<string> ReadLines(string name)
