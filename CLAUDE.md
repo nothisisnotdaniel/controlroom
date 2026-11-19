@@ -136,7 +136,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     once per version)), `UpdateEndpoint` (`GET /api/update`, `POST /api/update/settings`), `UpdateSettingsStore` (`settings.json`),
     `UpdateResult` (`update-result.json` schema and `UpdateResultReader`), `HealthEndpoint` (`GET /health`), `wwwroot/` (`index.html`, `app.css`, `token.js` (stored token under
     `controlroom-token`, `authFetch` for every `/api/` call, the token view), `app.js` (routing, backlogs,
-    story), `edit.js` (per-project edit mode, the Add form, Edit story, fixed texts per error code), `board.js` (jobs board and job page, polls every 5 s while visible; the `ControlRoom <version>`
+    story), `edit.js` (per-project edit mode, the Add form, Edit story, fixed texts per error code), `board.js` (jobs board and job page (a read-only state section between the facts and the record tabs: stage and round, review rows per round with visible values, decision chip, CI and note), polls every 5 s while visible; the `ControlRoom <version>`
     line at the foot of Jobs and the update banner under its heading, each asked once per page load), `push.js` (Notifications section on the
     board: state texts, Turn on (permission only from the tap), done and update switches, Send test, Turn off),
     `sw.js` (service worker: caches only the fixed app shell, never `/api/`; bump its cache version when the
