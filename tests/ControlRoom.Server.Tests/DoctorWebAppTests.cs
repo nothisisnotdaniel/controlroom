@@ -12,12 +12,12 @@ public sealed partial class DoctorWebAppTests
     {
         string html = await Fetch("/index.html");
 
-        const string link = "<a href=\"#doctor\" data-view=\"doctor\">Health</a>";
+        const string Link = "<a href=\"#doctor\" data-view=\"doctor\">Health</a>";
         int history = html.IndexOf("<a href=\"#history\" data-view=\"history\">History</a>", StringComparison.Ordinal);
-        int health = html.IndexOf(link, StringComparison.Ordinal);
+        int health = html.IndexOf(Link, StringComparison.Ordinal);
         int navEnd = html.IndexOf("</nav>", StringComparison.Ordinal);
         Assert.True(history >= 0 && health > history && health < navEnd);
-        Assert.Equal("\n    ", html[(health + link.Length)..navEnd]);
+        Assert.Equal("\n    ", html[(health + Link.Length)..navEnd]);
         Assert.Contains("<main id=\"doctor\" hidden></main>", html, StringComparison.Ordinal);
         Assert.DoesNotContain("doctor-count", html, StringComparison.Ordinal);
     }
