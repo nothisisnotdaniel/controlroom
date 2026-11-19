@@ -91,6 +91,53 @@ public sealed class JobReaderTests
     }
 
     [Theory]
+    [InlineData("{\"tokens\":{}}")]
+    [InlineData("{\"tokens\":{\"a\":{}}}")]
+    [InlineData("{\"tokens\":{\"a\":\"x\",\"b\":{\"input\":-1,\"cacheRead\":\"7\",\"output\":1.5}}}")]
+    [InlineData("{\"tokens\":{\"a\":{\"runs\":3,\"model\":\"opus\"}}}")]
+    public void Parse_TokensAreUnknownWithoutAValidCount(string json)
+    {
+        Assert.Null(JobReader.Parse("1-a", json)!.Tokens);
+    }
+
+    [Fact]
+    public void Parse_TokensOfOnlyZeroCountsAreZeroNotUnknown()
+    {
+        Assert.Equal(0, JobReader.Parse("1-a", "{\"tokens\":{\"a\":{\"input\":0}}}")!.Tokens);
+    }
+
+    [Fact]
+    public void Parse_UpdatedParsesTheExactUtcForm()
+    {
+        JobSummary? job = JobReader.Parse("1-a", "{\"updated\":\"2026-11-19T23:59:58Z\"}");
+
+        Assert.Equal(new DateTimeOffset(2026, 11, 19, 23, 59, 58, TimeSpan.Zero), job!.Updated);
+        Assert.Equal(TimeSpan.Zero, job.Updated!.Value.Offset);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"updated\":null}")]
+    [InlineData("{\"updated\":1763596800}")]
+    [InlineData("{\"updated\":[\"2026-11-19T10:00:00Z\"]}")]
+    [InlineData("{\"updated\":\"2026-11-19T10:00:00+01:00\"}")]
+    [InlineData("{\"updated\":\"2026-11-19T10:00:00+00:00\"}")]
+    [InlineData("{\"updated\":\"2026-11-19T10:00:00.123Z\"}")]
+    [InlineData("{\"updated\":\"2026-11-19T10:00:00z\"}")]
+    [InlineData("{\"updated\":\"2026-11-19 10:00:00Z\"}")]
+    [InlineData("{\"updated\":\"2026-11-19T10:00:00\"}")]
+    [InlineData("{\"updated\":\"2026-11-19\"}")]
+    [InlineData("{\"updated\":\" 2026-11-19T10:00:00Z\"}")]
+    [InlineData("{\"updated\":\"2026-11-19T10:00:00Z\\n\"}")]
+    [InlineData("{\"updated\":\"2026-02-30T10:00:00Z\"}")]
+    [InlineData("{\"updated\":\"2026-11-19T24:00:00Z\"}")]
+    [InlineData("{\"updated\":\"２026-11-19T10:00:00Z\"}")]
+    public void Parse_UpdatedIsNullForAnyOtherValue(string json)
+    {
+        Assert.Null(JobReader.Parse("1-a", json)!.Updated);
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData("{")]
     [InlineData("not json")]

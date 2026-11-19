@@ -155,13 +155,20 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     its number, then without, ties by project (ordinal) and line), `TasksEndpoint` (`GET /api/tasks`: every `[h]` line as
     `{project, version, line, number, title, rest, story, after}` split into `ready` and `waiting` by `BacklogWaiting`
     (`after` only the unmet dependencies, `project` always set), plus `unreadable` names, `no-store`; project order, then
-    file order), `SearchEndpoint` (`GET /api/search?q=&mark=&project=`: `{items, total, projects, unreadable}`, items
+    file order), `HistoryEndpoint` (`GET /api/history`, read-only, `no-store`, no parameters: `{jobs, days, totals,
+    chart}` from `JobReader.ReadAll` and `TimeProvider` (UTC); `jobs` only stages `done`/`needs-human`/`reverted` as
+    `{id, project, title, mode, path, round, outcome, tokens, finished}` (`outcome` `merged`, `findings` (decision
+    `FINDINGS`), `escalated`, `reverted`; `finished` the `Updated` time or `null`), newest first then id descending,
+    `null` last; `days` the 30 UTC dates ending today; `totals.projects`/`totals.modes` `{name, last7, last30}` with
+    `{jobs, tokens, unknown}` (only names with a job in the 30 days, ordinal, `null` last); `chart.modes` `{name,
+    tokens}` with 30 daily known-token sums; unknown tokens never count as 0), `SearchEndpoint` (`GET /api/search?q=&mark=&project=`: `{items, total, projects, unreadable}`, items
     `{project, number, mark, title, rest, story, match}`, `no-store`; `#N`/`Name#N` (name ignoring case), else every
     word (ordinal, ignore case) in title or rest, else in the story through `StoryReader.Read` (read only for an item that
     passes the filters and missed on title); `mark` (`open|approval|task|done`) and `project` (exact name) filters; order
     number, title, story, filter, each by project then file line; at most 100 items; a repeated parameter, unknown mark or
     project, or `q` over 200 chars gives `400 {"error":"invalid"}`), `JobReader` (`factory/jobs/<id>/state.json` to a typed
-    `JobSummary`; `request` is the `human.json` action, filled only for `needs-human`), `BoardEndpoint` (`GET /api/board`: jobs and `[h]` tasks), `ChangeFingerprint` (SHA-256 fingerprints from `lstat`
+    `JobSummary`; `request` is the `human.json` action, filled only for `needs-human`; `tokens` is `null` when no agent
+    gives a valid count; `Updated` (never in JSON) only from an exact `YYYY-MM-DDTHH:MM:SSZ` `updated`), `BoardEndpoint` (`GET /api/board`: jobs and `[h]` tasks), `ChangeFingerprint` (SHA-256 fingerprints from `lstat`
     metadata only: `jobs` over each `state.json` and `human.json` of `JobReader.ListFolders`, per project `backlog` over `backlog.md`
     and `stories` over `backlog/*.md`; a symlink adds only a `link` marker, a missing path `missing`; `NoFollowStat`:
     `lstat`, `O_NOFOLLOW` folder listing and `fstatat` via P/Invoke, never a file opened or a target followed),
@@ -190,8 +197,9 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     pending, and at once on becoming visible; refetches only the board, the changed backlog sections (kept while a form
     is open or focus is inside) and the open story (in place, never while Edit story or Add note is open); a failed check shows
     the fixed `Connection lost. Reconnecting…` notice under the header, or in the `board-status` line on the board;
-    script order `token.js`, `board.js`, `act.js`, `push.js`, `edit.js`, `inbox.js`, `tasks.js`, `search.js`, `capture.js`, `live.js`, `app.js`; a changed
-    `backlog` or `stories` fingerprint refetches the inbox and the tasks and their counts and re-runs the current search), `act.js` (the "Your decision" section under the state section of a `needs-human` job page only: Approve (after a
+    script order `token.js`, `board.js`, `act.js`, `push.js`, `edit.js`, `inbox.js`, `tasks.js`, `search.js`, `capture.js`, `history.js`, `live.js`, `app.js`; a changed
+    `backlog` or `stories` fingerprint refetches the inbox and the tasks and their counts and re-runs the current search;
+    a changed `jobs` fingerprint refetches the history while it is shown), `act.js` (the "Your decision" section under the state section of a `needs-human` job page only: Approve (after a
     confirm), Rework with a note box (`maxlength` 1000) and Send (off while blank); with a pending request the fixed
     `Waiting for the next /factory session for <project>: <Approve|Rework> sent <local time>` text, the note as text and
     Cancel request; fixed texts per error code in `ActErrors`; `jobDecisionBusy` (a send in flight, or the note box has
@@ -209,7 +217,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `/api/backlogs` on every show (last used one in `localStorage` `controlroom-capture-project`), the `Idea` textarea
     (`maxlength` 2000) and Save (off while blank or `changeBusy`); Save fetches the version, sends `action:"capture"`
     through `sendChange`, then clears the text, shows the fixed saved text and refreshes the inbox count; fixed texts in
-    `CaptureTexts`), `push.js` (Notifications section on the
+    `CaptureTexts`), `history.js` (the `#history` view, read-only: `Last 7 days` and `Last 30 days` tables for projects
+    and modes (`formatTokens`, `+ k unknown`), a stacked bar chart per day built with `createElementNS` (`role="img"`,
+    text `aria-label`, legend with each mode's 30-day total), then the job list (title links `#job/<id>`, outcome badge,
+    tokens or `unknown`) with a `Project` select that filters only the list on the client (kept in `localStorage`
+    `controlroom-history-project`); fetched on every show; fixed texts in `HistoryTexts`), `push.js` (Notifications section on the
     board: state texts, Turn on (permission only from the tap), done and update switches, Send test, Turn off),
     `sw.js` (service worker: caches only the fixed app shell, never `/api/`; bump its cache version when the
     shell list changes; `push` shows a notification from fixed titles, `notificationclick` opens `#job/<id>`,
