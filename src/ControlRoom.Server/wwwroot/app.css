@@ -983,6 +983,12 @@ textarea.edit-input {
   resize: vertical;
 }
 
+.edit-hint {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
 .edit-story-text {
   font: 0.95rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
 }

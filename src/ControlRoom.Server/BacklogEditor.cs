@@ -97,6 +97,12 @@ internal static partial class BacklogEditor
 {
     public const int MaxTitleLength = 200;
 
+    public const int MaxNoteLength = 1000;
+
+    private const string NotesHeading = "## Notes";
+
+    private const string ProposedByJob = "Proposed by job";
+
     public static BacklogEdit? Approve(EditableText text, int line)
     {
         if (!IsMark(text, line, '?'))
@@ -390,6 +396,98 @@ internal static partial class BacklogEditor
         return true;
     }
 
+    /// <summary>The note as one line: every whitespace run becomes one space, then trimmed. <c>null</c> when it is
+    /// empty, over <see cref="MaxNoteLength"/> characters (runes), not valid Unicode, holds another control
+    /// character, or contains <c>Proposed by job</c> (ignoring case), so a note never names the proposing job.</summary>
+    public static string? CleanNote(string? note)
+    {
+        if (note is null || !IsValidUnicode(note))
+        {
+            return null;
+        }
+
+        string clean = Whitespace().Replace(note, " ").Trim();
+        if (clean.Length == 0 || clean.EnumerateRunes().Count() > MaxNoteLength
+            || clean.Contains(ProposedByJob, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        foreach (char c in clean)
+        {
+            if (char.IsControl(c))
+            {
+                return null;
+            }
+        }
+
+        return clean;
+    }
+
+    /// <summary>Appends <c>- YYYY-MM-DD: note</c> to the story's first <c>## Notes</c> section (which ends at the
+    /// next <c># </c> or <c>## </c> line): after the section's last non-blank line, with one blank line before it
+    /// unless that line is itself a dated note. Without a section, <c>## Notes</c> and the note are added at the
+    /// end, one blank line after the content. Every other line keeps its bytes; new lines use the file's ending
+    /// (CRLF when its first line ends with <c>\r</c>). <paramref name="note"/> must be clean
+    /// (<see cref="CleanNote"/>).</summary>
+    public static EditableText AppendNote(EditableText story, DateOnly date, string note)
+    {
+        string ending = story.Lines.Count > 0 && story.Lines[0].EndsWith('\r') ? "\r" : "";
+        string noteLine = "- " + date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ": " + note + ending;
+        List<string> lines = [.. story.Lines];
+        int heading = -1;
+        for (int i = 0; i < lines.Count; i++)
+        {
+            if (string.Equals(EditableText.Content(lines[i]).TrimEnd(), NotesHeading, StringComparison.Ordinal))
+            {
+                heading = i;
+                break;
+            }
+        }
+
+        if (heading < 0)
+        {
+            while (lines.Count > 0 && IsBlank(lines[^1]))
+            {
+                lines.RemoveAt(lines.Count - 1);
+            }
+
+            EndLastLine(lines, story.FinalNewline, ending);
+            if (lines.Count > 0)
+            {
+                lines.Add(ending);
+            }
+
+            lines.AddRange([NotesHeading + ending, ending, noteLine]);
+            return new EditableText(lines, true, story.HasBom);
+        }
+
+        int last = heading;
+        for (int i = heading + 1; i < lines.Count; i++)
+        {
+            string content = EditableText.Content(lines[i]);
+            if (content.StartsWith("# ", StringComparison.Ordinal) || content.StartsWith("## ", StringComparison.Ordinal))
+            {
+                break;
+            }
+
+            if (!IsBlank(lines[i]))
+            {
+                last = i;
+            }
+        }
+
+        bool atEnd = last == lines.Count - 1;
+        List<string> added = DatedNote().IsMatch(EditableText.Content(lines[last])) ? [noteLine] : [ending, noteLine];
+        if (atEnd)
+        {
+            EndLastLine(lines, story.FinalNewline, ending);
+        }
+
+        lines.InsertRange(last + 1, added);
+        return new EditableText(lines, story.FinalNewline || atEnd, story.HasBom);
+    }
+
     /// <summary>The title as written on a backlog line: whitespace runs become one space (like
     /// <c>' '.join(title.split())</c>).</summary>
     public static string LineTitle(string title)
@@ -407,6 +505,21 @@ internal static partial class BacklogEditor
         catch (ArgumentException)
         {
             return false;
+        }
+    }
+
+    private static bool IsBlank(string line)
+    {
+        return EditableText.Content(line).Trim().Length == 0;
+    }
+
+    /// <summary>When the file had no final line break, its last line gets the file's <c>\r</c> (if any) so the line
+    /// added after it ends the same way as the others.</summary>
+    private static void EndLastLine(List<string> lines, bool finalNewline, string ending)
+    {
+        if (!finalNewline && lines.Count > 0 && !lines[^1].EndsWith('\r'))
+        {
+            lines[^1] += ending;
         }
     }
 
@@ -464,6 +577,9 @@ internal static partial class BacklogEditor
 
     [GeneratedRegex("[^a-z0-9]+", RegexOptions.CultureInvariant)]
     private static partial Regex NotSlug();
+
+    [GeneratedRegex(@"\A- [0-9]{4}-[0-9]{2}-[0-9]{2}: ", RegexOptions.CultureInvariant)]
+    private static partial Regex DatedNote();
 
     [GeneratedRegex(@"\s+", RegexOptions.CultureInvariant)]
     private static partial Regex Whitespace();

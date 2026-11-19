@@ -297,6 +297,158 @@ public sealed class BacklogEditorTests
         Assert.Null(BacklogEditor.Done(Text(Sample), line));
     }
 
+    private static readonly DateOnly NoteDate = new(2026, 3, 2);
+
+    [Fact]
+    public void AppendNote_GoesAfterTheLastLineOfTheNotesSectionBeforeTheNextHeading()
+    {
+        string story = "# 004 Four\n\n## Notes\n\nSome remark.\n\n\n## Other\n\nText.\n";
+
+        string result = BacklogEditor.AppendNote(Text(story), NoteDate, "Use the blue one.").Text;
+
+        Assert.Equal(
+            "# 004 Four\n\n## Notes\n\nSome remark.\n\n- 2026-03-02: Use the blue one.\n\n\n## Other\n\nText.\n", result);
+    }
+
+    [Fact]
+    public void AppendNote_SectionEndsOnlyAtALevelOneOrTwoHeading()
+    {
+        string story = "# 004 Four\n\n## Notes\n\n### Sub\n\nDeep.\n\n# Next\n";
+
+        string result = BacklogEditor.AppendNote(Text(story), NoteDate, "n").Text;
+
+        Assert.Equal("# 004 Four\n\n## Notes\n\n### Sub\n\nDeep.\n\n- 2026-03-02: n\n\n# Next\n", result);
+    }
+
+    [Fact]
+    public void AppendNote_AtTheEndOfTheFileFollowsAPreviousNoteWithoutABlankLine()
+    {
+        string story = "# 004 Four\n\n## Notes\n\n- 2026-01-05: First.\n\n";
+
+        string result = BacklogEditor.AppendNote(Text(story), NoteDate, "Second.").Text;
+
+        Assert.Equal("# 004 Four\n\n## Notes\n\n- 2026-01-05: First.\n- 2026-03-02: Second.\n\n", result);
+    }
+
+    [Fact]
+    public void AppendNote_AfterAParagraphOrAPlainListLineAddsOneBlankLine()
+    {
+        Assert.Equal(
+            "## Notes\nProposed by job 12-x.\n\n- 2026-03-02: n\n",
+            BacklogEditor.AppendNote(Text("## Notes\nProposed by job 12-x.\n"), NoteDate, "n").Text);
+        Assert.Equal(
+            "## Notes\n\n- plain item\n\n- 2026-03-02: n\n",
+            BacklogEditor.AppendNote(Text("## Notes\n\n- plain item\n"), NoteDate, "n").Text);
+    }
+
+    [Fact]
+    public void AppendNote_EmptySectionPutsTheNoteAfterTheHeadingAndUsesTheFirstSection()
+    {
+        Assert.Equal(
+            "## Notes\n\n- 2026-03-02: n\n\n## Notes\n\nSecond.\n",
+            BacklogEditor.AppendNote(Text("## Notes\n\n## Notes\n\nSecond.\n"), NoteDate, "n").Text);
+    }
+
+    [Fact]
+    public void AppendNote_HeadingIsMatchedExactlyAndCaseSensitively()
+    {
+        string story = "# 004 Four\n\n## notes\n\nlower.\n";
+
+        string result = BacklogEditor.AppendNote(Text(story), NoteDate, "n").Text;
+
+        Assert.Equal(story + "\n## Notes\n\n- 2026-03-02: n\n", result);
+    }
+
+    [Fact]
+    public void AppendNote_KeepsCrlfAndTheBom()
+    {
+        byte[] bytes = Encoding.UTF8.GetBytes("\uFEFF# 004 Four\r\n\r\n## Notes\r\n\r\nOld.\r\n\r\n## Other\r\n");
+
+        byte[] result = BacklogEditor.AppendNote(EditableText.Parse(bytes)!, NoteDate, "n").ToBytes();
+
+        Assert.Equal(
+            Encoding.UTF8.GetBytes(
+                "\uFEFF# 004 Four\r\n\r\n## Notes\r\n\r\nOld.\r\n\r\n- 2026-03-02: n\r\n\r\n## Other\r\n"),
+            result);
+    }
+
+    [Fact]
+    public void AppendNote_WithoutASectionAddsOneAfterExactlyOneBlankLine()
+    {
+        Assert.Equal(
+            "# 004 Four\n\nText.\n\n## Notes\n\n- 2026-03-02: n\n",
+            BacklogEditor.AppendNote(Text("# 004 Four\n\nText.\n"), NoteDate, "n").Text);
+        Assert.Equal(
+            "# 004 Four\n\nText.\n\n## Notes\n\n- 2026-03-02: n\n",
+            BacklogEditor.AppendNote(Text("# 004 Four\n\nText.\n\n\n"), NoteDate, "n").Text);
+        Assert.Equal(
+            "# 004 Four\r\n\r\n## Notes\r\n\r\n- 2026-03-02: n\r\n",
+            BacklogEditor.AppendNote(Text("# 004 Four\r\n"), NoteDate, "n").Text);
+    }
+
+    [Fact]
+    public void AppendNote_FileWithoutTrailingLineBreakEndsWithOne()
+    {
+        Assert.Equal(
+            "# 004 Four\n\nText.\n\n## Notes\n\n- 2026-03-02: n\n",
+            BacklogEditor.AppendNote(Text("# 004 Four\n\nText."), NoteDate, "n").Text);
+        Assert.Equal(
+            "## Notes\n\n- 2026-01-01: a\n- 2026-03-02: n\n",
+            BacklogEditor.AppendNote(Text("## Notes\n\n- 2026-01-01: a"), NoteDate, "n").Text);
+        Assert.Equal(
+            "## Notes\r\n\r\nOld.\r\n\r\n- 2026-03-02: n\r\n",
+            BacklogEditor.AppendNote(Text("## Notes\r\n\r\nOld."), NoteDate, "n").Text);
+    }
+
+    [Fact]
+    public void AppendNote_InTheMiddleKeepsAMissingFinalLineBreak()
+    {
+        Assert.Equal(
+            "## Notes\n\nOld.\n\n- 2026-03-02: n\n\n## Other",
+            BacklogEditor.AppendNote(Text("## Notes\n\nOld.\n\n## Other"), NoteDate, "n").Text);
+    }
+
+    [Theory]
+    [InlineData("  Use\tthe\n\nblue   one. ", "Use the blue one.")]
+    [InlineData("a\r\nb", "a b")]
+    [InlineData("Emoji \U0001F600 ok", "Emoji \U0001F600 ok")]
+    [InlineData("<script>alert(1)</script>", "<script>alert(1)</script>")]
+    public void CleanNote_JoinsWhitespaceIntoOneLine(string note, string clean)
+    {
+        Assert.Equal(clean, BacklogEditor.CleanNote(note));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" \n\t ")]
+    [InlineData("bell \u0007 here")]
+    [InlineData("del \u007F here")]
+    [InlineData("Proposed by job 12-x")]
+    [InlineData("see: proposed BY job 12-x")]
+    [InlineData("Proposed\n by \t job 12-x")]
+    public void CleanNote_RefusesEmptyControlInvalidAndProposedByJob(string? note)
+    {
+        Assert.Null(BacklogEditor.CleanNote(note));
+    }
+
+    [Fact]
+    public void CleanNote_RefusesALoneSurrogate()
+    {
+        Assert.Null(BacklogEditor.CleanNote("lone " + (char)0xD800 + " surrogate"));
+    }
+
+    [Fact]
+    public void CleanNote_AllowsAtMost1000Runes()
+    {
+        string emoji = "\U0001F600";
+        Assert.Equal(1000, BacklogEditor.CleanNote(string.Concat(Enumerable.Repeat(emoji, 1000)))!.EnumerateRunes().Count());
+        Assert.Null(BacklogEditor.CleanNote(string.Concat(Enumerable.Repeat(emoji, 1001))));
+        Assert.NotNull(BacklogEditor.CleanNote(new string('a', 1000)));
+        Assert.Null(BacklogEditor.CleanNote(new string('a', 1001)));
+        Assert.NotNull(BacklogEditor.CleanNote("  " + new string('a', 1000) + "\n"));
+    }
+
     private static EditableText Text(string text)
     {
         return EditableText.Parse(Encoding.UTF8.GetBytes(text))!;

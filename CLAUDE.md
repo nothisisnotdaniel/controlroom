@@ -34,7 +34,12 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `backlog.md` and `backlog/`, checked against the version (SHA-256) the client saw (refused as changed
     otherwise), written atomically without following symlinks (`SafeFileWriter`), then committed in that
     project's repo with only the changed files (and pushed when there is an `origin`). The actions are approve,
-    drop, up/down/top, add, title, story and `done` (only a `[h]` line becomes `[x]`). Nothing else in the
+    drop, up/down/top, add, title, story, `done` (only a `[h]` line becomes `[x]`) and `note` (on a numbered open
+    item, with `storyVersion`: the note is cleaned to one line (whitespace runs to one space, trimmed), at most 1000
+    characters, no control characters and no `Proposed by job`; dated `- YYYY-MM-DD: <note>` from the `TimeProvider`
+    local date and appended under the story's first `## Notes` (after its last non-blank line, a blank line first
+    unless that line is a dated note; a missing section is added at the end); only the story file is committed, as
+    `backlog: note on #N`). Nothing else in the
     factory root is written.
   - Text from files (backlog lines, job records) is shown as text, never as raw HTML; Markdown is rendered
     with raw HTML turned off.
@@ -122,9 +127,9 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `waiting`, `line` and the file `version`, and per project `next` (`{number, title, story, spike}` or `null`),
     `stopped` (a blocked line has a missing dependency) and `blocked` (`[{number, title, story, after:[{project, number,
     missing}]}]`, only unmet dependencies); `null`, `false`, `[]` when unreadable), `BacklogEditor` (`EditableText` lines that keep their bytes; approve, drop, done, move, title
-    and add edits, slug, next number and story template like `job.py`), `ProjectGit` (fixed-argument git calls
+    and add edits, `CleanNote` and `AppendNote`, slug, next number and story template like `job.py`), `ProjectGit` (fixed-argument git calls
     with timeouts and `GIT_TERMINAL_PROMPT=0`), `BacklogChangeEndpoint` (`POST /api/backlog/change`: request
-    checks, `not_develop`/`dirty`/`changed`, write, commit, push; `done` commits `backlog: done #N`), `StoryReader` (fenced read of
+    checks, `not_develop`/`dirty`/`changed`, write, commit, push; `done` commits `backlog: done #N`, `note` commits `backlog: note on #N`), `StoryReader` (fenced read of
     `<project>/backlog/NNN-slug.md`), `StoryMarkdown` (Markdown to a JSON block tree, no HTML),
     `StoryEndpoint` (`GET /api/story?project=&number=`, with `markdown`
     and `storyVersion`), `InboxEndpoint` (`GET /api/inbox`: every `[?]` line as `{project, version, line, number, title,
@@ -160,10 +165,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `controlroom-token`, `authFetch` for every `/api/` call, the token view), `app.js` (routing, backlogs (each readable project's `div.plan` between the head and the groups: `Next:` item
     with a `Spike` badge, `Nothing ready to run.` or the fixed stopped text, and a `Waiting (k)` group with `Waits for`
     links, a missing one as text plus `No such item`; the plan's signature in `data-plan`, and a live refresh also
-    replaces a section whose signature changed), story), `edit.js` (per-project edit mode, the Add form, Edit story, fixed texts per error code), `board.js` (jobs board and job page (a read-only state section between the facts and the record tabs: stage and round, review rows per round with visible values, decision chip, CI and note), `pollBoard` fetched by `live.js`; the `ControlRoom <version>`
+    replaces a section whose signature changed), story), `edit.js` (per-project edit mode, the Add form, Edit story and Add note (`add-note-button` in the story bar; only
+    one of the two forms open at a time), fixed texts per error code), `board.js` (jobs board and job page (a read-only state section between the facts and the record tabs: stage and round, review rows per round with visible values, decision chip, CI and note), `pollBoard` fetched by `live.js`; the `ControlRoom <version>`
     line at the foot of Jobs and the update banner under its heading, each asked once per page load), `live.js` (the one `setInterval`: asks `/api/changes` every 5 s while visible, no token view and nothing
     pending, and at once on becoming visible; refetches only the board, the changed backlog sections (kept while a form
-    is open or focus is inside) and the open story (in place, never while Edit story is open); a failed check shows
+    is open or focus is inside) and the open story (in place, never while Edit story or Add note is open); a failed check shows
     the fixed `Connection lost. Reconnecting…` notice under the header, or in the `board-status` line on the board;
     script order `token.js`, `board.js`, `push.js`, `edit.js`, `inbox.js`, `tasks.js`, `search.js`, `live.js`, `app.js`; a changed
     `backlog` or `stories` fingerprint refetches the inbox and the tasks and their counts and re-runs the current search), `inbox.js` (the `#inbox` view: every `[?]` item with project,
@@ -208,7 +214,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `ReleaseWorkflowTests` reads `release.yml` as text); `TempFactoryRoot` (`InitGit`, `AddBareRemote`
     and `Git` for a real local repo), `TempTokenFolder` and `ServerFactory` (own temp token file; clients send `Host: 127.0.0.1:8100`; optional tailnet name;
     `CreateTokenClient()` for API calls; `Push` fake push service, `Update` fake GitHub (`FakeUpdateHandler`), `CurrentVersion` (default `dev`),
-    `Time` fixed clock whose timers never fire (it records their due time and period), `Logs`) are the shared fixtures; `PushFakes` holds `FakeTime`, `FakePushHandler`, `FakeUpdateHandler`, `PushReceiver` (test-side
+    `Time` fixed clock whose timers never fire (it records their due time and period; `Zone` sets its
+    `LocalTimeZone`, default UTC), `Logs`) are the shared fixtures; `PushFakes` holds `FakeTime`, `FakePushHandler`, `FakeUpdateHandler`, `PushReceiver` (test-side
     decrypt) and `LogCapture`.
 - **Style:** C# like Context: file-scoped namespaces, `internal sealed` unless a type must be public, no
   primary constructors, no `var`, braces on every body, camelCase private fields without `_`; the build

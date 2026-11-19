@@ -8,7 +8,7 @@ namespace ControlRoom.Server.Tests;
 
 /// <summary><c>POST /api/backlog/change</c> against a real local git repo in a temp factory root (and a bare repo
 /// in the same temp folder as <c>origin</c>). No network; git never prompts.</summary>
-public sealed class BacklogChangeApiTests
+public sealed partial class BacklogChangeApiTests
 {
     private const string Route = "/api/backlog/change";
 

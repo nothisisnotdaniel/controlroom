@@ -510,8 +510,8 @@ function showStoryContent(nodes, extra) {
   const main = document.getElementById("story");
   const bar = element("div", "story-bar");
   bar.appendChild(backButton());
-  if (extra) {
-    bar.appendChild(extra);
+  for (const node of extra || []) {
+    bar.appendChild(node);
   }
   const footer = element("div", "story-footer");
   footer.appendChild(backButton());
@@ -548,7 +548,10 @@ async function loadStory(target) {
   }
   const article = renderStoryArticle(data);
   const title = article.querySelector(".story-title");
-  showStoryContent([article], storyEditButton(target, data, () => loadStory(target)));
+  showStoryContent([article], [
+    storyEditButton(target, data, () => loadStory(target)),
+    storyNoteButton(target, data, () => loadStory(target)),
+  ]);
   // Move focus into the story so keyboard and screen-reader users don't stay on the hidden list.
   title.focus({ preventScroll: true });
 }
@@ -576,7 +579,8 @@ function openStoryProject() {
 // tried again (form open or request failed).
 async function refreshStory() {
   const target = parseStoryHash(location.hash);
-  const editing = () => document.querySelector("#story .edit-story-form") !== null;
+  const editing = () => document.querySelector("#story .edit-story-form") !== null
+    || document.querySelector("#story .add-note-form") !== null;
   if (currentView !== "story" || target === null) {
     return true;
   }
@@ -604,13 +608,16 @@ async function refreshStory() {
   const article = renderStoryArticle(data);
   const focusedTitle = old.contains(document.activeElement);
   old.replaceWith(article);
-  const button = document.querySelector("#story .edit-story-button");
-  if (button !== null) {
-    const focusedButton = button === document.activeElement;
-    const next = storyEditButton(target, data, () => loadStory(target));
-    button.replaceWith(next);
-    if (focusedButton) {
-      next.focus({ preventScroll: true });
+  const reload = () => loadStory(target);
+  for (const [selector, make] of [[".edit-story-button", storyEditButton], [".add-note-button", storyNoteButton]]) {
+    const button = document.querySelector("#story " + selector);
+    if (button !== null) {
+      const focusedButton = button === document.activeElement;
+      const next = make(target, data, reload);
+      button.replaceWith(next);
+      if (focusedButton) {
+        next.focus({ preventScroll: true });
+      }
     }
   }
   if (focusedTitle) {

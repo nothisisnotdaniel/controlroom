@@ -18,6 +18,12 @@ internal sealed class FakeTime : TimeProvider
 
     public DateTimeOffset Now { get; set; } = Start;
 
+    /// <summary>The zone <c>GetLocalNow()</c> uses; UTC unless a test sets another, so dates never depend on the
+    /// machine.</summary>
+    public TimeZoneInfo Zone { get; set; } = TimeZoneInfo.Utc;
+
+    public override TimeZoneInfo LocalTimeZone => Zone;
+
     public override DateTimeOffset GetUtcNow()
     {
         return Now;
