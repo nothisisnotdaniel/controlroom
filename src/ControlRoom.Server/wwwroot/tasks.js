@@ -172,7 +172,8 @@ function renderTaskItem(item, ready) {
   const row = element("li", "tasks-item");
   row.appendChild(element("span", "tasks-project", item.project));
   const label = (item.number !== null ? "#" + item.number + " " : "") + titleText(item.title);
-  if (item.number !== null) {
+  // Only a line with a numbered story link opens a story.
+  if (item.number !== null && item.story) {
     row.classList.add("numbered");
     const head = element("a", "head tasks-head", label);
     head.href = storyHash(item.project, item.number);

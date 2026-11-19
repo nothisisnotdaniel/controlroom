@@ -4,7 +4,8 @@
 // and only what changed is fetched again: the board (pollBoard in board.js), the backlog sections of changed
 // projects, the open story (app.js), the inbox with its nav count (inbox.js) and the tasks with theirs (tasks.js). A
 // failed check shows one fixed connection notice. Loaded after tasks.js and before app.js; the functions of the
-// other scripts are only called at run time. Fingerprints are compared, never shown; only fixed texts are rendered, with textContent.
+// other scripts are only called at run time. Fingerprints are compared, never shown; only fixed texts are rendered,
+// with textContent.
 
 const LiveTexts = {
   lost: "Connection lost. Reconnecting…",
