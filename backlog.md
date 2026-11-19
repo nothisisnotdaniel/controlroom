@@ -21,6 +21,8 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#10](backlog/010-ac-1-test-without-reflection.md) AC-1 test without reflection → 191-listen-test-no-reflection
 - [x] [#69](backlog/069-fix-ci-updatechecker-stopasync-throws-after.md) Fix CI: UpdateChecker.StopAsync throws after Dispose → 252-updatechecker-stop-dispose
 - [x] [#11](backlog/011-tailscale.md) Tailscale
+- [ ] [#98](backlog/098-updater-waits-for-launchd-before-starting.md) Updater waits for launchd before starting the new server
+- [ ] [#99](backlog/099-updater-checks-soon-after-install-and.md) Updater checks soon after install and retries after a skipped run
 - [?] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone
 - [?] [#13](backlog/013-releases-overview.md) Releases overview
 - [x] [#15](backlog/015-job-detail.md) Job detail (after: #2) → 248-job-detail-gaps
