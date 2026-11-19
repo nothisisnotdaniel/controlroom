@@ -540,6 +540,84 @@ public sealed partial class UpdateCheckTests : IDisposable
         Assert.Contains("`UpdateEndpoint`", claude, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Lifecycle_DisposeThenStop_DoesNotThrow()
+    {
+        UpdateChecker checker = await StartedChecker();
+
+        Assert.Null(Record.Exception(checker.Dispose));
+        Assert.Null(await Record.ExceptionAsync(() => checker.StopAsync(CancellationToken.None)));
+    }
+
+    [Fact]
+    public async Task Lifecycle_StopTwiceThenDispose_DoesNotThrow()
+    {
+        UpdateChecker checker = await StartedChecker();
+
+        Assert.Null(await Record.ExceptionAsync(() => checker.StopAsync(CancellationToken.None)));
+        Assert.Null(await Record.ExceptionAsync(() => checker.StopAsync(CancellationToken.None)));
+        Assert.Null(Record.Exception(checker.Dispose));
+    }
+
+    [Fact]
+    public async Task Lifecycle_DisposeTwice_DoesNotThrow()
+    {
+        UpdateChecker checker = await StartedChecker();
+
+        Assert.Null(Record.Exception(checker.Dispose));
+        Assert.Null(Record.Exception(checker.Dispose));
+    }
+
+    [Fact]
+    public async Task Lifecycle_StopThenDispose_DoesNotThrow()
+    {
+        UpdateChecker checker = await StartedChecker();
+
+        Assert.Null(await Record.ExceptionAsync(() => checker.StopAsync(CancellationToken.None)));
+        Assert.Null(Record.Exception(checker.Dispose));
+    }
+
+    [Fact]
+    public async Task Lifecycle_NeverStarted_StopAndDisposeInEitherOrder_DoNotThrow()
+    {
+        UpdateChecker first = Checker("1.0.0", out _);
+        Assert.Null(await Record.ExceptionAsync(() => first.StopAsync(CancellationToken.None)));
+        Assert.Null(Record.Exception(first.Dispose));
+
+        UpdateChecker second = Checker("1.0.0", out _);
+        Assert.Null(Record.Exception(second.Dispose));
+        Assert.Null(await Record.ExceptionAsync(() => second.StopAsync(CancellationToken.None)));
+        Assert.Empty(github.Requests);
+    }
+
+    [Fact]
+    public async Task Lifecycle_CheckSafelyAfterDispose_SendsNothing()
+    {
+        github.RespondWithTag("v1.2.0");
+        UpdateChecker checker = Checker("1.0.0", out UpdateState state);
+        await checker.Check();
+        UpdateRelease? before = state.Latest;
+        int requests = github.Requests.Count;
+        Assert.NotNull(before);
+
+        checker.Dispose();
+        github.RespondWithTag("v1.3.0");
+
+        Assert.Null(await Record.ExceptionAsync(checker.CheckSafely));
+        Assert.Equal(requests, github.Requests.Count);
+        Assert.Same(before, state.Latest);
+    }
+
+    /// <summary>A checker after <see cref="UpdateChecker.StartAsync"/> whose start check reached the fake GitHub.</summary>
+    private async Task<UpdateChecker> StartedChecker()
+    {
+        github.RespondWithTag("v1.0.0");
+        UpdateChecker checker = Checker("1.0.0", out _);
+        await checker.StartAsync(CancellationToken.None);
+        await github.WaitForRequests(1);
+        return checker;
+    }
+
     private UpdateChecker Checker(string current, out UpdateState state, TimeSpan? timeout = null)
     {
         state = new UpdateState();

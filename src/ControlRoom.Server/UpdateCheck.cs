@@ -247,7 +247,11 @@ internal sealed partial class UpdateChecker : IHostedService, IDisposable
 
     private readonly CancellationTokenSource stopping = new();
 
+    private readonly object lifecycle = new();
+
     private ITimer? timer;
+
+    private bool disposed;
 
     public UpdateChecker(
         UpdateState state, RunningVersion running, UpdateTransport transport, UpdateSettingsStore settings,
@@ -272,31 +276,66 @@ internal sealed partial class UpdateChecker : IHostedService, IDisposable
         return Task.CompletedTask;
     }
 
+    /// <summary>Stops the timer and cancels a running check; does nothing once disposed, so the host may call it
+    /// any number of times and before or after <see cref="Dispose"/>.</summary>
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        timer?.Change(System.Threading.Timeout.InfiniteTimeSpan, System.Threading.Timeout.InfiniteTimeSpan);
-        stopping.Cancel();
+        lock (lifecycle)
+        {
+            if (disposed)
+            {
+                return Task.CompletedTask;
+            }
+
+            timer?.Change(System.Threading.Timeout.InfiniteTimeSpan, System.Threading.Timeout.InfiniteTimeSpan);
+            stopping.Cancel();
+        }
+
         return Task.CompletedTask;
     }
 
+    /// <summary>Cancels a running check before disposing what it uses; runs its body at most once.</summary>
     public void Dispose()
     {
-        timer?.Dispose();
-        client.Dispose();
-        stopping.Dispose();
+        lock (lifecycle)
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            disposed = true;
+            stopping.Cancel();
+            timer?.Dispose();
+            client.Dispose();
+            stopping.Dispose();
+        }
+    }
+
+    private bool IsDisposed()
+    {
+        lock (lifecycle)
+        {
+            return disposed;
+        }
     }
 
     /// <summary>The timer's check: skipped while another one runs; never throws.</summary>
     public async Task CheckSafely()
     {
         SemVer? current = SemVer.Parse(running.Value);
-        if (current is null || !await checking.WaitAsync(0))
+        if (current is null || IsDisposed() || !await checking.WaitAsync(0))
         {
             return;
         }
 
         try
         {
+            if (IsDisposed())
+            {
+                return;
+            }
+
             await CheckHeld(current);
         }
         catch (Exception)
