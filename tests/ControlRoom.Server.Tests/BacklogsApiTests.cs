@@ -25,7 +25,7 @@ public sealed class BacklogsApiTests
 
         JsonElement normal = projects[3];
         Assert.Equal(
-            ["name", "readable", "open", "approval", "user", "done", "version"],
+            ["name", "readable", "open", "approval", "user", "done", "version", "next", "stopped", "blocked"],
             normal.EnumerateObject().Select(property => property.Name));
         Assert.True(normal.GetProperty("readable").GetBoolean());
         Assert.Equal(
@@ -186,7 +186,8 @@ public sealed class BacklogsApiTests
     [Theory]
     [InlineData("(after: Nope#1)", true)]
     [InlineData("(after: #99)", true)]
-    [InlineData("(after: alpha#3)", true)]
+    [InlineData("(after: alpha#3)", false)]
+    [InlineData("(after: alpha#2)", true)]
     [InlineData("(after: Alpha#3)", false)]
     [InlineData("(after: #3)", false)]
     [InlineData("", false)]
@@ -237,6 +238,103 @@ public sealed class BacklogsApiTests
 
         using JsonDocument json = JsonDocument.Parse(body);
         Assert.Equal(["", "Named"], Entries(Project(json, "Alpha"), "open").Select(entry => entry.Item1));
+    }
+
+    [Fact]
+    public async Task Backlogs_PlanHasNextAndBlockedAcrossProjects()
+    {
+        using TempFactoryRoot root = new();
+        root.AddProject(
+            "Alpha",
+            "- [ ] Old line: no number\n"
+            + "- [?] [#1](backlog/001-a.md) Proposal\n"
+            + "- [h] [#2](backlog/002-a.md) Hand\n"
+            + "- [ ] [#3](backlog/003-a.md) Blocked first (after: #2; Times#6)\n"
+            + "- [ ] [#4](backlog/004-a.md) Spike: try it (after: times#5)\n"
+            + "- [ ] [#5](backlog/005-a.md) Later\n");
+        root.AddProject("Times", "- [x] [#5](backlog/005-t.md) Five\n- [ ] [#6](backlog/006-t.md) Six\n");
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+
+        using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/backlogs"));
+
+        JsonElement alpha = Project(json, "Alpha");
+        JsonElement next = alpha.GetProperty("next");
+        Assert.Equal(["number", "title", "story", "spike"], next.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(4, next.GetProperty("number").GetInt32());
+        Assert.Equal("Spike: try it", next.GetProperty("title").GetString());
+        Assert.Equal("backlog/004-a.md", next.GetProperty("story").GetString());
+        Assert.True(next.GetProperty("spike").GetBoolean());
+        Assert.False(alpha.GetProperty("stopped").GetBoolean());
+        JsonElement blocked = Assert.Single(alpha.GetProperty("blocked").EnumerateArray());
+        Assert.Equal(["number", "title", "story", "after"], blocked.EnumerateObject().Select(p => p.Name));
+        Assert.Equal((3, "Blocked first"), (blocked.GetProperty("number").GetInt32(), blocked.GetProperty("title").GetString()));
+        Assert.Equal(["Alpha#2-", "Times#6-"], Dependencies(blocked));
+
+        JsonElement times = Project(json, "Times");
+        Assert.Equal(6, times.GetProperty("next").GetProperty("number").GetInt32());
+        Assert.False(times.GetProperty("next").GetProperty("spike").GetBoolean());
+        Assert.Empty(times.GetProperty("blocked").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Backlogs_MissingDependenciesStopTheProject()
+    {
+        using TempFactoryRoot root = new();
+        root.AddProject(
+            "Alpha",
+            "- [ ] [#1](backlog/001-a.md) One (after: Nope#1; Times#99; Locked#1; factory#3)\n"
+            + "- [ ] [#2](backlog/002-a.md) Two\n");
+        root.AddProject("Beta", "- [ ] [#1](backlog/001-b.md) One (after: Locked#1; factory#3)\n");
+        root.AddProject("Locked", null);
+        root.AddProject("Times", "- [x] [#5](backlog/005-t.md) Five\n");
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+
+        using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/backlogs"));
+
+        JsonElement alpha = Project(json, "Alpha");
+        Assert.True(alpha.GetProperty("stopped").GetBoolean());
+        Assert.Equal(2, alpha.GetProperty("next").GetProperty("number").GetInt32());
+        Assert.Equal(
+            ["Nope#1!", "Times#99!", "Locked#1-", "factory#3-"],
+            Dependencies(alpha.GetProperty("blocked")[0]));
+        JsonElement beta = Project(json, "Beta");
+        Assert.False(beta.GetProperty("stopped").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, beta.GetProperty("next").ValueKind);
+        Assert.Equal(["Locked#1-", "factory#3-"], Dependencies(beta.GetProperty("blocked")[0]));
+        JsonElement locked = Project(json, "Locked");
+        Assert.Equal(JsonValueKind.Null, locked.GetProperty("next").ValueKind);
+        Assert.False(locked.GetProperty("stopped").GetBoolean());
+        Assert.Empty(locked.GetProperty("blocked").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Backlogs_ADependencyIsMetOnceTheNamedLineIsDone()
+    {
+        using TempFactoryRoot root = new();
+        root.AddProject("Alpha", "- [ ] [#1](backlog/001-a.md) One (after: Times#6)\n");
+        string times = root.AddProject("Times", "- [ ] [#6](backlog/006-t.md) Six\n");
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+
+        using JsonDocument before = JsonDocument.Parse(await client.GetStringAsync("/api/backlogs"));
+        File.WriteAllText(Path.Combine(times, "backlog.md"), "- [x] [#6](backlog/006-t.md) Six\n");
+        using JsonDocument after = JsonDocument.Parse(await client.GetStringAsync("/api/backlogs"));
+
+        Assert.Equal(JsonValueKind.Null, Project(before, "Alpha").GetProperty("next").ValueKind);
+        Assert.Single(Project(before, "Alpha").GetProperty("blocked").EnumerateArray());
+        Assert.Equal(1, Project(after, "Alpha").GetProperty("next").GetProperty("number").GetInt32());
+        Assert.Empty(Project(after, "Alpha").GetProperty("blocked").EnumerateArray());
+    }
+
+    private static string[] Dependencies(JsonElement blocked)
+    {
+        return blocked.GetProperty("after").EnumerateArray()
+            .Select(dependency => dependency.GetProperty("project").GetString() + "#"
+                + dependency.GetProperty("number").GetInt32()
+                + (dependency.GetProperty("missing").GetBoolean() ? "!" : "-"))
+            .ToArray();
     }
 
     private static JsonElement Project(JsonDocument json, string name)

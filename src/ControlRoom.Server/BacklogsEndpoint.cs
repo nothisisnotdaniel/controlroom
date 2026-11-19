@@ -4,7 +4,8 @@ namespace ControlRoom.Server;
 internal sealed record FactoryRoot(string Path);
 
 /// <summary>One project in the <c>GET /api/backlogs</c> response. <c>Version</c> is the SHA-256 of the
-/// <c>backlog.md</c> bytes (<c>null</c> when unreadable), sent back with every change.</summary>
+/// <c>backlog.md</c> bytes (<c>null</c> when unreadable), sent back with every change. <c>Next</c>, <c>Stopped</c> and
+/// <c>Blocked</c> come from <see cref="BacklogPlan"/> (<c>null</c>, <c>false</c> and empty when unreadable).</summary>
 internal sealed record ProjectBacklog(
     string Name,
     bool Readable,
@@ -12,7 +13,10 @@ internal sealed record ProjectBacklog(
     IReadOnlyList<BacklogEntry> Approval,
     IReadOnlyList<BacklogEntry> User,
     IReadOnlyList<BacklogEntry> Done,
-    string? Version);
+    string? Version,
+    PlanItem? Next,
+    bool Stopped,
+    IReadOnlyList<BlockedItem> Blocked);
 
 /// <summary>The <c>GET /api/backlogs</c> response.</summary>
 internal sealed record BacklogsResponse(IReadOnlyList<ProjectBacklog> Projects);
@@ -43,6 +47,7 @@ internal static class BacklogsEndpoint
         foreach ((ProjectFolder project, BacklogFile? file) in read)
         {
             Backlog groups = file?.Backlog ?? Backlog.Empty;
+            ProjectPlan plan = BacklogPlan.For(file?.Backlog, project.Name, waiting);
             projects.Add(new ProjectBacklog(
                 project.Name,
                 file is not null,
@@ -50,7 +55,10 @@ internal static class BacklogsEndpoint
                 WithWaiting(groups.Approval, project.Name, waiting),
                 WithWaiting(groups.User, project.Name, waiting),
                 WithWaiting(groups.Done, project.Name, waiting),
-                file?.Version));
+                file?.Version,
+                plan.Next,
+                plan.Stopped,
+                plan.Blocked));
         }
 
         return new BacklogsResponse(projects);

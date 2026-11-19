@@ -96,7 +96,7 @@ public sealed partial class LiveWebAppTests
         string live = await Fetch("/live.js");
 
         Assert.Contains("section.dataset.project = name;", app, StringComparison.Ordinal);
-        Assert.Contains("if (old && (!wanted.has(name) || sectionBusy(old))) {", app, StringComparison.Ordinal);
+        Assert.Contains("if (old && (!changed || sectionBusy(old))) {", app, StringComparison.Ordinal);
         Assert.Contains("keepOpenGroups(old, next);\n      old.replaceWith(next);", app, StringComparison.Ordinal);
         Assert.Contains("group.open = before[index].open;", app, StringComparison.Ordinal);
         Assert.Contains("return section.querySelector(\".edit-title-form\") !== null", app, StringComparison.Ordinal);

@@ -115,8 +115,13 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `SafeFileWriter` (temp file in the same folder, then rename; refuses a symlinked target or folder),
     `BacklogReader` (safe `backlog.md` read), `BacklogParser` (lines to entries, old and numbered `[#N](…)`
     format), `BacklogWaiting` (the Ready/Waiting rule: a dependency is met only by a done line of the named, or the
-    same, project; unknown counts as unmet), `BacklogsEndpoint` (`GET /api/backlogs`, with `waiting`, `line` and
-    the file `version`), `BacklogEditor` (`EditableText` lines that keep their bytes; approve, drop, done, move, title
+    same, project; a name matches exactly, else the single project equal ignoring case; unknown counts as unmet;
+    `IsMissing`: unknown project or no line with that number in a readable backlog, never for an unreadable one or
+    `factory`), `BacklogPlan` (the rule of `job.py next`: numbered `[ ]` lines in file order, blocked while a
+    dependency is unmet, the first one not blocked is next, spikes too), `BacklogsEndpoint` (`GET /api/backlogs`, with
+    `waiting`, `line` and the file `version`, and per project `next` (`{number, title, story, spike}` or `null`),
+    `stopped` (a blocked line has a missing dependency) and `blocked` (`[{number, title, story, after:[{project, number,
+    missing}]}]`, only unmet dependencies); `null`, `false`, `[]` when unreadable), `BacklogEditor` (`EditableText` lines that keep their bytes; approve, drop, done, move, title
     and add edits, slug, next number and story template like `job.py`), `ProjectGit` (fixed-argument git calls
     with timeouts and `GIT_TERMINAL_PROMPT=0`), `BacklogChangeEndpoint` (`POST /api/backlog/change`: request
     checks, `not_develop`/`dirty`/`changed`, write, commit, push; `done` commits `backlog: done #N`), `StoryReader` (fenced read of
@@ -152,8 +157,10 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     memory), `UpdateChecker` (hosted service, `Check()` at start and every 6 h on `TimeProvider`, the `update` push
     once per version)), `UpdateEndpoint` (`GET /api/update`, `POST /api/update/settings`), `UpdateSettingsStore` (`settings.json`),
     `UpdateResult` (`update-result.json` schema and `UpdateResultReader`), `HealthEndpoint` (`GET /health`), `wwwroot/` (`index.html`, `app.css`, `token.js` (stored token under
-    `controlroom-token`, `authFetch` for every `/api/` call, the token view), `app.js` (routing, backlogs,
-    story), `edit.js` (per-project edit mode, the Add form, Edit story, fixed texts per error code), `board.js` (jobs board and job page (a read-only state section between the facts and the record tabs: stage and round, review rows per round with visible values, decision chip, CI and note), `pollBoard` fetched by `live.js`; the `ControlRoom <version>`
+    `controlroom-token`, `authFetch` for every `/api/` call, the token view), `app.js` (routing, backlogs (each readable project's `div.plan` between the head and the groups: `Next:` item
+    with a `Spike` badge, `Nothing ready to run.` or the fixed stopped text, and a `Waiting (k)` group with `Waits for`
+    links, a missing one as text plus `No such item`; the plan's signature in `data-plan`, and a live refresh also
+    replaces a section whose signature changed), story), `edit.js` (per-project edit mode, the Add form, Edit story, fixed texts per error code), `board.js` (jobs board and job page (a read-only state section between the facts and the record tabs: stage and round, review rows per round with visible values, decision chip, CI and note), `pollBoard` fetched by `live.js`; the `ControlRoom <version>`
     line at the foot of Jobs and the update banner under its heading, each asked once per page load), `live.js` (the one `setInterval`: asks `/api/changes` every 5 s while visible, no token view and nothing
     pending, and at once on becoming visible; refetches only the board, the changed backlog sections (kept while a form
     is open or focus is inside) and the open story (in place, never while Edit story is open); a failed check shows

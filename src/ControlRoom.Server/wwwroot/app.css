@@ -290,6 +290,57 @@ main {
   border: 1px solid var(--line);
 }
 
+/* Plan: the next item and the Waiting group, between the head and the groups. */
+.plan {
+  margin: 0 0 4px;
+}
+
+.plan .next {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.plan .next-label {
+  color: var(--muted);
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+.plan .next-stopped {
+  color: var(--waiting-fg);
+  background: var(--waiting-bg);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-weight: 600;
+}
+
+.plan-item {
+  display: inline;
+  color: var(--link);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.plan-item .title {
+  display: inline;
+}
+
+.badge-spike {
+  background: var(--pending-bg);
+  color: var(--pending-fg);
+}
+
+.dependency-missing {
+  font-weight: 600;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+.missing {
+  color: var(--error);
+  font-weight: 600;
+}
+
 /* Story view */
 .story-bar {
   position: sticky;
