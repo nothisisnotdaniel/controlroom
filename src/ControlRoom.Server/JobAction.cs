@@ -45,7 +45,6 @@ internal static partial class JobAction
 
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
-
     /// <summary>The request in a <c>human.json</c> file's bytes, or <c>null</c> when the bytes are over the cap, not
     /// UTF-8, not one JSON object with exactly the keys of its action, or a value is of the wrong type or form.</summary>
     public static JobRequest? Parse(byte[] bytes)
