@@ -187,6 +187,7 @@ function renderGroup(projectName, version, group, entries) {
 function renderProject(project) {
   const section = element("section", "project");
   const name = asText(project && project.name);
+  section.dataset.project = name;
   const version = asText(project && project.version);
   const head = element("div", "project-head");
   head.appendChild(element("h2", null, asText(project && project.name)));
@@ -221,14 +222,19 @@ function show(nodes) {
   main.replaceChildren(...nodes);
 }
 
+// The backlogs response; throws on a network error or an error status.
+async function fetchBacklogs() {
+  const response = await authFetch("/api/backlogs", { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error("status");
+  }
+  return response.json();
+}
+
 async function load() {
   let data;
   try {
-    const response = await authFetch("/api/backlogs", { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error("status");
-    }
-    data = await response.json();
+    data = await fetchBacklogs();
   } catch {
     show([element("p", "error", Texts.unreachable)]);
     return;
@@ -239,6 +245,95 @@ async function load() {
     return;
   }
   show(projects.map(renderProject));
+}
+
+// Live refresh (live.js): only the sections of the named projects are replaced, each in place, so scroll, edit mode
+// and an open Done group stay. A section with an open Add or title form, or with focus inside, is left alone; its
+// name is returned so the next check tries again. A failed request returns every name.
+async function refreshBacklogs(names) {
+  let data;
+  try {
+    data = await fetchBacklogs();
+  } catch {
+    return names;
+  }
+  const main = document.getElementById("backlogs");
+  const projects = asList(data && data.projects);
+  const sections = new Map();
+  for (const section of main.querySelectorAll(":scope > section.project")) {
+    sections.set(section.dataset.project, section);
+  }
+  const scroll = window.scrollY;
+  if (sections.size === 0) {
+    // The list shows a fixed text (loading, error or no projects): show it whole.
+    show(projects.length === 0 ? [element("p", "empty", Texts.noProjects)] : projects.map(renderProject));
+    restoreListScroll(main, scroll);
+    return [];
+  }
+  const wanted = new Set(names);
+  const left = [];
+  const listed = new Set();
+  let previous = null;
+  for (const project of projects) {
+    const name = asText(project && project.name);
+    listed.add(name);
+    const old = sections.get(name);
+    if (old && (!wanted.has(name) || sectionBusy(old))) {
+      if (wanted.has(name)) {
+        left.push(name);
+      }
+      previous = old;
+      continue;
+    }
+    const next = renderProject(project);
+    if (old) {
+      keepOpenGroups(old, next);
+      old.replaceWith(next);
+    } else if (previous) {
+      previous.after(next);
+    } else {
+      main.prepend(next);
+    }
+    previous = next;
+  }
+  for (const [name, old] of sections) {
+    if (!listed.has(name) && wanted.has(name)) {
+      if (sectionBusy(old)) {
+        left.push(name);
+      } else {
+        old.remove();
+      }
+    }
+  }
+  if (main.querySelector(":scope > section.project") === null) {
+    show([element("p", "empty", Texts.noProjects)]);
+  }
+  restoreListScroll(main, scroll);
+  return left;
+}
+
+function restoreListScroll(main, scroll) {
+  if (!main.hidden) {
+    window.scrollTo(0, scroll);
+  }
+}
+
+// True while the user works in the section: an open title or Add form, or focus inside it.
+function sectionBusy(section) {
+  return section.querySelector(".edit-title-form") !== null
+    || section.querySelector("details.edit-add[open]") !== null
+    || section.contains(document.activeElement);
+}
+
+// The new section's collapsed groups (Done) keep the open state of the old ones.
+function keepOpenGroups(old, next) {
+  const before = old.querySelectorAll("details.group");
+  const after = next.querySelectorAll("details.group");
+  if (before.length === after.length) {
+    after.forEach((group, index) => {
+      group.open = before[index].open;
+    });
+  }
 }
 
 // Story view: blocks come as plain texts and are built with createElement/textContent only.
@@ -336,19 +431,24 @@ function showStoryContent(nodes, extra) {
   main.replaceChildren(bar, ...nodes, footer);
 }
 
+// The story response; throws on a network error or an error status.
+async function fetchStory(target) {
+  const response = await authFetch(
+    "/api/story?project=" + encodeURIComponent(target.project) + "&number=" + encodeURIComponent(target.number),
+    { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error("status");
+  }
+  return response.json();
+}
+
 async function loadStory(target) {
   storyRequest += 1;
   const request = storyRequest;
   showStoryContent([element("p", "status", Texts.loading)]);
   let data;
   try {
-    const response = await authFetch(
-      "/api/story?project=" + encodeURIComponent(target.project) + "&number=" + encodeURIComponent(target.number),
-      { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error("status");
-    }
-    data = await response.json();
+    data = await fetchStory(target);
   } catch {
     if (request === storyRequest) {
       showStoryContent([element("p", "error", Texts.storyFailed)]);
@@ -359,6 +459,14 @@ async function loadStory(target) {
   if (request !== storyRequest) {
     return;
   }
+  const article = renderStoryArticle(data);
+  const title = article.querySelector(".story-title");
+  showStoryContent([article], storyEditButton(target, data, () => loadStory(target)));
+  // Move focus into the story so keyboard and screen-reader users don't stay on the hidden list.
+  title.focus({ preventScroll: true });
+}
+
+function renderStoryArticle(data) {
   const heading = asText(data && data.project) + " #" + asNumber(data && data.number) + " " + asText(data && data.title);
   const article = element("article", "story");
   const title = element("h1", "story-title", heading);
@@ -367,9 +475,62 @@ async function loadStory(target) {
   for (const block of asList(data && data.blocks)) {
     article.appendChild(renderBlock(block));
   }
-  showStoryContent([article], storyEditButton(target, data, () => loadStory(target)));
-  // Move focus into the story so keyboard and screen-reader users don't stay on the hidden list.
-  title.focus({ preventScroll: true });
+  return article;
+}
+
+// The project of the story on screen, or null when no story is shown.
+function openStoryProject() {
+  const target = parseStoryHash(location.hash);
+  return currentView === "story" && target !== null ? target.project : null;
+}
+
+// Live refresh (live.js): the open story is rendered again in place, with no Loading… text, the same scroll and
+// focus kept on the same element. Left alone while the Edit story form is open. Returns false when it should be
+// tried again (form open or request failed).
+async function refreshStory() {
+  const target = parseStoryHash(location.hash);
+  const editing = () => document.querySelector("#story .edit-story-form") !== null;
+  if (currentView !== "story" || target === null) {
+    return true;
+  }
+  if (editing()) {
+    return false;
+  }
+  const old = document.querySelector("#story .story");
+  if (old === null) {
+    return true;
+  }
+  const request = storyRequest;
+  let data;
+  try {
+    data = await fetchStory(target);
+  } catch {
+    return false;
+  }
+  if (request !== storyRequest || !old.isConnected) {
+    return true;
+  }
+  if (editing()) {
+    return false;
+  }
+  const scroll = window.scrollY;
+  const article = renderStoryArticle(data);
+  const focusedTitle = old.contains(document.activeElement);
+  old.replaceWith(article);
+  const button = document.querySelector("#story .edit-story-button");
+  if (button !== null) {
+    const focusedButton = button === document.activeElement;
+    const next = storyEditButton(target, data, () => loadStory(target));
+    button.replaceWith(next);
+    if (focusedButton) {
+      next.focus({ preventScroll: true });
+    }
+  }
+  if (focusedTitle) {
+    article.querySelector(".story-title").focus({ preventScroll: true });
+  }
+  window.scrollTo(0, scroll);
+  return true;
 }
 
 const Views = ["backlogs", "board", "job", "story"];
@@ -428,6 +589,7 @@ function route() {
     leaveJob();
   }
   showView(next);
+  liveRouteChanged();
   if (next === "story") {
     window.scrollTo(0, 0);
     loadStory(parseStoryHash(location.hash));
@@ -463,5 +625,5 @@ if (!hasToken()) {
 window.addEventListener("hashchange", route);
 route();
 load();
-startBoardPolling();
+startLiveChecks();
 registerServiceWorker();

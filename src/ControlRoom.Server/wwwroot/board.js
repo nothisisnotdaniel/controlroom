@@ -380,7 +380,7 @@ function setBoardStatus(ok) {
     status.textContent = BoardTexts.live + new Date().toLocaleTimeString();
   } else {
     status.className = "live-status error";
-    status.textContent = BoardTexts.unreachable;
+    status.textContent = connectionLost() ? LiveTexts.lost : BoardTexts.unreachable;
   }
 }
 
@@ -388,9 +388,11 @@ function boardViewsVisible() {
   return !document.getElementById("board").hidden || !document.getElementById("job").hidden;
 }
 
+// Fetches the board (driven by live.js when jobs or a backlog changed, and when the board or a job page is shown).
+// Returns true when the board was fetched, false when it was skipped or failed.
 async function pollBoard() {
   if (document.visibilityState !== "visible" || tokenViewShown() || !boardViewsVisible() || boardPolling) {
-    return;
+    return false;
   }
   boardPolling = true;
   try {
@@ -405,19 +407,20 @@ async function pollBoard() {
       data = JSON.parse(text);
     } catch {
       setBoardStatus(false);
-      return;
+      return false;
     }
     setBoardStatus(true);
     loadVersion();
     loadUpdate();
     if (text === boardText) {
-      return;
+      return true;
     }
     boardText = text;
     boardJobs = asList(data && data.jobs).filter((job) => job && typeof job === "object");
     boardTasks = asList(data && data.tasks).filter((task) => task && typeof task === "object");
     renderBoard();
     refreshOpenJob();
+    return true;
   } finally {
     boardPolling = false;
   }
@@ -432,15 +435,6 @@ function refreshOpenJob() {
   if (entry && openJobEntry !== null && JSON.stringify(entry) !== openJobEntry) {
     loadJob(openJobId, true);
   }
-}
-
-function startBoardPolling() {
-  setInterval(pollBoard, PollInterval);
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") {
-      pollBoard();
-    }
-  });
 }
 
 function showBoard() {
