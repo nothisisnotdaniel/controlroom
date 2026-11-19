@@ -82,3 +82,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#72](backlog/072-fill-the-search-project-filter-before.md) Fill the search project filter before the first search
 - [?] [#73](backlog/073-browser-check-of-the-search-view.md) Browser check of the Search view and five-link nav
 - [?] [#74](backlog/074-notice-when-a-live-search-refresh.md) Notice when a live search refresh fails
+- [?] [#75](backlog/075-browser-check-of-the-next-and.md) Browser check of the next and waiting view
