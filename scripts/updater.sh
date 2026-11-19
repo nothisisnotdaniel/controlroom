@@ -7,8 +7,12 @@
 # GitHub release (on the develop channel also a -develop prerelease) with the same download and checks as
 # `launch-agent.sh install --release`, swaps it in, confirms it through the public GET /health route (counted only
 # while launchd runs the server and its pid is the one listening on the port) and rolls back when it doesn't
-# answer or the marker can't be updated. It writes update-result.json for the server's push and prints exactly one line,
-# "<UTC ISO-8601> <word>[ <tags>]", which launchd appends to ~/Library/Logs/ControlRoom/updater.log.
+# answer or the marker can't be updated. After every bootout it waits until launchd has removed the service, and a
+# failed bootstrap is tried again a few times (one that never succeeds is bootstrap_failed). It writes
+# update-result.json for the server's push and prints exactly one line,
+# "<UTC ISO-8601> <word>[ <tags>]", which launchd appends to ~/Library/Logs/ControlRoom/updater.log. The words:
+# off, not_release, busy, job_running, current, latest_failed, download_failed, check_failed, skipped_failed,
+# updated, rolled_back, bootstrap_failed, swap_failed, rollback_failed.
 # POSIX sh. Runs only launchctl, curl, lsof, tar and shasum (plus standard tools), all with fixed arguments.
 # Never reads, copies or sends the access token. Nothing from the download runs here.
 
@@ -37,6 +41,10 @@ MAX_ENTRIES=10000
 # The public, token-free route the swapped-in server must answer on: 15 tries, 2 s apart, 2 s each.
 HEALTH_URL="http://127.0.0.1:8100/health"
 HEALTH_TRIES=15
+# After a bootout, launchctl print is polled until the service is gone: at most this many polls, 0.5 s apart (15 s).
+WAIT_POLLS=30
+# A failed bootstrap is tried again this many times, 1 s apart (launchd may still be removing the old service).
+BOOTSTRAP_RETRIES=5
 # A lock older than this (minutes) is left over from a run that died, and is removed.
 LOCK_MINUTES=60
 # launchctl print indents the service's own fields with one tab (nested ones with more).
@@ -313,12 +321,36 @@ health_is() {
     done
 }
 
-bootout_server() {
-    "$LAUNCHCTL" bootout "$SERVICE"
+# Polls launchctl print until it no longer shows the service (exits non-zero), 0.5 s after each poll that still
+# shows it, at most WAIT_POLLS polls; then goes on anyway.
+wait_gone() {
+    polls=0
+    while [ "$polls" -lt "$WAIT_POLLS" ]; do
+        polls=$((polls + 1))
+        "$LAUNCHCTL" print "$SERVICE" || return 0
+        sleep 0.5
+    done
+    return 0
 }
 
+# Boots the server out and waits until launchd has removed it.
+bootout_server() {
+    "$LAUNCHCTL" bootout "$SERVICE"
+    wait_gone
+}
+
+# Bootstraps the server plist, trying again 1 s later up to BOOTSTRAP_RETRIES times; returns the last status.
 bootstrap_server() {
-    "$LAUNCHCTL" bootstrap "$DOMAIN" "$PLIST"
+    attempts=0
+    while :; do
+        "$LAUNCHCTL" bootstrap "$DOMAIN" "$PLIST" && return 0
+        boot_status=$?
+        attempts=$((attempts + 1))
+        if [ "$attempts" -gt "$BOOTSTRAP_RETRIES" ]; then
+            return "$boot_status"
+        fi
+        sleep 1
+    done
 }
 
 # The old server could not be brought back, or does not answer.
@@ -335,7 +367,7 @@ end_swap_failed() {
             end_rollback_failed
         fi
     fi
-    bootstrap_server
+    bootstrap_server || end_rollback_failed
     if health_is "${INSTALLED#v}"; then
         write_result update_failed swap
         finish swap_failed
@@ -355,7 +387,8 @@ swap() {
     if ! mv "$WORK/out/$TOP" "$SERVER"; then
         end_swap_failed yes
     fi
-    bootstrap_server
+    # A new server that launchd never starts is put back without polling /health.
+    bootstrap_server || roll_back bootstrap_failed bootstrap_failed
     if health_is "${TAG#v}"; then
         # The marker must name the running release, else the next run installs it again: when it can't be
         # written, the old version (which the marker still names) is put back as for a failed swap.
@@ -377,7 +410,7 @@ roll_back() {
         bootstrap_server
         end_rollback_failed
     fi
-    bootstrap_server
+    bootstrap_server || end_rollback_failed
     if health_is "${INSTALLED#v}"; then
         write_result update_failed "$2"
         finish "$1"

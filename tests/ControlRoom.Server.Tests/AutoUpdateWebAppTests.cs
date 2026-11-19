@@ -121,6 +121,7 @@ public sealed class AutoUpdateWebAppTests
         Assert.Contains("  check: \"The download didn't check out. Nothing was changed.\",\n", js, StringComparison.Ordinal);
         Assert.Contains("  no_answer: \"The new version didn't start, so the old one is back.\",\n", js, StringComparison.Ordinal);
         Assert.Contains("  swap: \"The new version couldn't be put in place, so the old one is back.\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("  bootstrap_failed: \"The new version couldn't be started, so the old one is back.\",\n", js, StringComparison.Ordinal);
         Assert.Contains("  rollback_failed: \"The old version didn't come back. Check the Mac.\",\n", js, StringComparison.Ordinal);
         Assert.Contains(
             "body = version ? \"Now \" + version + (previous ? \" (was \" + previous + \").\" : \".\") : \"\";",

@@ -46,6 +46,7 @@ public sealed class UpdateResultTests : IDisposable
     [InlineData(UpdatedJson)]
     [InlineData("{\"run\":\"20261118T201500Z\",\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"check\"}")]
     [InlineData("{\"run\":\"20261118T201500Z\",\"result\":\"update_failed\",\"version\":\"1.3.0-rc.1\",\"reason\":\"rollback_failed\"}")]
+    [InlineData("{\"run\":\"20261118T201500Z\",\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"bootstrap_failed\"}")]
     public void Parse_AcceptsTheSchema(string json)
     {
         Assert.NotNull(UpdateResult.Parse(Encoding.UTF8.GetBytes(json)));
@@ -173,6 +174,7 @@ public sealed class UpdateResultTests : IDisposable
     [InlineData("check")]
     [InlineData("no_answer")]
     [InlineData("swap")]
+    [InlineData("bootstrap_failed")]
     [InlineData("rollback_failed")]
     public async Task FailedResult_IsSentWithItsCode(string reason)
     {

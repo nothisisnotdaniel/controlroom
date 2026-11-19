@@ -15,7 +15,7 @@ internal sealed partial record UpdateResult(string Run, string Result, string Ve
     /// <summary>The fixed failure codes the updater writes.</summary>
     public static readonly IReadOnlySet<string> Reasons = new HashSet<string>(StringComparer.Ordinal)
     {
-        "check", "no_answer", "swap", "rollback_failed",
+        "check", "no_answer", "swap", "bootstrap_failed", "rollback_failed",
     };
 
     /// <summary>True for a run id like <c>20261118T201500Z</c>.</summary>
