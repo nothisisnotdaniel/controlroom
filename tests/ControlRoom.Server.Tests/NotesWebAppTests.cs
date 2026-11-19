@@ -40,6 +40,9 @@ public sealed class NotesWebAppTests
         Assert.Contains("showEditNotice(ChangeErrors.notEditable, true);", note, StringComparison.Ordinal);
         Assert.Contains("showEditNotice(ChangeErrors.unreachable, true);", note, StringComparison.Ordinal);
         Assert.Contains("save.disabled = true;", note, StringComparison.Ordinal);
+        Assert.Contains("const blank = () => area.value.trim() === \"\";", note, StringComparison.Ordinal);
+        Assert.Contains("save.disabled = blank();", note, StringComparison.Ordinal);
+        Assert.Contains("if (changeBusy || blank()) {", note, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -403,11 +403,17 @@ function storyNoteButton(target, data, reload) {
       form.replaceWith(shown);
       showStoryButtons(true);
     });
+    // An empty note would only be refused, so Save waits for some text.
+    const blank = () => area.value.trim() === "";
+    save.disabled = true;
+    area.addEventListener("input", () => {
+      save.disabled = blank();
+    });
     actions.append(save, cancel);
     form.append(labelled(EditTexts.noteLabel, area), hint, actions);
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      if (changeBusy) {
+      if (changeBusy || blank()) {
         return;
       }
       save.disabled = true;
@@ -419,7 +425,7 @@ function storyNoteButton(target, data, reload) {
         storyVersion: storyVersion,
         note: area.value,
       });
-      save.disabled = false;
+      save.disabled = blank();
       if (ok) {
         reload();
       }
