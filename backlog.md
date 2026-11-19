@@ -97,3 +97,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#87](backlog/087-cap-the-git-output-the-server.md) Cap the git output the server reads
 - [?] [#88](backlog/088-one-doctor-check-at-a-time.md) One doctor check at a time
 - [?] [#89](backlog/089-browser-check-of-the-health-view.md) Browser check of the Health view
+- [?] [#90](backlog/090-separate-the-parts-of-the-project.md) Separate the parts of the project status line
+- [?] [#91](backlog/091-tell-the-user-the-ci-link.md) Tell the user the CI link opens a new tab
+- [?] [#92](backlog/092-don-t-follow-a-symlinked-git.md) Don't follow a symlinked .git in ProjectGit
+- [?] [#93](backlog/093-browser-check-of-the-backlogs-status.md) Browser check of the Backlogs status line
