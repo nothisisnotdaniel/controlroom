@@ -219,4 +219,86 @@ public sealed class HttpSafetyTests
             new[] { "text/javascript", "application/javascript" });
         Assert.True(response.Headers.CacheControl?.NoCache);
     }
+
+    private const string JobActBody = "{\"id\":\"1-a\",\"action\":\"approve\",\"round\":1}";
+
+    [Theory]
+    [InlineData("POST", "/API/job/act")]
+    [InlineData("POST", "/api/job/act/")]
+    [InlineData("POST", "/api/job/acts")]
+    [InlineData("POST", "/api/job")]
+    [InlineData("POST", "/act.js")]
+    [InlineData("PUT", "/api/job/act")]
+    [InlineData("PATCH", "/api/job/act")]
+    [InlineData("DELETE", "/api/job/act")]
+    public async Task Post_IsAcceptedOnlyOnTheExactJobActRoute(string method, string path)
+    {
+        using TempFactoryRoot root = new();
+        root.AddJob("1-a", "{\"stage\":\"needs-human\",\"round\":1}");
+        IReadOnlyList<string> before = root.Snapshot();
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+        using HttpRequestMessage request = new(new HttpMethod(method), path)
+        {
+            Content = new StringContent(JobActBody, System.Text.Encoding.UTF8, "application/json"),
+        };
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
+        Assert.Equal(before, root.Snapshot());
+    }
+
+    [Theory]
+    [InlineData("GET")]
+    [InlineData("HEAD")]
+    public async Task GetOnTheJobActRoute_IsNotAWrite(string method)
+    {
+        using TempFactoryRoot root = new();
+        root.AddJob("1-a", "{\"stage\":\"needs-human\",\"round\":1}");
+        IReadOnlyList<string> before = root.Snapshot();
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+        using HttpRequestMessage request = new(new HttpMethod(method), "/api/job/act?id=1-a&action=approve&round=1");
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        Assert.Contains(response.StatusCode, new[] { HttpStatusCode.MethodNotAllowed, HttpStatusCode.NotFound });
+        Assert.Equal(before, root.Snapshot());
+    }
+
+    [Fact]
+    public async Task PostToTheJobActRoute_NeedsTheTokenAndAnAllowedHost()
+    {
+        using TempFactoryRoot root = new();
+        root.AddJob("1-a", "{\"stage\":\"needs-human\",\"round\":1}");
+        IReadOnlyList<string> before = root.Snapshot();
+        using ServerFactory factory = new(root.Path);
+        using HttpClient anonymous = factory.CreateClient();
+        using HttpClient client = factory.CreateTokenClient();
+        using HttpRequestMessage badHost = new(HttpMethod.Post, "/api/job/act")
+        {
+            Content = new StringContent(JobActBody, System.Text.Encoding.UTF8, "application/json"),
+        };
+        badHost.Headers.Host = "evil.example:8100";
+
+        using HttpResponseMessage refused = await anonymous.PostAsync(
+            "/api/job/act", new StringContent(JobActBody, System.Text.Encoding.UTF8, "application/json"));
+        using HttpResponseMessage misdirected = await client.SendAsync(badHost);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, refused.StatusCode);
+        Assert.True(refused.Headers.CacheControl?.NoStore);
+        Assert.Equal(HttpStatusCode.MisdirectedRequest, misdirected.StatusCode);
+        Assert.Equal(before, root.Snapshot());
+
+        using HttpResponseMessage accepted = await client.PostAsync(
+            "/api/job/act", new StringContent(JobActBody, System.Text.Encoding.UTF8, "application/json"));
+
+        Assert.Equal(HttpStatusCode.OK, accepted.StatusCode);
+        Assert.True(accepted.Headers.CacheControl?.NoStore);
+        Assert.Equal(["1-a/human.json", "1-a/state.json"],
+            Directory.GetFiles(root.JobsPath, "*", SearchOption.AllDirectories)
+                .Select(file => Path.GetRelativePath(root.JobsPath, file).Replace('\\', '/'))
+                .Order(StringComparer.Ordinal));
+    }
 }

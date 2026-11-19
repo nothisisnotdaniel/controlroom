@@ -37,7 +37,7 @@ public sealed class JobApiTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.True(response.Headers.CacheControl?.NoStore);
         using JsonDocument json = JsonDocument.Parse(body);
-        Assert.Equal(["job", "records"], json.RootElement.EnumerateObject().Select(property => property.Name));
+        Assert.Equal(["job", "records", "request"], json.RootElement.EnumerateObject().Select(property => property.Name));
         Assert.Equal(Id, json.RootElement.GetProperty("job").GetProperty("id").GetString());
         JsonElement[] records = json.RootElement.GetProperty("records").EnumerateArray().ToArray();
         Assert.Equal(
@@ -296,5 +296,100 @@ public sealed class JobApiTests
         Assert.Equal(HttpStatusCode.OK, get.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
         Assert.Equal(before, root.Snapshot());
+    }
+
+    private const string ApproveRequest =
+        "{\"action\":\"approve\",\"round\":2,\"requested\":\"2026-03-01T09:30:00Z\"}\n";
+
+    [Fact]
+    public async Task Job_RequestIsNullWithoutAFile()
+    {
+        using TempFactoryRoot root = new();
+        root.AddJob(Id, JobSamples.State("Alpha", "needs-human", 2));
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+
+        using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/job?id=" + Id));
+
+        Assert.Equal(JsonValueKind.Null, json.RootElement.GetProperty("request").ValueKind);
+        Assert.Equal(JsonValueKind.Null, json.RootElement.GetProperty("job").GetProperty("request").ValueKind);
+    }
+
+    [Fact]
+    public async Task Job_RequestIsTheParsedFile()
+    {
+        using TempFactoryRoot root = new();
+        root.AddJob(Id, JobSamples.State("Alpha", "needs-human", 2));
+        root.AddRecord(Id, "human.json",
+            "{\"action\":\"rework\",\"round\":2,\"note\":\"Smaller <b>please</b>\",\"requested\":\"2026-03-01T09:30:00Z\"}\n");
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+
+        using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/job?id=" + Id));
+        JsonElement request = json.RootElement.GetProperty("request");
+
+        Assert.Equal(["action", "round", "note", "requested"], request.EnumerateObject().Select(property => property.Name));
+        Assert.Equal("rework", request.GetProperty("action").GetString());
+        Assert.Equal(2, request.GetProperty("round").GetInt32());
+        Assert.Equal("Smaller <b>please</b>", request.GetProperty("note").GetString());
+        Assert.Equal("2026-03-01T09:30:00Z", request.GetProperty("requested").GetString());
+        Assert.Equal("rework", json.RootElement.GetProperty("job").GetProperty("request").GetString());
+    }
+
+    [Fact]
+    public async Task Job_ApproveRequestHasNoNote()
+    {
+        using TempFactoryRoot root = new();
+        root.AddJob(Id, JobSamples.State("Alpha", "needs-human", 2));
+        root.AddRecord(Id, "human.json", ApproveRequest);
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+
+        using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/job?id=" + Id));
+
+        Assert.Equal(["action", "round", "requested"],
+            json.RootElement.GetProperty("request").EnumerateObject().Select(property => property.Name));
+    }
+
+    [Theory]
+    [InlineData("bad")]
+    [InlineData("big")]
+    [InlineData("link")]
+    [InlineData("dangling")]
+    [InlineData("folder")]
+    public async Task Job_RequestIsUnreadableForABadSymlinkedOrOversizedFile(string kind)
+    {
+        using TempFactoryRoot root = new();
+        string folder = root.AddJob(Id, JobSamples.State("Alpha", "needs-human", 2));
+        string file = Path.Combine(folder, "human.json");
+        string target = Path.Combine(root.Path, ".outside", "target.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        switch (kind)
+        {
+            case "bad":
+                File.WriteAllText(file, "{\"action\":\"approve\"}\n");
+                break;
+            case "big":
+                File.WriteAllText(file, ApproveRequest.TrimEnd('\n') + new string(' ', 5000));
+                break;
+            case "link":
+                File.WriteAllText(target, ApproveRequest);
+                File.CreateSymbolicLink(file, target);
+                break;
+            case "dangling":
+                File.CreateSymbolicLink(file, target);
+                break;
+            default:
+                Directory.CreateDirectory(file);
+                break;
+        }
+
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+
+        using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/job?id=" + Id));
+
+        Assert.Equal("{\"action\":\"unreadable\"}", json.RootElement.GetProperty("request").GetRawText());
+        Assert.Equal("unreadable", json.RootElement.GetProperty("job").GetProperty("request").GetString());
     }
 }

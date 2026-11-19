@@ -7,11 +7,12 @@ namespace ControlRoom.Server;
 internal sealed record JobRecord(string Name, string Label, bool Readable, IReadOnlyList<StoryBlock> Blocks);
 
 /// <summary>The <c>GET /api/job</c> response.</summary>
-internal sealed record JobResponse(JobSummary Job, IReadOnlyList<JobRecord> Records);
+internal sealed record JobResponse(JobSummary Job, IReadOnlyList<JobRecord> Records, JobRequestView? Request);
 
 /// <summary><c>GET /api/job?id=&lt;id&gt;</c>: one job and its Markdown records. The id is matched exactly
 /// (ordinal) against the listed job folders and never joined into a path; record names come only from a fixed
-/// list. Every refusal is the same fixed 404.</summary>
+/// list. <c>request</c> is the job's <c>human.json</c> (<see cref="JobAction.Read"/>): <c>null</c>, the parsed
+/// request or <c>{"action":"unreadable"}</c>. Every refusal is the same fixed 404.</summary>
 internal static class JobEndpoint
 {
     public const string Route = "/api/job";
@@ -74,7 +75,7 @@ internal static class JobEndpoint
             return null;
         }
 
-        return new JobResponse(job, Records(folder, job.Round ?? 0));
+        return new JobResponse(JobAction.WithRequest(job, folder), Records(folder, job.Round ?? 0), JobAction.Read(folder));
     }
 
     /// <summary>The records that exist, in the fixed order: leading files, then each round's reviews, then

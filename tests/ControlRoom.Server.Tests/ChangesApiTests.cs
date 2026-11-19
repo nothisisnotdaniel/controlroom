@@ -396,4 +396,63 @@ public sealed partial class ChangesApiTests
     [GeneratedRegex(
         "\\A\\{\"jobs\":\"[0-9a-f]{64}\",\"projects\":\\{(\"[^\"]+\":\\{\"backlog\":\"[0-9a-f]{64}\",\"stories\":\"[0-9a-f]{64}\"\\}(,(?=\"))?)*\\}\\}\\z")]
     private static partial Regex Shape();
+
+    [Fact]
+    public void Jobs_ChangesWhenARequestFileIsCreatedChangedOrDeleted()
+    {
+        using TempFactoryRoot root = new();
+        string folder = root.AddJob("1-first", State);
+        string file = Path.Combine(folder, "human.json");
+        string before = ChangeFingerprint.Jobs(root.Path);
+
+        File.WriteAllText(file, "{\"action\":\"approve\",\"round\":1,\"requested\":\"2026-03-01T09:30:00Z\"}\n");
+        string created = ChangeFingerprint.Jobs(root.Path);
+        File.WriteAllText(file, "{\"action\":\"approve\",\"round\":2,\"requested\":\"2026-03-01T09:30:00Z\"}\n");
+        File.SetLastWriteTimeUtc(file, Later);
+        string changed = ChangeFingerprint.Jobs(root.Path);
+        File.Delete(file);
+        string deleted = ChangeFingerprint.Jobs(root.Path);
+
+        Assert.NotEqual(before, created);
+        Assert.NotEqual(created, changed);
+        Assert.NotEqual(changed, deleted);
+        Assert.Equal(before, deleted);
+    }
+
+    [Fact]
+    public void Jobs_ASymlinkedRequestFileAddsOnlyTheLinkMarker()
+    {
+        using TempFactoryRoot root = new();
+        string folder = root.AddJob("1-first", State);
+        string outside = Path.Combine(root.Path, ".outside");
+        Directory.CreateDirectory(outside);
+        string target = Path.Combine(outside, "human.json");
+        File.WriteAllText(target, "x");
+        string before = ChangeFingerprint.Jobs(root.Path);
+        File.CreateSymbolicLink(Path.Combine(folder, "human.json"), target);
+        string linked = ChangeFingerprint.Jobs(root.Path);
+
+        File.WriteAllText(target, "longer text");
+        File.SetLastWriteTimeUtc(target, Later);
+
+        Assert.NotEqual(before, linked);
+        Assert.Equal(linked, ChangeFingerprint.Jobs(root.Path));
+    }
+
+    [Fact]
+    public async Task Changes_JobsValueChangesWhenTheServerWritesARequest()
+    {
+        using TempFactoryRoot root = new();
+        root.AddJob("1-first", "{\"project\":\"Alpha\",\"stage\":\"needs-human\",\"round\":1}");
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+        using JsonDocument before = JsonDocument.Parse(await client.GetStringAsync("/api/changes"));
+
+        using HttpResponseMessage posted = await client.PostAsync("/api/job/act", new StringContent(
+            "{\"id\":\"1-first\",\"action\":\"approve\",\"round\":1}", System.Text.Encoding.UTF8, "application/json"));
+        using JsonDocument after = JsonDocument.Parse(await client.GetStringAsync("/api/changes"));
+
+        Assert.Equal(HttpStatusCode.OK, posted.StatusCode);
+        Assert.NotEqual(before.RootElement.GetProperty("jobs").GetString(), after.RootElement.GetProperty("jobs").GetString());
+    }
 }

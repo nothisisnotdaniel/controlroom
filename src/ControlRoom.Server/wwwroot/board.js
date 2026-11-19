@@ -35,6 +35,8 @@ const BoardTexts = {
   jobRound: " · round ",
   specCheck: "spec check",
   ci: "CI ",
+  approveSent: "Approve sent",
+  reworkSent: "Rework sent",
 };
 
 const AutoUpdateRoute = "/api/update/settings";
@@ -75,6 +77,8 @@ let openJobId = null;
 let openJobEntry = null;
 let openJobRecord = null;
 let jobRequest = 0;
+// Set when a live refresh of the job page was held back because the decision section was in use (act.js).
+let jobRefreshHeld = false;
 
 function readSavedProject() {
   try {
@@ -221,6 +225,10 @@ function renderCard(job) {
   }
   card.appendChild(head);
   card.appendChild(element("span", "card-title", asText(job.title) || id));
+  const sent = requestChipText(job);
+  if (sent) {
+    card.appendChild(element("span", "chip chip-sent card-request", sent));
+  }
 
   const rounds = reviewRounds(job, false);
   if (rounds.childElementCount > 0) {
@@ -249,6 +257,20 @@ function renderCard(job) {
   foot.appendChild(element("span", "card-facts", facts.join(" · ")));
   card.appendChild(foot);
   return card;
+}
+
+// The board card's chip for a request waiting for the next /factory session (act.js writes it).
+function requestChipText(job) {
+  if (job.stage !== "needs-human") {
+    return "";
+  }
+  if (job.request === "approve") {
+    return BoardTexts.approveSent;
+  }
+  if (job.request === "rework") {
+    return BoardTexts.reworkSent;
+  }
+  return "";
 }
 
 function renderTask(task) {
@@ -433,6 +455,24 @@ function refreshOpenJob() {
   }
   const entry = boardJobs.find((job) => job.id === openJobId);
   if (entry && openJobEntry !== null && JSON.stringify(entry) !== openJobEntry) {
+    if (jobDecisionHeld()) {
+      jobRefreshHeld = true;
+      return;
+    }
+    loadJob(openJobId, true);
+  }
+}
+
+// True while the decision section (act.js) has a note typed, the note box focused or a request in flight; a live
+// refresh never rebuilds the page then.
+function jobDecisionHeld() {
+  return typeof jobDecisionBusy === "function" && jobDecisionBusy();
+}
+
+// Runs a live refresh that was held back, once the decision section is no longer in use.
+function releaseHeldJobRefresh() {
+  if (jobRefreshHeld && openJobId !== null && !jobDecisionHeld()) {
+    jobRefreshHeld = false;
     loadJob(openJobId, true);
   }
 }
@@ -659,6 +699,7 @@ function leaveJob() {
   openJobId = null;
   openJobEntry = null;
   openJobRecord = null;
+  jobRefreshHeld = false;
   document.getElementById("job").replaceChildren();
 }
 
@@ -805,6 +846,11 @@ function renderJobPage(data) {
   if (state.childElementCount > 0) {
     article.appendChild(state);
   }
+  // The "Your decision" section (act.js), only for a needs-human job.
+  const decision = typeof renderJobDecision === "function" ? renderJobDecision(data) : null;
+  if (decision) {
+    article.appendChild(decision);
+  }
 
   const panel = element("div", "record-panel");
   panel.id = "record-panel";
@@ -868,6 +914,11 @@ async function loadJob(id, refresh) {
   if (request !== jobRequest) {
     return;
   }
+  if (refresh && jobDecisionHeld()) {
+    jobRefreshHeld = true;
+    return;
+  }
+  jobRefreshHeld = false;
   openJobEntry = JSON.stringify(data && data.job);
   const scroll = window.scrollY;
   const title = renderJobPage(data);

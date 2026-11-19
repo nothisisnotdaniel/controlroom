@@ -8,7 +8,7 @@ public sealed class BoardApiTests
     private static readonly string[] JobFields =
     [
         "id", "project", "title", "branch", "stage", "round", "mode", "path", "risk", "reviews", "pastRounds",
-        "specReview", "specRevised", "decision", "note", "ciStatus", "tokens",
+        "specReview", "specRevised", "decision", "note", "ciStatus", "tokens", "request",
     ];
 
     [Fact]
@@ -208,5 +208,38 @@ public sealed class BoardApiTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(HttpStatusCode.OK, get.StatusCode);
         Assert.Equal(before, root.Snapshot());
+    }
+
+    [Fact]
+    public async Task Board_GivesNeedsHumanJobsTheirRequestActionAndNullForEveryOtherStage()
+    {
+        using TempFactoryRoot root = new();
+        const string Approve = "{\"action\":\"approve\",\"round\":1,\"requested\":\"2026-03-01T09:30:00Z\"}\n";
+        root.AddJob("1-approve", JobSamples.State("Alpha", "needs-human", 1));
+        root.AddRecord("1-approve", "human.json", Approve);
+        root.AddJob("2-rework", JobSamples.State("Alpha", "needs-human", 1));
+        root.AddRecord("2-rework", "human.json",
+            "{\"action\":\"rework\",\"round\":1,\"note\":\"Again\",\"requested\":\"2026-03-01T09:30:00Z\"}\n");
+        root.AddJob("3-none", JobSamples.State("Alpha", "needs-human", 1));
+        root.AddJob("4-bad", JobSamples.State("Alpha", "needs-human", 1));
+        root.AddRecord("4-bad", "human.json", "nope");
+        root.AddJob("5-review", JobSamples.State("Alpha", "review", 1));
+        root.AddRecord("5-review", "human.json", Approve);
+        root.AddJob("6-done", JobSamples.State("Alpha", "done", 1));
+        root.AddRecord("6-done", "human.json", Approve);
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+
+        using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/board"));
+        Dictionary<string, JsonElement> jobs = json.RootElement.GetProperty("jobs").EnumerateArray()
+            .ToDictionary(job => job.GetProperty("id").GetString()!, job => job.GetProperty("request"));
+
+        Assert.Equal("approve", jobs["1-approve"].GetString());
+        Assert.Equal("rework", jobs["2-rework"].GetString());
+        Assert.Equal(JsonValueKind.Null, jobs["3-none"].ValueKind);
+        Assert.Equal("unreadable", jobs["4-bad"].GetString());
+        Assert.Equal(JsonValueKind.Null, jobs["5-review"].ValueKind);
+        Assert.Equal(JsonValueKind.Null, jobs["6-done"].ValueKind);
+        Assert.DoesNotContain("Again", json.RootElement.GetRawText(), StringComparison.Ordinal);
     }
 }

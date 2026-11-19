@@ -6,7 +6,8 @@ internal sealed record BoardTask(string Project, int? Number, string Title, stri
 /// <summary>The <c>GET /api/board</c> response.</summary>
 internal sealed record BoardResponse(IReadOnlyList<JobSummary> Jobs, IReadOnlyList<BoardTask> Tasks);
 
-/// <summary><c>GET /api/board</c>: every job (from <see cref="JobReader"/>) and the <c>[h]</c> lines of every
+/// <summary><c>GET /api/board</c>: every job (from <see cref="JobReader"/>, a <c>needs-human</c> job with its
+/// <c>request</c> action) and the <c>[h]</c> lines of every
 /// project's backlog. Read-only, no parameters.</summary>
 internal static class BoardEndpoint
 {
@@ -23,7 +24,17 @@ internal static class BoardEndpoint
 
     public static BoardResponse Build(string factoryRoot)
     {
-        return new BoardResponse(JobReader.ReadAll(factoryRoot), Tasks(factoryRoot));
+        List<JobSummary> jobs = [];
+        foreach (JobFolder folder in JobReader.ListFolders(factoryRoot))
+        {
+            JobSummary? job = JobReader.Read(folder);
+            if (job is not null)
+            {
+                jobs.Add(JobAction.WithRequest(job, folder));
+            }
+        }
+
+        return new BoardResponse(jobs, Tasks(factoryRoot));
     }
 
     /// <summary>The <c>[h]</c> lines of every project, in project order and then file order; an unreadable

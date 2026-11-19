@@ -42,13 +42,14 @@ internal static class ChangeFingerprint
         return new ChangesResponse(Jobs(factoryRoot), projects);
     }
 
-    /// <summary>Over each job folder's <c>state.json</c>, by job id (ordinal).</summary>
+    /// <summary>Over each job folder's <c>state.json</c> and <c>human.json</c>, by job id (ordinal).</summary>
     public static string Jobs(string factoryRoot)
     {
         StringBuilder text = new();
         foreach (JobFolder folder in JobReader.ListFolders(factoryRoot))
         {
             Append(text, folder.Id, NoFollowStat.Of(Path.Combine(folder.Path, JobReader.StateFileName)));
+            Append(text, folder.Id + "/" + JobAction.FileName, NoFollowStat.Of(Path.Combine(folder.Path, JobAction.FileName)));
         }
 
         return Hash(text);
