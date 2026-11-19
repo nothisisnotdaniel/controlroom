@@ -90,3 +90,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#80](backlog/080-ask-for-the-project-before-a.md) Ask for the project before a capture is saved
 - [?] [#81](backlog/081-escape-a-leading-in-captured-text.md) Escape a leading # in captured text
 - [?] [#82](backlog/082-browser-check-of-capture-and-the.md) Browser check of Capture and the two-row nav
+- [?] [#83](backlog/083-browser-check-of-approve-and-rework.md) Browser check of Approve and Rework on an escalated job
