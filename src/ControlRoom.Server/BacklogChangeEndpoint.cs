@@ -55,8 +55,9 @@ internal sealed record ChangePlan(
 
 /// <summary><c>POST /api/backlog/change</c>: one checked change of a project's <c>backlog.md</c> (and its story
 /// files), committed on <c>develop</c> and pushed when there is an <c>origin</c>, or, while a job has the checkout on
-/// another branch, committed on the local <c>backlog</c> branch in the server's <see cref="BacklogWorktree"/>. The project is matched against
-/// <see cref="ProjectFinder"/>; every path comes from the backlog line, never from the request.</summary>
+/// another branch, committed on the local <c>backlog</c> branch in the server's <see cref="BacklogWorktree"/>. The
+/// project is matched against <see cref="ProjectFinder"/>; every path comes from the backlog line, never from the
+/// request.</summary>
 internal static class BacklogChangeEndpoint
 {
     public const string Route = "/api/backlog/change";
@@ -92,7 +93,11 @@ internal static class BacklogChangeEndpoint
     public static void Map(WebApplication app)
     {
         app.MapPost(Route, async (
-            FactoryRoot root, BacklogWriteLock writeLock, BacklogWorktree worktree, TimeProvider time, HttpContext context) =>
+            FactoryRoot root,
+            BacklogWriteLock writeLock,
+            BacklogWorktree worktree,
+            TimeProvider time,
+            HttpContext context) =>
         {
             context.Response.Headers.CacheControl = "no-store";
             if (!IsJson(context.Request.ContentType))

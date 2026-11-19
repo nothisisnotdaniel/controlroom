@@ -35,7 +35,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `rev-parse --verify --quiet refs/heads/backlog`, `branch backlog refs/heads/develop`, `worktree prune`,
     `worktree add -q <path> backlog`, `worktree list --porcelain`, `rev-list --count refs/heads/develop..refs/heads/backlog`
     in the project repo, and `branch --show-current`, `merge -q --ff-only refs/heads/develop` (only when `backlog` has
-    nothing develop lacks), `status`, `add` and `commit` in the worktree; it never pushes `backlog`. The backlog reads
+    nothing develop lacks), `status`, `add` and `commit` in the worktree; it never pushes `backlog`. The project repo's own hooks run there as
+    they do for a commit on develop (`worktree add`: post-checkout, `merge`: post-merge). The backlog reads
     (`BacklogSource`) run `branch --show-current` and that `rev-list` per project.
   - Paths come only from the discovered project list and the jobs folder, never from a request as a path;
     names from a request are matched against that list.

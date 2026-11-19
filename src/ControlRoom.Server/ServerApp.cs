@@ -139,8 +139,9 @@ internal static class ServerApp
         return app;
     }
 
-    /// <summary>The push store and the backlog worktrees folder next to the token file, the crypto (clock from the container, subject from
-    /// <c>PushSubject</c>), the real no-redirect transport, the watcher and the update check.</summary>
+    /// <summary>The push store and the backlog worktrees folder next to the token file, the crypto (clock from the
+    /// container, subject from <c>PushSubject</c>), the real no-redirect transport, the watcher and the update
+    /// check.</summary>
     private static void AddPush(WebApplicationBuilder builder, string tokenPath)
     {
         string folder = Path.GetDirectoryName(Path.GetFullPath(tokenPath))!;
