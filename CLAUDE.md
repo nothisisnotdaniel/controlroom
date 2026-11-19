@@ -89,8 +89,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   `release vX.Y.Z` (`.github/scripts/release-version.sh` checks the title and existing tags, and refuses
   `-develop`) and for every push to `develop` that changes more than `backlog.md` and `backlog/**` (a prerelease
   `X.Y.(Z+1)-develop.<run number>` from `.github/scripts/develop-version.sh` on `GITHUB_SHA`, checked against
-  `refs/heads/develop` and `HEAD`); the version and commit reach later steps as `RELEASE_VERSION` and `RELEASE_TARGET`, never
-  `VERSION`, so MSBuild can't read them as `$(Version)`. On a `macos-15` (arm64)
+  `refs/heads/develop` and `HEAD`); the version and commit reach later steps as `RELEASE_VERSION` and
+  `RELEASE_TARGET`, never `VERSION`, so MSBuild can't read them as `$(Version)`. On a `macos-15` (arm64)
   runner it re-checks the PR, runs `dotnet test -c Release`, publishes `-r osx-arm64 --self-contained
   -p:Version=X.Y.Z`, smoke-checks `ControlRoom.Server version`, packs `controlroom-X.Y.Z-osx-arm64.tar.gz` (one top
   folder), writes `SHA256SUMS`, attests build provenance and runs `gh release create vX.Y.Z` on the merge commit or pushed commit
