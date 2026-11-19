@@ -2,9 +2,9 @@
 
 // Live updates: one timer asks /api/changes (metadata fingerprints) every PollInterval while the page is visible,
 // and only what changed is fetched again: the board (pollBoard in board.js), the backlog sections of changed
-// projects and the open story (app.js). A failed check shows one fixed connection notice. Loaded after edit.js and
-// before app.js; the functions of the other scripts are only called at run time. Fingerprints are compared, never
-// shown; only fixed texts are rendered, with textContent.
+// projects, the open story (app.js) and the inbox with its nav count (inbox.js). A failed check shows one fixed
+// connection notice. Loaded after inbox.js and before app.js; the functions of the other scripts are only called at
+// run time. Fingerprints are compared, never shown; only fixed texts are rendered, with textContent.
 
 const LiveTexts = {
   lost: "Connection lost. Reconnecting…",
@@ -22,6 +22,8 @@ let liveLast = null;
 // after a lost connection, the open job page.
 let boardStale = false;
 let jobStale = false;
+// Any project's backlog or stories changed: the inbox count (and the list, while shown) is fetched again.
+let inboxStale = false;
 const staleBacklogs = new Set();
 const staleStories = new Set();
 let backlogsRefreshing = false;
@@ -80,6 +82,7 @@ function noteChanges(next, recovered) {
   if (recovered) {
     boardStale = true;
     jobStale = true;
+    inboxStale = true;
     for (const name of names) {
       staleBacklogs.add(name);
       staleStories.add(name);
@@ -98,10 +101,12 @@ function noteChanges(next, recovered) {
     const backlogChanged = !before || !after || before.backlog !== after.backlog;
     if (backlogChanged) {
       boardStale = true;
+      inboxStale = true;
       staleBacklogs.add(name);
       staleStories.add(name);
     } else if (before.stories !== after.stories) {
       staleStories.add(name);
+      inboxStale = true;
     }
   }
 }
@@ -150,6 +155,19 @@ async function refreshShownViews() {
   jobStale = false;
   await refreshStaleBacklogs();
   await refreshStaleStory();
+  await refreshStaleInbox();
+}
+
+// The count follows every change; loadInbox leaves the list alone while a change is sent (changeBusy) and
+// reports it, so it is tried again on the next check. A Drop confirm blocks the page, so it never overlaps a check.
+async function refreshStaleInbox() {
+  if (!inboxStale) {
+    return;
+  }
+  inboxStale = false;
+  if (!(await loadInbox())) {
+    inboxStale = true;
+  }
 }
 
 // One check: only while visible, with no token view and no earlier check pending. A 401 shows the token view

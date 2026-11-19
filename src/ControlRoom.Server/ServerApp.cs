@@ -120,6 +120,7 @@ internal static class ServerApp
         app.UseStaticFiles(CreateStaticFileOptions());
         BacklogsEndpoint.Map(app);
         StoryEndpoint.Map(app);
+        InboxEndpoint.Map(app);
         BoardEndpoint.Map(app);
         ChangesEndpoint.Map(app);
         JobEndpoint.Map(app);
