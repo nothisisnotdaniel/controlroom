@@ -27,7 +27,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#16](backlog/016-live-updates.md) Live updates → 249-live-board-updates
 - [x] [#17](backlog/017-approval-inbox.md) Approval inbox (after: #4) → 251-approval-inbox
 - [x] [#27](backlog/027-my-tasks.md) My tasks (after: #4; #14) → 254-my-tasks
-- [ ] [#18](backlog/018-search-and-filter.md) Search and filter
+- [x] [#18](backlog/018-search-and-filter.md) Search and filter → 255-search-and-filter
 - [ ] [#19](backlog/019-next-and-blocked.md) Next and blocked (after: #14)
 - [ ] [#20](backlog/020-notes-on-a-story.md) Notes on a story (after: #3)
 - [ ] [#21](backlog/021-quick-capture.md) Quick capture (after: #3)
