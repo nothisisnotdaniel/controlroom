@@ -8,7 +8,7 @@ namespace ControlRoom.Server.Tests;
 public sealed partial class HistoryWebAppTests
 {
     [Fact]
-    public async Task IndexHtml_HasTheHistoryLinkLastAfterCaptureAndTheHistoryView()
+    public async Task IndexHtml_HasTheHistoryLinkAfterCaptureAndTheHistoryView()
     {
         string html = await Fetch("/index.html");
 
@@ -16,18 +16,17 @@ public sealed partial class HistoryWebAppTests
         int history = html.IndexOf("<a href=\"#history\" data-view=\"history\">History</a>", StringComparison.Ordinal);
         int navEnd = html.IndexOf("</nav>", StringComparison.Ordinal);
         Assert.True(capture >= 0 && history > capture && history < navEnd);
-        Assert.Equal("\n    ", html[(history + "<a href=\"#history\" data-view=\"history\">History</a>".Length)..navEnd]);
         Assert.Contains("<main id=\"history\" hidden></main>", html, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task IndexHtml_LoadsHistoryJsBetweenCaptureJsAndLiveJs_TwelveScripts()
+    public async Task IndexHtml_LoadsHistoryJsBetweenCaptureJsAndDoctorJs_ThirteenScripts()
     {
         string html = await Fetch("/index.html");
         string[] scripts =
         [
             "/token.js", "/board.js", "/act.js", "/push.js", "/edit.js", "/inbox.js", "/tasks.js", "/search.js",
-            "/capture.js", "/history.js", "/live.js", "/app.js",
+            "/capture.js", "/history.js", "/doctor.js", "/live.js", "/app.js",
         ];
 
         int[] positions = scripts
@@ -35,10 +34,10 @@ public sealed partial class HistoryWebAppTests
             .ToArray();
         Assert.All(positions, position => Assert.True(position >= 0));
         Assert.Equal(positions.OrderBy(position => position), positions);
-        Assert.Equal(12, ScriptTag().Matches(html).Count);
+        Assert.Equal(13, ScriptTag().Matches(html).Count);
         Assert.Contains(
             "<script src=\"/capture.js\" defer></script>\n  <script src=\"/history.js\" defer></script>\n"
-            + "  <script src=\"/live.js\" defer></script>", html, StringComparison.Ordinal);
+            + "  <script src=\"/doctor.js\" defer></script>", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -48,9 +47,9 @@ public sealed partial class HistoryWebAppTests
         string js = await Fetch("/history.js");
 
         Assert.Contains(
-            "const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"search\", \"capture\", \"history\", \"job\", \"story\"];",
+            "const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"search\", \"capture\", \"history\", \"doctor\", \"job\", \"story\"];",
             app, StringComparison.Ordinal);
-        Assert.Contains("  capture: \"Capture\", history: \"History\" };", app, StringComparison.Ordinal);
+        Assert.Contains("  capture: \"Capture\", history: \"History\", doctor: \"Health\" };", app, StringComparison.Ordinal);
         Assert.Contains("  if (hash === HistoryRoute) {\n    return \"history\";\n  }", app, StringComparison.Ordinal);
         Assert.Contains("  if (next === \"history\") {\n    showHistory();\n    return;\n  }", app, StringComparison.Ordinal);
         Assert.Contains("const HistoryRoute = \"#history\";", js, StringComparison.Ordinal);
@@ -205,11 +204,11 @@ public sealed partial class HistoryWebAppTests
     }
 
     [Fact]
-    public async Task AppCss_FitsSevenNavLinksAndStylesTheView()
+    public async Task AppCss_FitsEightNavLinksAndStylesTheView()
     {
         string css = await Fetch("/app.css");
 
-        Assert.Contains("/* Seven nav links fit in two rows (four, then three) at iPhone width (375 px). */", css,
+        Assert.Contains("/* Eight nav links fit in two rows of four at iPhone width (375 px). */", css,
             StringComparison.Ordinal);
         Assert.Contains("    flex: 1 1 calc((100% - 12px) / 4);\n", css, StringComparison.Ordinal);
         foreach (string rule in new[]
@@ -231,12 +230,12 @@ public sealed partial class HistoryWebAppTests
     }
 
     [Fact]
-    public async Task ServiceWorker_CachesHistoryJsWithVersion14()
+    public async Task ServiceWorker_CachesHistoryJsWithVersion15()
     {
         string js = await Fetch("/sw.js");
 
-        Assert.Contains("const CacheVersion = \"v14\";", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/capture.js\",\n  \"/history.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v15\";", js, StringComparison.Ordinal);
+        Assert.Contains("  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/history", js, StringComparison.Ordinal);
     }
 

@@ -3,10 +3,10 @@
 // Live updates: one timer asks /api/changes (metadata fingerprints) every PollInterval while the page is visible,
 // and only what changed is fetched again: the board (pollBoard in board.js), the backlog sections of changed
 // projects, the open story (app.js), the inbox with its nav count (inbox.js), the tasks with theirs (tasks.js), the
-// current search (search.js) and the history (history.js) while it is shown. A failed check shows one fixed
-// connection notice. Loaded after history.js and before app.js; the functions of the other scripts are only called
-// at run time. Fingerprints are compared, never shown; only fixed texts are rendered,
-// with textContent.
+// current search (search.js), the history (history.js) and the health view (doctor.js) while shown. A failed check
+// shows one fixed connection notice. Loaded after doctor.js and before app.js; the functions of the other scripts
+// are only called at run time. Fingerprints are compared, never shown; only fixed texts are rendered, with
+// textContent.
 
 const LiveTexts = {
   lost: "Connection lost. Reconnecting…",
@@ -30,6 +30,8 @@ let inboxStale = false;
 let tasksStale = false;
 // The jobs changed: the history (history.js) is fetched again while it is shown; showing it fetches it anyway.
 let historyStale = false;
+// The jobs, a backlog or the story files changed: the health view (doctor.js) is fetched again while it is shown.
+let doctorStale = false;
 // The same for the current search (search.js), re-run while shown and on the next show while hidden.
 let searchChanged = false;
 const staleBacklogs = new Set();
@@ -81,6 +83,24 @@ function readChanges(data) {
   return { jobs: data.jobs, projects: projects };
 }
 
+// True when the jobs, the project list or any project's backlog or story files changed since the previous check (never
+// for the first check, the baseline).
+function doctorInputsChanged(previous, next) {
+  if (previous === null) {
+    return false;
+  }
+  if (previous.jobs !== next.jobs || previous.projects.size !== next.projects.size) {
+    return true;
+  }
+  for (const [name, after] of next.projects) {
+    const before = previous.projects.get(name);
+    if (!before || before.backlog !== after.backlog || before.stories !== after.stories) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // Marks what changed since the last check. The first check is the baseline; after a lost connection everything
 // shown is fetched once.
 function noteChanges(next, recovered) {
@@ -89,6 +109,10 @@ function noteChanges(next, recovered) {
   // The history follows the jobs fingerprint only; after a lost connection it is fetched once as well.
   if (recovered || (previous !== null && previous.jobs !== next.jobs)) {
     historyStale = true;
+  }
+  // The health view follows the jobs, every backlog and the story files; after a lost connection it is fetched once.
+  if (recovered || doctorInputsChanged(previous, next)) {
+    doctorStale = true;
   }
   const names = new Set([...next.projects.keys(), ...(previous ? previous.projects.keys() : [])]);
   if (recovered) {
@@ -175,6 +199,7 @@ async function refreshShownViews() {
   await refreshStaleStory();
   await refreshStaleSearch();
   await refreshStaleHistory();
+  await refreshStaleDoctor();
   await refreshStaleTasks();
   await refreshStaleInbox();
 }
@@ -215,6 +240,21 @@ async function refreshStaleHistory() {
   }
   if (!(await loadHistory())) {
     historyStale = true;
+  }
+}
+
+// A changed jobs, backlog or story fingerprint fetches the health view again while it is shown; while hidden there is
+// nothing to do, as showing it fetches it. A failed fetch is tried again on the next check.
+async function refreshStaleDoctor() {
+  if (!doctorStale) {
+    return;
+  }
+  doctorStale = false;
+  if (document.getElementById("doctor").hidden) {
+    return;
+  }
+  if (!(await loadDoctor())) {
+    doctorStale = true;
   }
 }
 

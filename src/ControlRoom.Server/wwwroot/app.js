@@ -627,9 +627,9 @@ async function refreshStory() {
   return true;
 }
 
-const Views = ["backlogs", "board", "inbox", "tasks", "search", "capture", "history", "job", "story"];
+const Views = ["backlogs", "board", "inbox", "tasks", "search", "capture", "history", "doctor", "job", "story"];
 const ViewTitles = { backlogs: "Backlogs", board: "Jobs", inbox: "Inbox", tasks: "Tasks", search: "Search",
-  capture: "Capture", history: "History" };
+  capture: "Capture", history: "History", doctor: "Health" };
 let currentView = null;
 
 function viewFor(hash) {
@@ -653,6 +653,9 @@ function viewFor(hash) {
   }
   if (hash === HistoryRoute) {
     return "history";
+  }
+  if (hash === DoctorRoute) {
+    return "doctor";
   }
   return hash === BoardRoute ? "board" : "backlogs";
 }
@@ -740,6 +743,10 @@ function route() {
   }
   if (next === "history") {
     showHistory();
+    return;
+  }
+  if (next === "doctor") {
+    showDoctor();
     return;
   }
   window.scrollTo(0, listScroll);
