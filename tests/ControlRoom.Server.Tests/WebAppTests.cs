@@ -17,7 +17,7 @@ public sealed partial class WebAppTests
         Assert.Contains("<meta name=\"color-scheme\" content=\"light dark\">", html, StringComparison.Ordinal);
         Assert.Contains("<script src=\"/app.js\" defer></script>", html, StringComparison.Ordinal);
         Assert.Contains("<link rel=\"stylesheet\" href=\"/app.css\">", html, StringComparison.Ordinal);
-        Assert.Equal(8, ScriptTag().Matches(html).Count);
+        Assert.Equal(9, ScriptTag().Matches(html).Count);
         Assert.DoesNotContain("<style", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("style=", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(" on", AttributeStarts(html), StringComparison.Ordinal);
@@ -295,7 +295,7 @@ public sealed partial class WebAppTests
     {
         string js = await Fetch("/app.js");
 
-        Assert.Contains("const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"job\", \"story\"];", js, StringComparison.Ordinal);
+        Assert.Contains("const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"search\", \"job\", \"story\"];", js, StringComparison.Ordinal);
         Assert.Contains("if (parseStoryHash(hash)) {", js, StringComparison.Ordinal);
         Assert.Contains("if (parseJobHash(hash) !== null) {", js, StringComparison.Ordinal);
         Assert.Contains("return hash === BoardRoute ? \"board\" : \"backlogs\";", js, StringComparison.Ordinal);

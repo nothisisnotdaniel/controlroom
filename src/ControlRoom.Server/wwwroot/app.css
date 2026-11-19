@@ -1237,9 +1237,123 @@ body:has(#edit-notice:not([hidden])) {
   margin: 0 0 12px;
 }
 
-/* Four nav links fit on one row at iPhone width. */
+/* Search: a labelled field and two filters above one card list of results; long titles wrap. */
+.search-form {
+  margin: 0 0 12px;
+}
+
+.search-label {
+  display: block;
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.search-field,
+.search-select {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+  /* 16px or more keeps iOS Safari from zooming in on focus. */
+  font: inherit;
+  font-size: 16px;
+}
+
+.search-filters {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.search-filter {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.search-status {
+  margin: 0 0 8px;
+}
+
+.search-list {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 4px 14px;
+}
+
+.search-item {
+  overflow-wrap: anywhere;
+}
+
+.search-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.search-project {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.search-meta .search-mark {
+  margin: 0;
+}
+
+.search-mark-approval {
+  background: var(--waiting-bg);
+  color: var(--waiting-fg);
+}
+
+.search-mark-task {
+  background: var(--human-bg);
+  color: var(--human);
+}
+
+.search-mark-done {
+  background: var(--pass-bg);
+  color: var(--pass-fg);
+}
+
+.search-head {
+  display: block;
+  font-weight: 700;
+}
+
+.search-found {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+.search-unreadable {
+  margin: 0 0 12px;
+}
+
+/* Five nav links fit on one row at iPhone width (375 px). */
 @media (max-width: 420px) {
+  .nav {
+    gap: 4px;
+    flex-wrap: nowrap;
+  }
+
   .nav a {
-    padding: 8px 12px;
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 8px 5px;
+    font-size: 0.875rem;
+  }
+
+  .nav-count {
+    margin-left: 3px;
+    padding: 0 4px;
   }
 }

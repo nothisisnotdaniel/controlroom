@@ -128,7 +128,12 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     its number, then without, ties by project (ordinal) and line), `TasksEndpoint` (`GET /api/tasks`: every `[h]` line as
     `{project, version, line, number, title, rest, story, after}` split into `ready` and `waiting` by `BacklogWaiting`
     (`after` only the unmet dependencies, `project` always set), plus `unreadable` names, `no-store`; project order, then
-    file order), `JobReader` (`factory/jobs/<id>/state.json` to a typed
+    file order), `SearchEndpoint` (`GET /api/search?q=&mark=&project=`: `{items, total, projects, unreadable}`, items
+    `{project, number, mark, title, rest, story, match}`, `no-store`; `#N`/`Name#N` (name ignoring case), else every
+    word (ordinal, ignore case) in title or rest, else in the story through `StoryReader.Read` (read only for an item that
+    passes the filters and missed on title); `mark` (`open|approval|task|done`) and `project` (exact name) filters; order
+    number, title, story, filter, each by project then file line; at most 100 items; a repeated parameter, unknown mark or
+    project, or `q` over 200 chars gives `400 {"error":"invalid"}`), `JobReader` (`factory/jobs/<id>/state.json` to a typed
     `JobSummary`), `BoardEndpoint` (`GET /api/board`: jobs and `[h]` tasks), `ChangeFingerprint` (SHA-256 fingerprints from `lstat`
     metadata only: `jobs` over each `state.json` of `JobReader.ListFolders`, per project `backlog` over `backlog.md`
     and `stories` over `backlog/*.md`; a symlink adds only a `link` marker, a missing path `missing`; `NoFollowStat`:
@@ -153,14 +158,18 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     pending, and at once on becoming visible; refetches only the board, the changed backlog sections (kept while a form
     is open or focus is inside) and the open story (in place, never while Edit story is open); a failed check shows
     the fixed `Connection lost. Reconnecting…` notice under the header, or in the `board-status` line on the board;
-    script order `token.js`, `board.js`, `push.js`, `edit.js`, `inbox.js`, `tasks.js`, `live.js`, `app.js`; a changed
-    `backlog` or `stories` fingerprint refetches the inbox and the tasks and their counts), `inbox.js` (the `#inbox` view: every `[?]` item with project,
+    script order `token.js`, `board.js`, `push.js`, `edit.js`, `inbox.js`, `tasks.js`, `search.js`, `live.js`, `app.js`; a changed
+    `backlog` or `stories` fingerprint refetches the inbox and the tasks and their counts and re-runs the current search), `inbox.js` (the `#inbox` view: every `[?]` item with project,
     `#N Title`, `Proposed by <job>` link, Approve and Drop through `sendChange` (never rebuilt while `changeBusy`), fixed
     texts; the nav count, hidden at 0 or unknown, fetched once per page load, after a token is saved and after every
     committed change), `tasks.js` (the `#tasks` view: `Ready now` and `Waiting` sections of `[h]` items with project,
     `#N Title` story link, `rest` and `Waits for` links (`Project#N` or `#N`), a Done button on Ready items only
     (confirm, then `action:"done"` through `sendChange`, never rebuilt while `changeBusy`), fixed texts in `TasksTexts`;
-    the nav count of Ready items, hidden at 0 or unknown, fetched as the inbox count), `push.js` (Notifications section on the
+    the nav count of Ready items, hidden at 0 or unknown, fetched as the inbox count), `search.js` (the `#search` view,
+    read-only: the form (field `Search backlogs`, mark and project selects, the project list from the first answer) is
+    built once and kept, so Back finds it as it was; one `/api/search` per change through `authFetch`, older answers
+    dropped by a request counter, nothing sent with an empty field and no filter; only the results are replaced; fixed
+    texts in `SearchTexts`), `push.js` (Notifications section on the
     board: state texts, Turn on (permission only from the tap), done and update switches, Send test, Turn off),
     `sw.js` (service worker: caches only the fixed app shell, never `/api/`; bump its cache version when the
     shell list changes; `push` shows a notification from fixed titles, `notificationclick` opens `#job/<id>`,

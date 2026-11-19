@@ -25,14 +25,14 @@ public sealed partial class InboxWebAppTests
     public async Task IndexHtml_LoadsInboxJsBetweenEditJsAndLiveJs()
     {
         string html = await Fetch("/index.html");
-        string[] scripts = ["/token.js", "/board.js", "/push.js", "/edit.js", "/inbox.js", "/tasks.js", "/live.js", "/app.js"];
+        string[] scripts = ["/token.js", "/board.js", "/push.js", "/edit.js", "/inbox.js", "/tasks.js", "/search.js", "/live.js", "/app.js"];
 
         int[] positions = scripts
             .Select(script => html.IndexOf("<script src=\"" + script + "\" defer></script>", StringComparison.Ordinal))
             .ToArray();
         Assert.All(positions, position => Assert.True(position >= 0));
         Assert.Equal(positions.OrderBy(position => position), positions);
-        Assert.Equal(8, ScriptTag().Matches(html).Count);
+        Assert.Equal(9, ScriptTag().Matches(html).Count);
     }
 
     [Fact]
@@ -41,8 +41,8 @@ public sealed partial class InboxWebAppTests
         string app = await Fetch("/app.js");
         string inbox = await Fetch("/inbox.js");
 
-        Assert.Contains("const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"job\", \"story\"];", app, StringComparison.Ordinal);
-        Assert.Contains("const ViewTitles = { backlogs: \"Backlogs\", board: \"Jobs\", inbox: \"Inbox\", tasks: \"Tasks\" };", app,
+        Assert.Contains("const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"search\", \"job\", \"story\"];", app, StringComparison.Ordinal);
+        Assert.Contains("const ViewTitles = { backlogs: \"Backlogs\", board: \"Jobs\", inbox: \"Inbox\", tasks: \"Tasks\", search: \"Search\" };", app,
             StringComparison.Ordinal);
         Assert.Contains("if (hash === InboxRoute) {\n    return \"inbox\";\n  }", app, StringComparison.Ordinal);
         Assert.Contains("if (next === \"inbox\") {\n    showInbox();\n    return;\n  }", app, StringComparison.Ordinal);
@@ -56,7 +56,7 @@ public sealed partial class InboxWebAppTests
     {
         string js = await Fetch("/sw.js");
 
-        Assert.Contains("const CacheVersion = \"v10\";", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v11\";", js, StringComparison.Ordinal);
         Assert.Contains("  \"/inbox.js\",\n", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/inbox", js, StringComparison.Ordinal);
         Assert.Contains("if (url.pathname.startsWith(\"/api/\") || url.pathname === \"/health\") {\n    return false;", js,
