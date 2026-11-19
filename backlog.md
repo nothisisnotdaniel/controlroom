@@ -77,3 +77,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#66](backlog/066-cheaper-inbox-reads.md) Cheaper inbox reads
 - [?] [#67](backlog/067-retry-button-when-the-inbox-fails.md) Retry button when the inbox fails to load
 - [?] [#68](backlog/068-browser-check-of-the-approval-inbox.md) Browser check of the approval inbox
+- [?] [#70](backlog/070-guard-updatechecker-startasync-after-dispose.md) Guard UpdateChecker.StartAsync after Dispose
