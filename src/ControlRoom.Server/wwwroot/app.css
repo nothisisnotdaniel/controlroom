@@ -80,6 +80,29 @@ body {
   padding-top: max(12px, env(safe-area-inset-top));
 }
 
+/* The connection notice under the header (live.js): one line, fixed text, on every view but the board. */
+.live-notice {
+  max-width: 720px;
+  margin: 0 auto 12px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--error);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+/* Job and story pages have no header: the notice stays clear of the status bar. */
+.top[hidden] + .live-notice {
+  margin-top: max(8px, env(safe-area-inset-top));
+}
+
+/* The token view replaces every other view, the notice too. */
+body:has(#token:not([hidden])) .live-notice {
+  display: none;
+}
+
 h1 {
   font-size: 1.6rem;
   margin: 0 0 12px;

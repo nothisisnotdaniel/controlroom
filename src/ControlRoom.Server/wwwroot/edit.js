@@ -300,6 +300,11 @@ function storyEditButton(target, data, reload) {
       showEditNotice(ChangeErrors.notEditable, true);
       return;
     }
+    // A live refresh (live.js) may have replaced the story while the line was looked up.
+    const shown = document.querySelector("#story .story");
+    if (!shown || document.querySelector("#story .edit-story-form")) {
+      return;
+    }
     const form = element("form", "edit-form edit-story-form");
     form.noValidate = true;
     const area = element("textarea", "edit-input edit-story-text");
@@ -310,7 +315,7 @@ function storyEditButton(target, data, reload) {
     const save = element("button", "edit-button edit-primary", EditTexts.save);
     save.type = "submit";
     const cancel = editButton(EditTexts.cancel, null, () => {
-      form.replaceWith(article);
+      form.replaceWith(shown);
       button.hidden = false;
     });
     actions.append(save, cancel);
@@ -329,7 +334,7 @@ function storyEditButton(target, data, reload) {
         reload();
       }
     });
-    article.replaceWith(form);
+    shown.replaceWith(form);
     button.hidden = true;
     area.focus({ preventScroll: true });
   });

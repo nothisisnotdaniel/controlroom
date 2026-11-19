@@ -121,7 +121,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `<project>/backlog/NNN-slug.md`), `StoryMarkdown` (Markdown to a JSON block tree, no HTML),
     `StoryEndpoint` (`GET /api/story?project=&number=`, with `markdown`
     and `storyVersion`), `JobReader` (`factory/jobs/<id>/state.json` to a typed
-    `JobSummary`), `BoardEndpoint` (`GET /api/board`: jobs and `[h]` tasks), `JobEndpoint` (`GET /api/job?id=`:
+    `JobSummary`), `BoardEndpoint` (`GET /api/board`: jobs and `[h]` tasks), `ChangeFingerprint` (SHA-256 fingerprints from `lstat`
+    metadata only: `jobs` over each `state.json` of `JobReader.ListFolders`, per project `backlog` over `backlog.md`
+    and `stories` over `backlog/*.md`; a symlink adds only a `link` marker, a missing path `missing`; `NoFollowStat`:
+    `lstat`, `O_NOFOLLOW` folder listing and `fstatat` via P/Invoke, never a file opened or a target followed),
+    `ChangesEndpoint` (`GET /api/changes`: `{"jobs":…,"projects":{"<name>":{"backlog":…,"stories":…}}}`, `no-store`), `JobEndpoint` (`GET /api/job?id=`:
     a job and its records from a fixed list), `PushCrypto` (RFC 8291 `aes128gcm`, RFC 8292 VAPID ES256 JWT, P-256
     point check, `Base64Url`), `PrivateFolder` (the `0700` folder next to the token file: no-follow `0600` reads,
     atomic writes, `PrivateFileException`), `PushStore` (`push-keys.json`/`push.json` next to the token file;
@@ -136,8 +140,12 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     once per version)), `UpdateEndpoint` (`GET /api/update`, `POST /api/update/settings`), `UpdateSettingsStore` (`settings.json`),
     `UpdateResult` (`update-result.json` schema and `UpdateResultReader`), `HealthEndpoint` (`GET /health`), `wwwroot/` (`index.html`, `app.css`, `token.js` (stored token under
     `controlroom-token`, `authFetch` for every `/api/` call, the token view), `app.js` (routing, backlogs,
-    story), `edit.js` (per-project edit mode, the Add form, Edit story, fixed texts per error code), `board.js` (jobs board and job page (a read-only state section between the facts and the record tabs: stage and round, review rows per round with visible values, decision chip, CI and note), polls every 5 s while visible; the `ControlRoom <version>`
-    line at the foot of Jobs and the update banner under its heading, each asked once per page load), `push.js` (Notifications section on the
+    story), `edit.js` (per-project edit mode, the Add form, Edit story, fixed texts per error code), `board.js` (jobs board and job page (a read-only state section between the facts and the record tabs: stage and round, review rows per round with visible values, decision chip, CI and note), `pollBoard` fetched by `live.js`; the `ControlRoom <version>`
+    line at the foot of Jobs and the update banner under its heading, each asked once per page load), `live.js` (the one `setInterval`: asks `/api/changes` every 5 s while visible, no token view and nothing
+    pending, and at once on becoming visible; refetches only the board, the changed backlog sections (kept while a form
+    is open or focus is inside) and the open story (in place, never while Edit story is open); a failed check shows
+    the fixed `Connection lost. Reconnecting…` notice under the header, or in the `board-status` line on the board;
+    script order `token.js`, `board.js`, `push.js`, `edit.js`, `live.js`, `app.js`), `push.js` (Notifications section on the
     board: state texts, Turn on (permission only from the tap), done and update switches, Send test, Turn off),
     `sw.js` (service worker: caches only the fixed app shell, never `/api/`; bump its cache version when the
     shell list changes; `push` shows a notification from fixed titles, `notificationclick` opens `#job/<id>`,
