@@ -96,6 +96,7 @@ const UpdateFailedBodies = {
   check: "The download didn't check out. Nothing was changed.",
   no_answer: "The new version didn't start, so the old one is back.",
   swap: "The new version couldn't be put in place, so the old one is back.",
+  bootstrap_failed: "The new version couldn't be started, so the old one is back.",
   rollback_failed: "The old version didn't come back. Check the Mac.",
 };
 const PushFallbackTitle = "Control Room";

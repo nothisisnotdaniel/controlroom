@@ -55,11 +55,14 @@ public sealed class LaunchAgentScriptTests
                 home.ServerNew],
             home.DotnetArguments());
         Assert.Equal(
-            ["bootout gui/" + ScriptHome.UserId() + "/" + Label, "bootstrap gui/" + ScriptHome.UserId() + " " + home.Plist],
+            ["bootout gui/" + ScriptHome.UserId() + "/" + Label, "print gui/" + ScriptHome.UserId() + "/" + Label,
+                "bootstrap gui/" + ScriptHome.UserId() + " " + home.Plist],
             home.LaunchctlCalls());
         Assert.Equal(
-            ["bootout new=yes server=yes plist=no", "bootstrap new=no server=yes plist=yes"],
+            ["bootout new=yes server=yes plist=no", "print new=yes server=yes plist=no",
+                "bootstrap new=no server=yes plist=yes"],
             home.LaunchctlStates());
+        Assert.Empty(home.SleepCalls());
         Assert.True(File.Exists(Path.Combine(home.Server, "ControlRoom.Server.dll")));
         Assert.False(Directory.Exists(Path.Combine(home.Server, "old")));
         Assert.False(Directory.Exists(home.ServerNew));
@@ -261,7 +264,9 @@ public sealed class LaunchAgentScriptTests
         Assert.Equal([home.Plist], Directory.GetFileSystemEntries(Path.GetDirectoryName(home.Plist)!));
         string service = "gui/" + ScriptHome.UserId() + "/" + Label;
         string bootstrap = "bootstrap gui/" + ScriptHome.UserId() + " " + home.Plist;
-        Assert.Equal(["bootout " + service, bootstrap, "bootout " + service, bootstrap], home.LaunchctlCalls());
+        Assert.Equal(
+            ["bootout " + service, "print " + service, bootstrap, "bootout " + service, "print " + service, bootstrap],
+            home.LaunchctlCalls());
     }
 
     [Fact]
@@ -400,6 +405,150 @@ public sealed class LaunchAgentScriptTests
     }
 
     [Fact]
+    public void Install_WithALingeringServiceAndOneFailedBootstrap_WaitsRetriesAndSucceeds()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.SetLinger(2);
+        home.FailBootstraps(1);
+
+        ScriptRun run = home.Run("install");
+
+        Assert.Equal(0, run.ExitCode);
+        Assert.Equal("Installed: " + home.Plist + "\nLog: " + home.Log + "\n", run.Output);
+        string service = "gui/" + ScriptHome.UserId() + "/" + Label;
+        string bootstrap = "bootstrap gui/" + ScriptHome.UserId() + " " + home.Plist;
+        Assert.Equal(
+            ["bootout " + service, "print " + service, "print " + service, "print " + service, bootstrap, bootstrap],
+            home.LaunchctlCalls());
+        Assert.Equal(["0.5", "0.5", "1"], home.SleepCalls());
+    }
+
+    [Fact]
+    public void InstallRelease_WithALingeringServiceAndFailedBootstraps_WaitsAndRetriesForServerAndUpdater()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.AddRelease("1.2.3", ReleaseFault.None);
+        home.SetLinger(1);
+        home.FailBootstraps(1);
+
+        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.3");
+
+        Assert.Equal(0, run.ExitCode);
+        string user = ScriptHome.UserId();
+        string server = "bootstrap gui/" + user + " " + home.Plist;
+        string updater = "bootstrap gui/" + user + " " + home.UpdaterPlist;
+        Assert.Equal(
+            ["bootout gui/" + user + "/" + UpdaterLabel, "print gui/" + user + "/" + UpdaterLabel,
+                "print gui/" + user + "/" + UpdaterLabel,
+                "bootout gui/" + user + "/" + Label, "print gui/" + user + "/" + Label, "print gui/" + user + "/" + Label,
+                server, server, updater],
+            home.LaunchctlCalls());
+        Assert.Equal(["0.5", "0.5", "1"], home.SleepCalls());
+        Assert.Equal("v1.2.3\n", File.ReadAllText(home.Marker));
+    }
+
+    [Fact]
+    public void InstallRelease_WhenTheUpdaterBootstrapFailsOnce_RetriesIt()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.AddRelease("1.2.3", ReleaseFault.None);
+        Assert.Equal(0, home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.3").ExitCode);
+        int before = home.LaunchctlCalls().Count;
+        home.SetLinger(1);
+        home.FailBootstraps(2);
+
+        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.3");
+
+        Assert.Equal(0, run.ExitCode);
+        string user = ScriptHome.UserId();
+        string server = "bootstrap gui/" + user + " " + home.Plist;
+        string updater = "bootstrap gui/" + user + " " + home.UpdaterPlist;
+        Assert.Equal([server, server, server], home.LaunchctlCalls().Skip(before).Where(call => call == server));
+        Assert.Equal([updater], home.LaunchctlCalls().Skip(before).Where(call => call == updater));
+        Assert.Equal(["0.5", "0.5", "1", "1"], home.SleepCalls());
+    }
+
+    [Fact]
+    public void Install_WhenEveryBootstrapFails_EndsWithTheFixedMessageAfterSixAttempts()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.SetExit("bootstrap", 5);
+
+        ScriptRun run = home.Run("install");
+
+        Assert.Equal(1, run.ExitCode);
+        Assert.Equal(
+            "launchctl bootstrap failed. Check: launchctl print gui/" + ScriptHome.UserId() + "/" + Label + "\n",
+            run.Error);
+        Assert.Equal(6, home.LaunchctlCalls().Count(call => call.StartsWith("bootstrap ", StringComparison.Ordinal)));
+        Assert.Equal(Enumerable.Repeat("1", 5), home.SleepCalls());
+    }
+
+    [Fact]
+    public void InstallRelease_WhenEveryUpdaterBootstrapFails_EndsWithTheFixedMessageAfterSixAttempts()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.AddRelease("1.2.3", ReleaseFault.None);
+        home.FailBootstrapsOf("/" + UpdaterLabel + ".plist");
+
+        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.3");
+
+        Assert.Equal(1, run.ExitCode);
+        Assert.EndsWith(
+            "launchctl bootstrap failed. Check: launchctl print gui/" + ScriptHome.UserId() + "/" + UpdaterLabel + "\n",
+            run.Error, StringComparison.Ordinal);
+        string user = ScriptHome.UserId();
+        Assert.Equal(1, home.LaunchctlCalls().Count(call => call == "bootstrap gui/" + user + " " + home.Plist));
+        Assert.Equal(6, home.LaunchctlCalls().Count(call => call == "bootstrap gui/" + user + " " + home.UpdaterPlist));
+    }
+
+    [Fact]
+    public void InstallRelease_WhenEveryServerBootstrapFails_EndsWithTheFixedMessageAfterSixAttempts()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.AddRelease("1.2.3", ReleaseFault.None);
+        home.SetExit("bootstrap", 5);
+
+        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--release", "v1.2.3");
+
+        Assert.Equal(1, run.ExitCode);
+        Assert.Equal(
+            "launchctl bootstrap failed. Check: launchctl print gui/" + ScriptHome.UserId() + "/" + Label + "\n",
+            run.Error);
+        Assert.Equal(6, home.LaunchctlCalls().Count(call => call.StartsWith("bootstrap ", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public void Uninstall_RefusesASymlinkedLibraryFolder()
     {
         if (OperatingSystem.IsWindows())
@@ -437,7 +586,9 @@ public sealed class LaunchAgentScriptTests
         ScriptRun run = home.Run("uninstall");
 
         Assert.Equal(0, run.ExitCode);
-        Assert.Equal("bootout gui/" + ScriptHome.UserId() + "/" + Label, home.LaunchctlCalls()[^1]);
+        Assert.Equal(
+            ["bootout gui/" + ScriptHome.UserId() + "/" + Label, "print gui/" + ScriptHome.UserId() + "/" + Label],
+            home.LaunchctlCalls().TakeLast(2));
         Assert.False(File.Exists(home.Plist));
         Assert.False(Directory.Exists(home.Server));
         Assert.Equal("log line\n", File.ReadAllText(home.Log));
@@ -459,7 +610,8 @@ public sealed class LaunchAgentScriptTests
 
         Assert.Equal(0, run.ExitCode);
         Assert.Equal(
-            ["bootout gui/" + ScriptHome.UserId() + "/" + UpdaterLabel, "bootout gui/" + ScriptHome.UserId() + "/" + Label],
+            ["bootout gui/" + ScriptHome.UserId() + "/" + UpdaterLabel, "print gui/" + ScriptHome.UserId() + "/" + UpdaterLabel,
+                "bootout gui/" + ScriptHome.UserId() + "/" + Label, "print gui/" + ScriptHome.UserId() + "/" + Label],
             home.LaunchctlCalls());
     }
 
@@ -588,7 +740,8 @@ public sealed class LaunchAgentScriptTests
         AssertDownload(home, curl[0], "v1.2.3", "controlroom-1.2.3-osx-arm64.tar.gz");
         AssertDownload(home, curl[1], "v1.2.3", "SHA256SUMS");
         Assert.Equal(
-            ["bootout new=yes server=yes plist=no", "bootout new=yes server=yes plist=no",
+            ["bootout new=yes server=yes plist=no", "print new=yes server=yes plist=no",
+                "bootout new=yes server=yes plist=no", "print new=yes server=yes plist=no",
                 "bootstrap new=no server=yes plist=yes", "bootstrap new=no server=yes plist=yes"],
             home.LaunchctlStates());
         Assert.True(File.Exists(Path.Combine(home.Server, "ControlRoom.Server")));
@@ -964,7 +1117,8 @@ public sealed class LaunchAgentScriptTests
         Assert.Equal(0, run.ExitCode);
         string user = ScriptHome.UserId();
         Assert.Equal(
-            ["bootout gui/" + user + "/" + UpdaterLabel, "bootout gui/" + user + "/" + Label,
+            ["bootout gui/" + user + "/" + UpdaterLabel, "print gui/" + user + "/" + UpdaterLabel,
+                "bootout gui/" + user + "/" + Label, "print gui/" + user + "/" + Label,
                 "bootstrap gui/" + user + " " + home.Plist, "bootstrap gui/" + user + " " + home.UpdaterPlist],
             home.LaunchctlCalls());
         Assert.Equal(
@@ -1035,7 +1189,8 @@ public sealed class LaunchAgentScriptTests
         Assert.Equal(0, run.ExitCode);
         string user = ScriptHome.UserId();
         Assert.Equal(
-            ["bootout gui/" + user + "/" + UpdaterLabel, "bootout gui/" + user + "/" + Label,
+            ["bootout gui/" + user + "/" + UpdaterLabel, "print gui/" + user + "/" + UpdaterLabel,
+                "bootout gui/" + user + "/" + Label, "print gui/" + user + "/" + Label,
                 "bootstrap gui/" + user + " " + home.Plist],
             home.LaunchctlCalls().Skip(before));
         Assert.False(File.Exists(home.UpdaterPlist));
@@ -1062,8 +1217,9 @@ public sealed class LaunchAgentScriptTests
         Assert.Equal(0, run.ExitCode);
         string user = ScriptHome.UserId();
         Assert.Equal(
-            ["bootout gui/" + user + "/" + UpdaterLabel, "bootout gui/" + user + "/" + Label],
-            home.LaunchctlCalls().TakeLast(2));
+            ["bootout gui/" + user + "/" + UpdaterLabel, "print gui/" + user + "/" + UpdaterLabel,
+                "bootout gui/" + user + "/" + Label, "print gui/" + user + "/" + Label],
+            home.LaunchctlCalls().TakeLast(4));
         Assert.False(File.Exists(home.UpdaterPlist));
         Assert.False(File.Exists(home.UpdaterScript));
         Assert.False(File.Exists(home.Marker));
@@ -1238,6 +1394,12 @@ public sealed class LaunchAgentScriptTests
         /// <summary>The longest any one process run may take before the test fails.</summary>
         private static readonly TimeSpan ProcessTimeout = TimeSpan.FromSeconds(60);
 
+        /// <summary>Logs its arguments and the folder state. <c>bootout</c> marks the service gone and copies
+        /// <c>$HOME/linger</c> to <c>linger-left</c>; <c>bootstrap</c> fails (stderr, exit 5) while the
+        /// <c>bootstrap-fails</c> counter is above 0 (counting it down) or always for a plist ending in
+        /// <c>$HOME/bootstrap-fail-for</c>, else clears the mark; <c>$HOME/&lt;command&gt;-exit</c>
+        /// overrides the exit code. <c>print</c> fails (exit 113) from a bootout until the next bootstrap, apart from
+        /// <c>linger-left</c> more calls (counted down).</summary>
         private const string FakeLaunchctl =
             "#!/bin/sh\n"
             + "printf '%s\\n' \"$*\" >> \"$HOME/calls.log\"\n"
@@ -1246,7 +1408,34 @@ public sealed class LaunchAgentScriptTests
             + "printf '%s new=%s server=%s plist=%s\\n' \"$1\" \"$(yn \"$support/server.new\")\" "
             + "\"$(yn \"$support/server\")\" \"$(yn \"$HOME/Library/LaunchAgents/local.controlroom.server.plist\")\" "
             + ">> \"$HOME/states.log\"\n"
+            + "count() { if [ -f \"$HOME/$1\" ]; then cat \"$HOME/$1\"; else echo 0; fi; }\n"
+            + "case $1 in\n"
+            + "  bootout)\n"
+            + "    : > \"$HOME/gone\"\n"
+            + "    if [ -f \"$HOME/linger\" ]; then cat \"$HOME/linger\" > \"$HOME/linger-left\"; fi ;;\n"
+            + "  bootstrap)\n"
+            + "    n=$(count bootstrap-fails)\n"
+            + "    if [ \"$n\" -gt 0 ]; then\n"
+            + "      echo $((n - 1)) > \"$HOME/bootstrap-fails\"\n"
+            + "      echo 'Bootstrap failed: 5: Input/output error' >&2; exit 5\n"
+            + "    fi\n"
+            + "    if [ -f \"$HOME/bootstrap-fail-for\" ]; then\n"
+            + "      case $3 in *\"$(cat \"$HOME/bootstrap-fail-for\")\") echo 'Bootstrap failed: 5: Input/output error' >&2; exit 5 ;; esac\n"
+            + "    fi\n"
+            + "    rm -f \"$HOME/gone\" ;;\n"
+            + "esac\n"
             + "if [ -f \"$HOME/$1-exit\" ]; then exit \"$(cat \"$HOME/$1-exit\")\"; fi\n"
+            + "if [ \"$1\" = print ] && [ -f \"$HOME/gone\" ]; then\n"
+            + "  n=$(count linger-left)\n"
+            + "  if [ \"$n\" -gt 0 ]; then echo $((n - 1)) > \"$HOME/linger-left\"; exit 0; fi\n"
+            + "  exit 113\n"
+            + "fi\n"
+            + "exit 0\n";
+
+        /// <summary>Logs its arguments and returns at once: the fake clock.</summary>
+        private const string FakeSleep =
+            "#!/bin/sh\n"
+            + "printf '%s\\n' \"$*\" >> \"$HOME/sleep.log\"\n"
             + "exit 0\n";
 
         private const string FakeDotnet =
@@ -1283,7 +1472,9 @@ public sealed class LaunchAgentScriptTests
             + "fi\n"
             + "exit 22\n";
 
-        private static readonly string[] HarnessFiles = ["calls.log", "states.log", "dotnet.log", "curl.log"];
+        private static readonly string[] HarnessFiles =
+            ["calls.log", "states.log", "dotnet.log", "curl.log", "sleep.log", "gone", "linger", "linger-left",
+                "bootstrap-fails", "bootstrap-fail-for"];
 
         public ScriptHome()
         {
@@ -1294,6 +1485,7 @@ public sealed class LaunchAgentScriptTests
             WriteExecutable(System.IO.Path.Combine(bin, "launchctl"), FakeLaunchctl);
             WriteExecutable(System.IO.Path.Combine(bin, "dotnet"), FakeDotnet);
             WriteExecutable(System.IO.Path.Combine(bin, "curl"), FakeCurl);
+            WriteExecutable(System.IO.Path.Combine(bin, "sleep"), FakeSleep);
         }
 
         public string Path { get; }
@@ -1401,6 +1593,32 @@ public sealed class LaunchAgentScriptTests
         {
             File.WriteAllText(System.IO.Path.Combine(Path, command + "-exit"), code.ToString(
                 System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        /// <summary>After each bootout, <c>launchctl print</c> still shows the service for <paramref name="calls"/>
+        /// more calls.</summary>
+        public void SetLinger(int calls)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "linger"),
+                calls.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n");
+        }
+
+        /// <summary>The next <paramref name="count"/> bootstraps fail with exit 5.</summary>
+        public void FailBootstraps(int count)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "bootstrap-fails"),
+                count.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n");
+        }
+
+        /// <summary>Every bootstrap of a plist whose path ends with <paramref name="suffix"/> fails with exit 5.</summary>
+        public void FailBootstrapsOf(string suffix)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "bootstrap-fail-for"), suffix);
+        }
+
+        public IReadOnlyList<string> SleepCalls()
+        {
+            return ReadLines("sleep.log");
         }
 
         public void FailPublish()

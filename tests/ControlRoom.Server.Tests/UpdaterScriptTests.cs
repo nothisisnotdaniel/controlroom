@@ -59,7 +59,8 @@ public sealed partial class UpdaterScriptTests
 
         Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), line);
         Assert.Equal(
-            ["bootout " + home.Service, "bootstrap " + home.Domain + " " + home.ServerPlist, "print " + home.Service],
+            ["bootout " + home.Service, "print " + home.Service, "bootstrap " + home.Domain + " " + home.ServerPlist,
+                "print " + home.Service],
             home.AllLaunchctlCalls());
         Assert.Equal(["-nP -iTCP:8100 -sTCP:LISTEN -t"], home.LsofCalls());
         Assert.Equal("{\"version\":\"1.3.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
@@ -272,7 +273,7 @@ public sealed partial class UpdaterScriptTests
         AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
         Assert.Equal(30, home.CurlCalls().Count(call => call == HealthCall));
         Assert.Equal(28, home.SleepCalls().Count);
-        Assert.Equal(30, home.AllLaunchctlCalls().Count(call => call == "print " + home.Service));
+        Assert.Equal(32, home.AllLaunchctlCalls().Count(call => call == "print " + home.Service));
     }
 
     [Fact]
@@ -851,6 +852,275 @@ public sealed partial class UpdaterScriptTests
         AssertNothingDone(home, "skipped_failed", " v1.2.0 v1.2.1-develop.4", curlCalls: 1);
     }
 
+    [Fact]
+    public void LingeringServiceAndOneFailedBootstrap_AreWaitedForAndRetriedBeforeTheHealthCheck()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.SetLinger(3);
+        home.FailBootstraps(1);
+
+        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
+
+        AssertResult(home, "\"result\":\"updated\",\"version\":\"1.3.0\",\"previous\":\"1.2.0\"");
+        string print = "launchctl print " + home.Service;
+        string bootstrap = "launchctl bootstrap " + home.Domain + " " + home.ServerPlist;
+        Assert.Equal(
+            ["launchctl bootout " + home.Service, print, "sleep 0.5", print, "sleep 0.5", print, "sleep 0.5", print,
+                bootstrap, "sleep 1", bootstrap, "health", print],
+            home.Events());
+        Assert.Equal(["0.5", "0.5", "0.5", "1"], home.SleepCalls());
+        Assert.Equal("v1.3.0\n", File.ReadAllText(home.Marker));
+    }
+
+    [Fact]
+    public void LingeringServiceWithAFirstTimeBootstrap_SleepsOnlyWhileItIsStillShown()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.SetLinger(2);
+
+        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
+
+        Assert.Equal(["0.5", "0.5"], home.SleepCalls());
+        Assert.Single(home.LaunchctlCalls(), call => call.StartsWith("bootstrap ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ServiceThatNeverGoes_IsWaitedForThirtyPollsThenBootstrappedAnyway()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.SetLinger(1000);
+
+        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
+
+        Assert.Equal(Enumerable.Repeat("0.5", 30), home.SleepCalls());
+        List<string> expected = ["launchctl bootout " + home.Service];
+        for (int poll = 0; poll < 30; poll++)
+        {
+            expected.Add("launchctl print " + home.Service);
+            expected.Add("sleep 0.5");
+        }
+
+        expected.Add("launchctl bootstrap " + home.Domain + " " + home.ServerPlist);
+        Assert.Equal(expected, home.Events().Take(expected.Count));
+    }
+
+    [Fact]
+    public void NewServerThatNeverBootstraps_IsBootstrapFailedWithoutAHealthPollForIt()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.FailBootstraps(6);
+
+        Assert.Matches(LinePattern("bootstrap_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"bootstrap_failed\"");
+        string bootstrap = "bootstrap " + home.Domain + " " + home.ServerPlist;
+        Assert.Equal(
+            ["bootout " + home.Service, .. Enumerable.Repeat(bootstrap, 6), "bootout " + home.Service, bootstrap],
+            home.LaunchctlCalls());
+        Assert.Equal(Enumerable.Repeat("1", 5), home.SleepCalls());
+        List<string> events = [.. home.Events()];
+        Assert.Single(events, call => call == "health");
+        Assert.True(events.IndexOf("health") > events.LastIndexOf("launchctl bootout " + home.Service));
+        Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
+        Assert.False(Directory.Exists(home.Previous));
+        Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
+        Assert.Empty(home.Leftovers());
+    }
+
+    [Fact]
+    public void BootstrapFailedRun_IsNotSkippedAndTheNextRunTriesTheSwapAgain()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.FailBootstraps(6);
+        Assert.Matches(LinePattern("bootstrap_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
+
+        AssertResult(home, "\"result\":\"updated\",\"version\":\"1.3.0\",\"previous\":\"1.2.0\"");
+        Assert.Equal("v1.3.0\n", File.ReadAllText(home.Marker));
+    }
+
+    [Fact]
+    public void OldServerThatNeverBootstrapsAfterABootstrapFailure_IsRollbackFailedWithoutHealthPolls()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.FailBootstraps(12);
+
+        Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
+        Assert.Equal(12, home.LaunchctlCalls().Count(call => call.StartsWith("bootstrap ", StringComparison.Ordinal)));
+        Assert.DoesNotContain(HealthCall, home.CurlCalls());
+    }
+
+    [Fact]
+    public void OldServerThatNeverBootstrapsAfterNoAnswer_IsRollbackFailedWithoutPollingItsHealth()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "9.9.9");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.FailBootstrapsPerBootout(0, 6);
+
+        Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
+        Assert.Equal(15, home.CurlCalls().Count(call => call == HealthCall));
+        IReadOnlyList<string> afterRollback = [.. home.Events().Reverse().TakeWhile(call => call != "launchctl bootout " + home.Service)];
+        Assert.Equal(6, afterRollback.Count(call => call.StartsWith("launchctl bootstrap ", StringComparison.Ordinal)));
+        Assert.DoesNotContain("health", afterRollback);
+    }
+
+    [Fact]
+    public void OldServerThatNeverBootstrapsAfterAFailedRename_IsRollbackFailedWithoutHealthPolls()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.FailMoveFrom("/controlroom-1.3.0-osx-arm64");
+        home.FailBootstraps(6);
+
+        Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
+        Assert.Equal(6, home.LaunchctlCalls().Count(call => call.StartsWith("bootstrap ", StringComparison.Ordinal)));
+        Assert.DoesNotContain(HealthCall, home.CurlCalls());
+        Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
+    }
+
+    [Fact]
+    public void RollbackAfterNoAnswer_WaitsAfterEveryBootoutAndRetriesEveryBootstrap()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "9.9.9");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.SetLinger(1);
+        home.FailBootstrapsPerBootout(1, 1);
+
+        Assert.Matches(LinePattern("rolled_back v1.2.0 v1.3.0"), home.RunOnce());
+
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"no_answer\"");
+        AssertWaitAndRetryAfterEveryBootout(home, bootouts: 2);
+        Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
+    }
+
+    [Fact]
+    public void SwapFailedAfterAFailedRename_WaitsAfterTheBootoutAndRetriesTheBootstrap()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.FailMoveFrom("/controlroom-1.3.0-osx-arm64");
+        home.SetLinger(1);
+        home.FailBootstraps(1);
+
+        Assert.Matches(LinePattern("swap_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"swap\"");
+        AssertWaitAndRetryAfterEveryBootout(home, bootouts: 1);
+        Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
+    }
+
+    [Fact]
+    public void SwapFailedAfterAFailedMarkerWrite_WaitsAfterEveryBootoutAndRetriesEveryBootstrap()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.FailMoveTo("/installed-release");
+        home.SetLinger(1);
+        home.FailBootstrapsPerBootout(1, 1);
+
+        Assert.Matches(LinePattern("swap_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"swap\"");
+        AssertWaitAndRetryAfterEveryBootout(home, bootouts: 2);
+    }
+
+    /// <summary>With one lingering <c>print</c> and one failing bootstrap per bootout: every bootout is followed by
+    /// print, sleep 0.5, print (gone), then bootstrap, sleep 1, bootstrap.</summary>
+    private static void AssertWaitAndRetryAfterEveryBootout(UpdaterHome home, int bootouts)
+    {
+        string bootout = "launchctl bootout " + home.Service;
+        string print = "launchctl print " + home.Service;
+        string bootstrap = "launchctl bootstrap " + home.Domain + " " + home.ServerPlist;
+        IReadOnlyList<string> events = home.Events();
+        List<int> starts = [.. Enumerable.Range(0, events.Count).Where(index => events[index] == bootout)];
+        Assert.Equal(bootouts, starts.Count);
+        foreach (int start in starts)
+        {
+            Assert.Equal(
+                [bootout, print, "sleep 0.5", print, bootstrap, "sleep 1", bootstrap],
+                events.Skip(start).Take(7));
+        }
+    }
+
     /// <summary>One run that must log <paramref name="word"/> (plus <paramref name="details"/>) and change nothing:
     /// no launchctl call, the given number of curl calls, no result, HOME as before apart from the fakes' logs.</summary>
     private static void AssertNothingDone(UpdaterHome home, string word, string details, int curlCalls = 0)
@@ -909,15 +1179,40 @@ public sealed partial class UpdaterScriptTests
     {
         private static readonly TimeSpan ProcessTimeout = TimeSpan.FromSeconds(60);
 
+        /// <summary>Logs its arguments (also to <c>order.log</c>). <c>bootout</c> unloads the server, copies
+        /// <c>$HOME/linger</c> to <c>linger-left</c> and pops the first line of <c>bootstrap-fails-per-bootout</c> into
+        /// <c>bootstrap-fails</c>. <c>bootstrap</c> fails (stderr, exit 5) while the <c>bootstrap-fails</c> counter is
+        /// above 0 (counting it down), else loads the server. <c>print</c> shows the loaded server; after a bootout it
+        /// still shows it while the <c>linger-left</c> counter is above 0 (counting it down), else exits 113.</summary>
         private const string FakeLaunchctl =
             "#!/bin/sh\n"
             + "printf '%s\\n' \"$*\" >> \"$HOME/calls.log\"\n"
-            + "case $1 in bootstrap) : > \"$HOME/loaded\" ;; bootout) rm -f \"$HOME/loaded\" ;; esac\n"
+            + "printf 'launchctl %s\\n' \"$*\" >> \"$HOME/order.log\"\n"
+            + "count() { if [ -f \"$HOME/$1\" ]; then cat \"$HOME/$1\"; else echo 0; fi; }\n"
+            + "case $1 in\n"
+            + "  bootstrap)\n"
+            + "    n=$(count bootstrap-fails)\n"
+            + "    if [ \"$n\" -gt 0 ]; then\n"
+            + "      echo $((n - 1)) > \"$HOME/bootstrap-fails\"\n"
+            + "      echo 'Bootstrap failed: 5: Input/output error' >&2; exit 5\n"
+            + "    fi\n"
+            + "    : > \"$HOME/loaded\" ;;\n"
+            + "  bootout)\n"
+            + "    rm -f \"$HOME/loaded\"\n"
+            + "    if [ -f \"$HOME/linger\" ]; then cat \"$HOME/linger\" > \"$HOME/linger-left\"; fi\n"
+            + "    plan=\"$HOME/bootstrap-fails-per-bootout\"\n"
+            + "    if [ -s \"$plan\" ]; then\n"
+            + "      head -n 1 \"$plan\" > \"$HOME/bootstrap-fails\"\n"
+            + "      tail -n +2 \"$plan\" > \"$plan.rest\"; cat \"$plan.rest\" > \"$plan\"; rm -f \"$plan.rest\"\n"
+            + "    fi ;;\n"
+            + "esac\n"
             + "if [ \"$1\" = print ]; then\n"
             + "  if [ -f \"$HOME/loaded\" ] && [ ! -f \"$HOME/not-running\" ]; then\n"
             + "    printf '\\tstate = running\\n\\tpid = 4242\\n\\tendpoints = {\\n\\t\\tpid = 7\\n\\t}\\n'; exit 0\n"
             + "  fi\n"
             + "  if [ -f \"$HOME/loaded\" ]; then printf '\\tstate = waiting\\n'; exit 0; fi\n"
+            + "  n=$(count linger-left)\n"
+            + "  if [ \"$n\" -gt 0 ]; then echo $((n - 1)) > \"$HOME/linger-left\"; printf '\\tstate = exiting\\n'; exit 0; fi\n"
             + "  exit 113\n"
             + "fi\n"
             + "exit 0\n";
@@ -934,6 +1229,7 @@ public sealed partial class UpdaterScriptTests
         private const string FakeSleep =
             "#!/bin/sh\n"
             + "printf '%s\\n' \"$*\" >> \"$HOME/sleep.log\"\n"
+            + "printf 'sleep %s\\n' \"$*\" >> \"$HOME/order.log\"\n"
             + "exit 0\n";
 
         /// <summary>Fails (exit 1) when the source ends with the text in <c>$HOME/mv-fail</c> or the target with the
@@ -966,6 +1262,7 @@ public sealed partial class UpdaterScriptTests
             + "  shift\n"
             + "done\n"
             + "if [ \"$url\" = http://127.0.0.1:8100/health ]; then\n"
+            + "  echo health >> \"$HOME/order.log\"\n"
             + "  health=\"$HOME/Library/Application Support/ControlRoom/server/health\"\n"
             + "  if [ -f \"$HOME/loaded\" ] && [ -f \"$health\" ]; then cat \"$health\"; exit 0; fi\n"
             + "  exit 7\n"
@@ -990,7 +1287,8 @@ public sealed partial class UpdaterScriptTests
 
         private static readonly string[] HarnessFiles =
             ["calls.log", "curl.log", "curl-stdin.log", "sleep.log", "lsof.log", "loaded", "redirect", "mv-fail",
-                "mv-fail-to", "lsof-out", "not-running", "list"];
+                "mv-fail-to", "lsof-out", "not-running", "list", "order.log", "linger", "linger-left", "bootstrap-fails",
+                "bootstrap-fails-per-bootout"];
 
         public UpdaterHome()
             : this("v1.2.0")
@@ -1135,6 +1433,32 @@ public sealed partial class UpdaterScriptTests
         public void ServerNotRunning()
         {
             File.WriteAllText(System.IO.Path.Combine(Path, "not-running"), "");
+        }
+
+        /// <summary>After each bootout, <c>launchctl print</c> still shows the server for <paramref name="calls"/> more
+        /// calls.</summary>
+        public void SetLinger(int calls)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "linger"), calls.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n");
+        }
+
+        /// <summary>The next <paramref name="count"/> bootstraps fail with exit 5.</summary>
+        public void FailBootstraps(int count)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "bootstrap-fails"), count.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n");
+        }
+
+        /// <summary>The n-th bootout sets the failing-bootstrap counter to the n-th number.</summary>
+        public void FailBootstrapsPerBootout(params int[] counts)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "bootstrap-fails-per-bootout"),
+                string.Concat(counts.Select(count => count.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n")));
+        }
+
+        /// <summary>The launchctl, sleep and /health calls in the order they ran.</summary>
+        public IReadOnlyList<string> Events()
+        {
+            return ReadLines("order.log");
         }
 
         /// <summary>What the fake <c>lsof</c> prints as the listening pids.</summary>

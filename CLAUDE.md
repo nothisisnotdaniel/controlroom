@@ -281,7 +281,10 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     shell list changes; `push` shows a notification from fixed titles, `notificationclick` opens `#job/<id>`,
     `#backlogs` or `#jobs`; `/health` is never cached), `manifest.webmanifest`, `icons/` (opaque RGB PNGs, 180/192/512 px)).
   - `scripts/launch-agent.sh`: POSIX `sh` LaunchAgent installer (publish, `bootout`, replace, plist `0644`,
-    `bootstrap`; refuses symlinks; never reads the token). With `--release` it runs `curl`, `tar` and `shasum`
+    `bootstrap`; refuses symlinks; never reads the token). After every `bootout` (server and updater) it polls
+    `launchctl print` until the service is gone (`sleep 0.5` between polls, at most 30 polls, then goes on); a failed
+    `bootstrap` is retried after `sleep 1` up to 5 times (6 attempts) before the fixed `launchctl bootstrap failed`
+    message; `sleep` is found on `PATH` (not for `status`). With `--release` it runs `curl`, `tar` and `shasum`
     instead of `dotnet`: tag and latest-release redirect checked as `v`+SemVer, downloads into a `mktemp -d` folder
     in the support folder (removed on every exit), `curl --max-filesize` 200 MiB for the tarball and 4 KiB
     for `SHA256SUMS`, one matching `SHA256SUMS` line, archive entries only regular files and folders under
@@ -289,8 +292,12 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     before extraction), checked again after extraction. Not part of the server.
   - `scripts/updater.sh`: POSIX `sh` updater run by launchd (`--factory-root <root>`); prints exactly one log line
     `<UTC> <word>[ <tags>]` (`off`, `not_release`, `busy`, `job_running`, `current`, `latest_failed`,
-    `download_failed`, `check_failed`, `skipped_failed`, `updated`, `rolled_back`, `swap_failed`,
-    `rollback_failed`). Lock `<support>/.update.lock` (stale after 1 h); swap: bootout, `server` to
+    `download_failed`, `check_failed`, `skipped_failed`, `updated`, `rolled_back`, `bootstrap_failed`, `swap_failed`,
+    `rollback_failed`). Lock `<support>/.update.lock` (stale after 1 h); every bootout is followed by `wait_gone`
+    (polls `launchctl print` until it fails, `sleep 0.5` between, at most 30 polls, then goes on) and every bootstrap
+    is retried after `sleep 1` up to 5 times; a new server that never bootstraps is rolled back as `bootstrap_failed`
+    (result reason `bootstrap_failed`, not skipped next run), an old one that never bootstraps is `rollback_failed`,
+    both without polling `/health`; swap: bootout, `server` to
     `server.previous`, new folder to `server`, bootstrap, poll `/health` up to 15 times (an answer counts only while
     `launchctl print` shows the server running and its pid is the only listener `lsof` shows on port 8100); rolls
     back when it does not answer, and (as `swap_failed`) when the marker can't be updated. A `state.json` over

@@ -5,8 +5,9 @@
 #        scripts/launch-agent.sh install --release [vX.Y.Z] [--tailnet-host <name>]
 #          (installs the ready-built release from GitHub instead of publishing: the latest one, or vX.Y.Z,
 #          plus the updater LaunchAgent local.controlroom.updater that runs <support>/updater.sh every 6 h)
-# POSIX sh. Runs only dotnet (publish), launchctl and, with --release, curl, tar and shasum, all with fixed
-# arguments. Never reads the access token file.
+# POSIX sh. Runs only dotnet (publish), launchctl, sleep and, with --release, curl, tar and shasum, all with fixed
+# arguments. Never reads the access token file. After every bootout it waits until launchd has removed the service,
+# and a failed bootstrap is tried again a few times.
 
 set -u
 
@@ -26,6 +27,10 @@ MAX_TARBALL_BYTES=209715200
 MAX_SUMS_BYTES=4096
 MAX_UNPACKED_BYTES=536870912
 MAX_ENTRIES=10000
+# After a bootout, launchctl print is polled until the service is gone: at most this many polls, 0.5 s apart (15 s).
+WAIT_POLLS=30
+# A failed bootstrap is tried again this many times, 1 s apart (launchd may still be removing the old service).
+BOOTSTRAP_RETRIES=5
 FIXED_PATH="/usr/local/share/dotnet:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 fail() {
@@ -173,6 +178,45 @@ USER_ID=$(id -u) || fail "Can't read the user id."
 DOMAIN="gui/$USER_ID"
 SERVICE="$DOMAIN/$LABEL"
 UPDATER_SERVICE="$DOMAIN/$UPDATER_LABEL"
+if [ "$COMMAND" != status ]; then
+    SLEEP=$(command -v sleep) || fail "sleep not found on PATH."
+    case $SLEEP in
+        /*) ;;
+        *) fail "sleep not found on PATH." ;;
+    esac
+fi
+
+# Polls launchctl print for service $1 until it no longer shows it (exits non-zero), 0.5 s after each poll that
+# still shows it, at most WAIT_POLLS polls; then goes on anyway.
+wait_gone() {
+    polls=0
+    while [ "$polls" -lt "$WAIT_POLLS" ]; do
+        polls=$((polls + 1))
+        "$LAUNCHCTL" print "$1" >/dev/null 2>&1 || return 0
+        "$SLEEP" 0.5
+    done
+    return 0
+}
+
+# Boots out service $1 (not loaded is fine) and waits until launchd has removed it.
+bootout_service() {
+    "$LAUNCHCTL" bootout "$1" >/dev/null 2>&1
+    wait_gone "$1"
+}
+
+# Bootstraps plist $1, trying again 1 s later up to BOOTSTRAP_RETRIES times; returns the last status.
+bootstrap_plist() {
+    attempts=0
+    while :; do
+        "$LAUNCHCTL" bootstrap "$DOMAIN" "$1" >/dev/null && return 0
+        boot_status=$?
+        attempts=$((attempts + 1))
+        if [ "$attempts" -gt "$BOOTSTRAP_RETRIES" ]; then
+            return "$boot_status"
+        fi
+        "$SLEEP" 1
+    done
+}
 
 # Stops while the updater holds its lock (a lock older than 1 h is left over and does not count).
 refuse_while_updating() {
@@ -198,7 +242,7 @@ put_file() {
 
 # Boots out the updater and removes its plist, the copied script and the release marker.
 remove_updater() {
-    "$LAUNCHCTL" bootout "$UPDATER_SERVICE" >/dev/null 2>&1
+    bootout_service "$UPDATER_SERVICE"
     rm -f "$UPDATER_PLIST" "$UPDATER_SCRIPT" "$MARKER" || fail "Can't remove the updater."
 }
 
@@ -230,7 +274,7 @@ do_uninstall() {
     refuse_link "$UPDATER_PLIST"
     refuse_while_updating
     remove_updater
-    "$LAUNCHCTL" bootout "$SERVICE" >/dev/null 2>&1
+    bootout_service "$SERVICE"
     rm -f "$PLIST" || fail "Can't remove $PLIST"
     rm -rf "$SERVER" "$SERVER_NEW" "$PREVIOUS" || fail "Can't remove $SERVER"
     printf 'Uninstalled. The log stays at %s\n' "$LOG"
@@ -437,7 +481,7 @@ do_install() {
         remove_updater
     fi
     # Not loaded is fine: the agent may not be installed yet.
-    "$LAUNCHCTL" bootout "$SERVICE" >/dev/null 2>&1
+    bootout_service "$SERVICE"
 
     rm -rf "$SERVER" || fail "Can't remove $SERVER"
     mv "$SERVER_NEW" "$SERVER" || fail "Can't move the published server into place."
@@ -497,7 +541,7 @@ do_install() {
         fail "Can't write $PLIST"
     }
 
-    "$LAUNCHCTL" bootstrap "$DOMAIN" "$PLIST" >/dev/null \
+    bootstrap_plist "$PLIST" \
         || fail "launchctl bootstrap failed. Check: launchctl print $SERVICE"
 
     if [ "$RELEASE" = yes ]; then
@@ -546,7 +590,7 @@ install_updater() {
         printf '</dict>\n'
         printf '</plist>\n'
     } | put_file "$UPDATER_PLIST" 644 || fail "Can't write $UPDATER_PLIST"
-    "$LAUNCHCTL" bootstrap "$DOMAIN" "$UPDATER_PLIST" >/dev/null \
+    bootstrap_plist "$UPDATER_PLIST" \
         || fail "launchctl bootstrap failed. Check: launchctl print $UPDATER_SERVICE"
 }
 
