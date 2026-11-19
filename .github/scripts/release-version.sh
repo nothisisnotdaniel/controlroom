@@ -36,7 +36,7 @@ case "$title" in
 esac
 
 version="${title#release v}"
-semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?$'
 # The title has no line break (checked above), so grep sees exactly one line: a whole-string match.
 if ! printf '%s\n' "$version" | grep -Eq "$semver"; then
   refuse "PR title version is not SemVer; the title must be exactly 'release vX.Y.Z'"

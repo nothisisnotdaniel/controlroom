@@ -682,6 +682,28 @@ public sealed class LaunchAgentScriptTests
     }
 
     [Theory]
+    [InlineData("1.2.3-rc.1")]
+    [InlineData("1.2.4-develop.7")]
+    [InlineData("1.2.3-01a")]
+    public void InstallRelease_WithAStrictSemVerPrerelease_ReachesTheDownload(string version)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.AddRelease(version, ReleaseFault.None);
+
+        ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--release", "v" + version);
+
+        Assert.Equal(0, run.ExitCode);
+        IReadOnlyList<string> curl = home.CurlCalls();
+        Assert.Equal(2, curl.Count);
+        AssertDownload(home, curl[0], "v" + version, "controlroom-" + version + "-osx-arm64.tar.gz");
+    }
+
+    [Theory]
     [InlineData("install --release v1.2.3 --tailnet-host mac.tail1234.ts.net")]
     [InlineData("install --tailnet-host mac.tail1234.ts.net --release v1.2.3")]
     [InlineData("install --release --tailnet-host mac.tail1234.ts.net")]
@@ -742,6 +764,8 @@ public sealed class LaunchAgentScriptTests
     [InlineData("v1.2.3-develop.*")]
     [InlineData("1.2.3-develop.1")]
     [InlineData("v1.2.3-")]
+    [InlineData("v1.2.3-01")]
+    [InlineData("v1.2.3-rc.01")]
     [InlineData("v1.2.3/../x")]
     [InlineData("v1.2.3 ")]
     [InlineData("v1.2.3\nv1.2.4")]
@@ -808,6 +832,7 @@ public sealed class LaunchAgentScriptTests
     [InlineData(Releases + "/tag/v1.2.3\n")]
     [InlineData(Releases + "/tag/v1.2.3/")]
     [InlineData(Releases + "/tag/v1.2.3+abc")]
+    [InlineData(Releases + "/tag/v1.2.3-01")]
     [InlineData(Releases + "/tag/v1.2.3/../../x")]
     [InlineData(Releases + "/tag/1.2.3")]
     [InlineData(Releases + "/tag/")]
