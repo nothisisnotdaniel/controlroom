@@ -72,3 +72,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#62](backlog/062-refresh-version-and-update-info-on.md) Refresh version and update info on live changes
 - [?] [#63](backlog/063-browser-check-of-the-live-update.md) Browser check of the live-update notice
 - [?] [#64](backlog/064-keep-stale-story-marks-across-route.md) Keep stale story marks across route changes
+- [?] [#65](backlog/065-refresh-the-inbox-count-right-after.md) Refresh the inbox count right after any backlog change
+- [?] [#66](backlog/066-cheaper-inbox-reads.md) Cheaper inbox reads
+- [?] [#67](backlog/067-retry-button-when-the-inbox-fails.md) Retry button when the inbox fails to load
+- [?] [#68](backlog/068-browser-check-of-the-approval-inbox.md) Browser check of the approval inbox
