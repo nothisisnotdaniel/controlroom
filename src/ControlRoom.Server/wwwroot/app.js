@@ -333,8 +333,9 @@ async function load() {
 }
 
 // Live refresh (live.js): only the sections of the named projects, and those whose plan signature changed, are
-// replaced, each in place, so scroll, edit mode and an open Done group stay. A section with an open Add or title form, or with focus inside, is left alone; its
-// name is returned so the next check tries again. A failed request returns every name.
+// replaced, each in place, so scroll, edit mode and an open Done group stay. A section with an open Add or title
+// form, or with focus inside, is left alone; its name is returned so the next check tries again. A failed request
+// returns every name.
 async function refreshBacklogs(names) {
   let data;
   try {
