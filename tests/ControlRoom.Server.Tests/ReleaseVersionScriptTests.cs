@@ -17,6 +17,13 @@ public sealed class ReleaseVersionScriptTests
     [InlineData("release v1.3.0-rc.2", "1.3.0-rc.2")]
     [InlineData("release v0.0.0", "0.0.0")]
     [InlineData("release v10.20.30-alpha-1.beta", "10.20.30-alpha-1.beta")]
+    [InlineData("release v1.2.3-0", "1.2.3-0")]
+    [InlineData("release v1.2.3-rc.1", "1.2.3-rc.1")]
+    [InlineData("release v1.2.3-0.3.7", "1.2.3-0.3.7")]
+    [InlineData("release v1.2.3-x.7.z.92", "1.2.3-x.7.z.92")]
+    [InlineData("release v1.2.3-alpha-1.beta", "1.2.3-alpha-1.beta")]
+    [InlineData("release v1.2.3-01a", "1.2.3-01a")]
+    [InlineData("release v1.2.3-0-1", "1.2.3-0-1")]
     public void GoodTitle_PrintsTheVersion(string title, string version)
     {
         if (OperatingSystem.IsWindows())
@@ -60,6 +67,10 @@ public sealed class ReleaseVersionScriptTests
     [InlineData("release v1.2")]
     [InlineData("release v1.2.4-")]
     [InlineData("release v1.2.4-rc..1")]
+    [InlineData("release v1.2.3-01")]
+    [InlineData("release v1.2.3-rc.01")]
+    [InlineData("release v1.2.3-0.00")]
+    [InlineData("release v1.2.3-1.2.03")]
     [InlineData("release v1.2.3")]
     [InlineData("release v1.3.0-rc.1")]
     [InlineData("release v$(id)")]

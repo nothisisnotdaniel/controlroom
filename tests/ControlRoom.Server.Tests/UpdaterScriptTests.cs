@@ -681,6 +681,23 @@ public sealed partial class UpdaterScriptTests
     }
 
     [Fact]
+    public void DevelopChannel_IgnoresATagWithALeadingZeroPrereleaseIdentifier()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.SetSettings(Develop);
+        home.SetList("[{\"tag_name\":\"v1.2.5-01\"},{\"tag_name\":\"v1.2.0\"}]");
+        home.AddRelease("1.2.5-01", "1.2.5-01");
+        home.SetRedirect(Releases + "/tag/v1.2.0");
+
+        AssertNothingDone(home, "current", " v1.2.0 v1.2.0", curlCalls: 1);
+    }
+
+    [Fact]
     public void DevelopChannel_PicksDevelopTenOverNineAndInstallsIt()
     {
         if (OperatingSystem.IsWindows())
