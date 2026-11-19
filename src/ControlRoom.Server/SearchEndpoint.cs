@@ -109,9 +109,12 @@ internal static partial class SearchEndpoint
         bool hasFilter = query.Mark is not null || query.Project is not null;
         bool empty = query.Text.Length == 0;
         NumberQuery? number = empty ? null : ParseNumber(query.Text);
+        // A repeated word (ignoring case) changes no result, so it is scanned only once.
         string[] words = empty || number is not null
             ? []
-            : query.Text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            : query.Text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
 
         foreach (ProjectFolder project in projects)
         {

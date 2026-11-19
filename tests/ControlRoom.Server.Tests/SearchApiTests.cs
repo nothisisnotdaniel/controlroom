@@ -183,12 +183,14 @@ public sealed class SearchApiTests
         using JsonDocument rest = await Get(client, "?q=" + Uri.EscapeDataString("7-x widget"));
         using JsonDocument old = await Get(client, "?q=free");
         using JsonDocument none = await Get(client, "?q=" + Uri.EscapeDataString("widget nothing"));
+        using JsonDocument repeated = await Get(client, "?q=" + Uri.EscapeDataString("widget Widget WIDGET open"));
 
         Assert.Equal(["Alpha#2"], Keys(both.RootElement));
         Assert.Equal(["Alpha#2"], Keys(rest.RootElement));
         Assert.Equal(["Alpha#-"], Keys(old.RootElement));
         Assert.Equal("title", old.RootElement.GetProperty("items")[0].GetProperty("match").GetString());
         Assert.Empty(none.RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal(["Alpha#2"], Keys(repeated.RootElement));
     }
 
     [Fact]
