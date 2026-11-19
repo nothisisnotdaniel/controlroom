@@ -2,8 +2,9 @@
 
 // Live updates: one timer asks /api/changes (metadata fingerprints) every PollInterval while the page is visible,
 // and only what changed is fetched again: the board (pollBoard in board.js), the backlog sections of changed
-// projects, the open story (app.js), the inbox with its nav count (inbox.js) and the tasks with theirs (tasks.js). A
-// failed check shows one fixed connection notice. Loaded after tasks.js and before app.js; the functions of the
+// projects, the open story (app.js), the inbox with its nav count (inbox.js), the tasks with theirs (tasks.js) and
+// the current search (search.js). A failed check shows one fixed connection notice. Loaded after search.js and
+// before app.js; the functions of the
 // other scripts are only called at run time. Fingerprints are compared, never shown; only fixed texts are rendered,
 // with textContent.
 
@@ -27,6 +28,8 @@ let jobStale = false;
 let inboxStale = false;
 // The same for the tasks and their ready count.
 let tasksStale = false;
+// The same for the current search (search.js), re-run while shown and on the next show while hidden.
+let searchChanged = false;
 const staleBacklogs = new Set();
 const staleStories = new Set();
 let backlogsRefreshing = false;
@@ -91,6 +94,7 @@ function noteChanges(next, recovered) {
       staleBacklogs.add(name);
       staleStories.add(name);
     }
+    searchChanged = true;
     return;
   }
   if (previous === null) {
@@ -109,10 +113,12 @@ function noteChanges(next, recovered) {
       tasksStale = true;
       staleBacklogs.add(name);
       staleStories.add(name);
+      searchChanged = true;
     } else if (before.stories !== after.stories) {
       staleStories.add(name);
       inboxStale = true;
       tasksStale = true;
+      searchChanged = true;
     }
   }
 }
@@ -161,6 +167,7 @@ async function refreshShownViews() {
   jobStale = false;
   await refreshStaleBacklogs();
   await refreshStaleStory();
+  await refreshStaleSearch();
   await refreshStaleTasks();
   await refreshStaleInbox();
 }
@@ -186,6 +193,18 @@ async function refreshStaleTasks() {
   tasksStale = false;
   if (!(await loadTasks())) {
     tasksStale = true;
+  }
+}
+
+// A changed backlog or story fingerprint re-runs the current search (only its results are replaced); while Search is
+// hidden, refreshSearch marks it so the next show re-runs it. A failed re-run is tried again on the next check.
+async function refreshStaleSearch() {
+  if (!searchChanged) {
+    return;
+  }
+  searchChanged = false;
+  if (!(await refreshSearch())) {
+    searchChanged = true;
   }
 }
 

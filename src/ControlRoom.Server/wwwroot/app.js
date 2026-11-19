@@ -533,8 +533,8 @@ async function refreshStory() {
   return true;
 }
 
-const Views = ["backlogs", "board", "inbox", "tasks", "job", "story"];
-const ViewTitles = { backlogs: "Backlogs", board: "Jobs", inbox: "Inbox", tasks: "Tasks" };
+const Views = ["backlogs", "board", "inbox", "tasks", "search", "job", "story"];
+const ViewTitles = { backlogs: "Backlogs", board: "Jobs", inbox: "Inbox", tasks: "Tasks", search: "Search" };
 let currentView = null;
 
 function viewFor(hash) {
@@ -549,6 +549,9 @@ function viewFor(hash) {
   }
   if (hash === TasksRoute) {
     return "tasks";
+  }
+  if (hash === SearchRoute) {
+    return "search";
   }
   return hash === BoardRoute ? "board" : "backlogs";
 }
@@ -590,6 +593,9 @@ function route() {
   if (currentView === "tasks" && next !== "tasks") {
     rememberTasksScroll();
   }
+  if (currentView === "search" && next !== "search") {
+    rememberSearchScroll();
+  }
   currentView = next;
   hideEditNotice();
   if (next !== "story") {
@@ -621,6 +627,10 @@ function route() {
   }
   if (next === "tasks") {
     showTasks();
+    return;
+  }
+  if (next === "search") {
+    showSearch();
     return;
   }
   window.scrollTo(0, listScroll);
