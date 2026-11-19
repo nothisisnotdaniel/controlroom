@@ -627,8 +627,9 @@ async function refreshStory() {
   return true;
 }
 
-const Views = ["backlogs", "board", "inbox", "tasks", "search", "job", "story"];
-const ViewTitles = { backlogs: "Backlogs", board: "Jobs", inbox: "Inbox", tasks: "Tasks", search: "Search" };
+const Views = ["backlogs", "board", "inbox", "tasks", "search", "capture", "job", "story"];
+const ViewTitles = { backlogs: "Backlogs", board: "Jobs", inbox: "Inbox", tasks: "Tasks", search: "Search",
+  capture: "Capture" };
 let currentView = null;
 
 function viewFor(hash) {
@@ -646,6 +647,9 @@ function viewFor(hash) {
   }
   if (hash === SearchRoute) {
     return "search";
+  }
+  if (hash === CaptureRoute) {
+    return "capture";
   }
   return hash === BoardRoute ? "board" : "backlogs";
 }
@@ -725,6 +729,10 @@ function route() {
   }
   if (next === "search") {
     showSearch();
+    return;
+  }
+  if (next === "capture") {
+    showCapture();
     return;
   }
   window.scrollTo(0, listScroll);

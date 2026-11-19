@@ -39,7 +39,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     characters, no control characters and no `Proposed by job`; dated `- YYYY-MM-DD: <note>` from the `TimeProvider`
     local date and appended under the story's first `## Notes` (after its last non-blank line, a blank line first
     unless that line is a dated note; a missing section is added at the end); only the story file is committed, as
-    `backlog: note on #N`). Nothing else in the
+    `backlog: note on #N`) and `capture` (body `text`, cleaned like a note but up to 2000 characters; the title is the
+    text cut at the last space at or before character 60 (else at 60), trailing `.,;:!?` and spaces removed, and must
+    pass the title rule; with the `add` checks a `- [?] [#N](backlog/NNN-slug.md) <title>` line goes after the last item
+    and a draft story (`## What` the text, a fixed `## Why`, `## Notes` with `- YYYY-MM-DD: Draft from ControlRoom`) is
+    created; committed as `backlog: capture #N`). Nothing else in the
     factory root is written.
   - Text from files (backlog lines, job records) is shown as text, never as raw HTML; Markdown is rendered
     with raw HTML turned off.
@@ -127,9 +131,9 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `waiting`, `line` and the file `version`, and per project `next` (`{number, title, story, spike}` or `null`),
     `stopped` (a blocked line has a missing dependency) and `blocked` (`[{number, title, story, after:[{project, number,
     missing}]}]`, only unmet dependencies); `null`, `false`, `[]` when unreadable), `BacklogEditor` (`EditableText` lines that keep their bytes; approve, drop, done, move, title
-    and add edits, `CleanNote` and `AppendNote`, slug, next number and story template like `job.py`), `ProjectGit` (fixed-argument git calls
+    and add edits (`Add` takes the mark), `CleanNote` and `AppendNote`, `CleanCapture`, `CaptureTitle` and `RenderDraft`, slug, next number and story template like `job.py`), `ProjectGit` (fixed-argument git calls
     with timeouts and `GIT_TERMINAL_PROMPT=0`), `BacklogChangeEndpoint` (`POST /api/backlog/change`: request
-    checks, `not_develop`/`dirty`/`changed`, write, commit, push; `done` commits `backlog: done #N`, `note` commits `backlog: note on #N`), `StoryReader` (fenced read of
+    checks, `not_develop`/`dirty`/`changed`, write, commit, push; `done` commits `backlog: done #N`, `note` commits `backlog: note on #N`, `capture` commits `backlog: capture #N`), `StoryReader` (fenced read of
     `<project>/backlog/NNN-slug.md`), `StoryMarkdown` (Markdown to a JSON block tree, no HTML),
     `StoryEndpoint` (`GET /api/story?project=&number=`, with `markdown`
     and `storyVersion`), `InboxEndpoint` (`GET /api/inbox`: every `[?]` line as `{project, version, line, number, title,
@@ -171,7 +175,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     pending, and at once on becoming visible; refetches only the board, the changed backlog sections (kept while a form
     is open or focus is inside) and the open story (in place, never while Edit story or Add note is open); a failed check shows
     the fixed `Connection lost. Reconnecting…` notice under the header, or in the `board-status` line on the board;
-    script order `token.js`, `board.js`, `push.js`, `edit.js`, `inbox.js`, `tasks.js`, `search.js`, `live.js`, `app.js`; a changed
+    script order `token.js`, `board.js`, `push.js`, `edit.js`, `inbox.js`, `tasks.js`, `search.js`, `capture.js`, `live.js`, `app.js`; a changed
     `backlog` or `stories` fingerprint refetches the inbox and the tasks and their counts and re-runs the current search), `inbox.js` (the `#inbox` view: every `[?]` item with project,
     `#N Title`, `Proposed by <job>` link, Approve and Drop through `sendChange` (never rebuilt while `changeBusy`), fixed
     texts; the nav count, hidden at 0 or unknown, fetched once per page load, after a token is saved and after every
@@ -182,7 +186,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     read-only: the form (field `Search backlogs`, mark and project selects, the project list from the first answer) is
     built once and kept, so Back finds it as it was; one `/api/search` per change through `authFetch`, older answers
     dropped by a request counter, nothing sent with an empty field and no filter; only the results are replaced; fixed
-    texts in `SearchTexts`), `push.js` (Notifications section on the
+    texts in `SearchTexts`), `capture.js` (the `#capture` view: a `Project` select of readable projects from
+    `/api/backlogs` on every show (last used one in `localStorage` `controlroom-capture-project`), the `Idea` textarea
+    (`maxlength` 2000) and Save (off while blank or `changeBusy`); Save fetches the version, sends `action:"capture"`
+    through `sendChange`, then clears the text, shows the fixed saved text and refreshes the inbox count; fixed texts in
+    `CaptureTexts`), `push.js` (Notifications section on the
     board: state texts, Turn on (permission only from the tap), done and update switches, Send test, Turn off),
     `sw.js` (service worker: caches only the fixed app shell, never `/api/`; bump its cache version when the
     shell list changes; `push` shows a notification from fixed titles, `notificationclick` opens `#job/<id>`,

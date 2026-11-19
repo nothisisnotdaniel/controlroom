@@ -16,7 +16,7 @@ public sealed partial class SearchWebAppTests
         int search = html.IndexOf("<a href=\"#search\" data-view=\"search\">Search</a>", StringComparison.Ordinal);
         int navEnd = html.IndexOf("</nav>", StringComparison.Ordinal);
         Assert.True(tasks >= 0 && search > tasks && search < navEnd);
-        Assert.Equal(5, NavLink().Matches(html[..navEnd]).Count);
+        Assert.Equal(6, NavLink().Matches(html[..navEnd]).Count);
         Assert.Contains("<main id=\"search\" hidden></main>", html, StringComparison.Ordinal);
     }
 
@@ -25,14 +25,14 @@ public sealed partial class SearchWebAppTests
     {
         string html = await Fetch("/index.html");
         string[] scripts =
-            ["/token.js", "/board.js", "/push.js", "/edit.js", "/inbox.js", "/tasks.js", "/search.js", "/live.js", "/app.js"];
+            ["/token.js", "/board.js", "/push.js", "/edit.js", "/inbox.js", "/tasks.js", "/search.js", "/capture.js", "/live.js", "/app.js"];
 
         int[] positions = scripts
             .Select(script => html.IndexOf("<script src=\"" + script + "\" defer></script>", StringComparison.Ordinal))
             .ToArray();
         Assert.All(positions, position => Assert.True(position >= 0));
         Assert.Equal(positions.OrderBy(position => position), positions);
-        Assert.Equal(9, ScriptTag().Matches(html).Count);
+        Assert.Equal(10, ScriptTag().Matches(html).Count);
     }
 
     [Fact]
@@ -42,10 +42,10 @@ public sealed partial class SearchWebAppTests
         string search = await Fetch("/search.js");
 
         Assert.Contains(
-            "const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"search\", \"job\", \"story\"];", app,
+            "const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"search\", \"capture\", \"job\", \"story\"];", app,
             StringComparison.Ordinal);
         Assert.Contains(
-            "const ViewTitles = { backlogs: \"Backlogs\", board: \"Jobs\", inbox: \"Inbox\", tasks: \"Tasks\", search: \"Search\" };",
+            "const ViewTitles = { backlogs: \"Backlogs\", board: \"Jobs\", inbox: \"Inbox\", tasks: \"Tasks\", search: \"Search\",\n  capture: \"Capture\" };",
             app, StringComparison.Ordinal);
         Assert.Contains("if (hash === SearchRoute) {\n    return \"search\";\n  }", app, StringComparison.Ordinal);
         Assert.Contains("if (next === \"search\") {\n    showSearch();\n    return;\n  }", app, StringComparison.Ordinal);
@@ -197,27 +197,28 @@ public sealed partial class SearchWebAppTests
     }
 
     [Fact]
-    public async Task ServiceWorker_CachesSearchJsWithVersion11AndNeverTheApi()
+    public async Task ServiceWorker_CachesSearchJsWithVersion12AndNeverTheApi()
     {
         string js = await Fetch("/sw.js");
 
-        Assert.Contains("const CacheVersion = \"v11\";", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/tasks.js\",\n  \"/search.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v12\";", js, StringComparison.Ordinal);
+        Assert.Contains("  \"/tasks.js\",\n  \"/search.js\",\n  \"/capture.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/search", js, StringComparison.Ordinal);
         Assert.Contains("if (url.pathname.startsWith(\"/api/\") || url.pathname === \"/health\") {\n    return false;", js,
             StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task AppCss_StylesTheSearchView_With16PxFieldsAndFiveNavLinksOnOneRow()
+    public async Task AppCss_StylesTheSearchView_With16PxFieldsAndSixNavLinksInTwoRows()
     {
         string css = await Fetch("/app.css");
 
         Assert.Contains(".search-field,\n.search-select {", css, StringComparison.Ordinal);
         Assert.Contains("  font-size: 16px;\n}", css, StringComparison.Ordinal);
         Assert.Contains(".search-item {\n  overflow-wrap: anywhere;\n}", css, StringComparison.Ordinal);
-        Assert.Contains("/* Five nav links fit on one row at iPhone width (375 px). */", css, StringComparison.Ordinal);
-        Assert.Contains("flex-wrap: nowrap;", css, StringComparison.Ordinal);
+        Assert.Contains("/* Six nav links fit in two rows of three at iPhone width (375 px). */", css, StringComparison.Ordinal);
+        Assert.Contains("    flex-wrap: wrap;\n", css, StringComparison.Ordinal);
+        Assert.Contains("    flex: 1 1 calc((100% - 8px) / 3);\n", css, StringComparison.Ordinal);
     }
 
     [Fact]
