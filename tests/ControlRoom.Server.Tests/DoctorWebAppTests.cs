@@ -29,8 +29,8 @@ public sealed partial class DoctorWebAppTests
 
         Assert.Contains(
             "<script src=\"/history.js\" defer></script>\n  <script src=\"/doctor.js\" defer></script>\n"
-            + "  <script src=\"/live.js\" defer></script>", html, StringComparison.Ordinal);
-        Assert.Equal(13, ScriptTag().Matches(html).Count);
+            + "  <script src=\"/status.js\" defer></script>\n  <script src=\"/live.js\" defer></script>", html, StringComparison.Ordinal);
+        Assert.Equal(14, ScriptTag().Matches(html).Count);
     }
 
     [Fact]
@@ -206,8 +206,8 @@ public sealed partial class DoctorWebAppTests
     {
         string js = await Fetch("/sw.js");
 
-        Assert.Contains("const CacheVersion = \"v15\";", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/history.js\",\n  \"/doctor.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v16\";", js, StringComparison.Ordinal);
+        Assert.Contains("  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/doctor", js, StringComparison.Ordinal);
     }
 

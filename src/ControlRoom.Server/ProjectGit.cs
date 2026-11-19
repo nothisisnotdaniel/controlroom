@@ -50,6 +50,31 @@ internal static class ProjectGit
         return result.Ok ? result.Output.Trim() : null;
     }
 
+    /// <summary>The number of commits on local <c>develop</c> that are not on local <c>main</c>
+    /// (<c>git rev-list --count refs/heads/main..refs/heads/develop</c>, read-only), or <c>null</c> when the folder
+    /// has no repo of its own, either branch is missing or git fails or times out.</summary>
+    public static async Task<int?> AheadOfMain(string folder)
+    {
+        string dotGit = Path.Combine(folder, ".git");
+        if (!Directory.Exists(dotGit) && !File.Exists(dotGit))
+        {
+            return null;
+        }
+
+        GitResult result = await Run(
+            folder, ["rev-list", "--count", "refs/heads/main..refs/heads/" + Branch], Timeout);
+        if (!result.Ok)
+        {
+            return null;
+        }
+
+        return int.TryParse(
+            result.Output.Trim(), System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out int count)
+            ? count
+            : null;
+    }
+
     /// <summary>True when <c>git status --porcelain -- backlog.md backlog</c> prints nothing (a failed call counts
     /// as not clean).</summary>
     public static async Task<bool> BacklogIsClean(string folder)
