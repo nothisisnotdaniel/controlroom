@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Control Room">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
+  <title>Control Room</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/token.js" defer></script>
+  <script src="/board.js" defer></script>
+  <script src="/act.js" defer></script>
+  <script src="/push.js" defer></script>
+  <script src="/edit.js" defer></script>
+  <script src="/inbox.js" defer></script>
+  <script src="/tasks.js" defer></script>
+  <script src="/search.js" defer></script>
+  <script src="/capture.js" defer></script>
+  <script src="/history.js" defer></script>
+  <script src="/doctor.js" defer></script>
+  <script src="/status.js" defer></script>
+  <script src="/live.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="top" id="top">
+    <nav class="nav" aria-label="Sections">
+      <a href="#jobs" data-view="board">Jobs</a>
+      <a href="#backlogs" data-view="backlogs">Backlogs</a>
+      <a href="#inbox" data-view="inbox">Inbox<span class="nav-count" id="inbox-count" hidden></span></a>
+      <a href="#tasks" data-view="tasks">Tasks<span class="nav-count" id="tasks-count" hidden></span></a>
+      <a href="#search" data-view="search">Search</a>
+      <a href="#capture" data-view="capture">Capture</a>
+      <a href="#history" data-view="history">History</a>
+      <a href="#doctor" data-view="doctor">Health</a>
+    </nav>
+    <h1 id="top-title">Backlogs</h1>
+  </header>
+  <p class="live-notice" id="live-notice" role="status" hidden></p>
+  <main id="backlogs">
+    <p class="status">Loading…</p>
+  </main>
+  <main id="board" hidden>
+    <section class="update" id="update" role="status" hidden></section>
+    <div class="board-bar">
+      <p class="live-status" id="board-status">Loading…</p>
+      <div class="filter" id="board-filter" role="group" aria-label="Filter by project" hidden></div>
+    </div>
+    <div id="board-content"></div>
+    <section class="push" id="push" aria-labelledby="push-title">
+      <h2 class="push-title" id="push-title">Notifications</h2>
+      <p class="push-text" id="push-text">Checking notifications…</p>
+      <div class="push-actions" id="push-actions"></div>
+      <p class="push-note" id="push-note" role="status" aria-live="polite" hidden></p>
+    </section>
+    <p class="app-version" id="app-version" hidden></p>
+    <div class="auto-update" id="auto-update" hidden></div>
+  </main>
+  <main id="inbox" hidden></main>
+  <main id="tasks" hidden></main>
+  <main id="search" hidden></main>
+  <main id="capture" hidden></main>
+  <main id="history" hidden></main>
+  <main id="doctor" hidden></main>
+  <main id="job" hidden></main>
+  <main id="story" hidden></main>
+  <div class="edit-notice" id="edit-notice" role="status" aria-live="polite" hidden>
+    <p class="edit-notice-text" id="edit-notice-text"></p>
+    <button class="edit-button" id="edit-notice-close" type="button">Close</button>
+  </div>
+  <main id="token" hidden>
+    <form class="token-form" id="token-form" novalidate>
+      <h1 class="token-title">Control Room</h1>
+      <p class="token-help">Enter the access token once on this device. Show it on the Mac with: <code>dotnet run --project src/ControlRoom.Server -- token</code></p>
+      <p class="error" id="token-refused" role="alert" hidden></p>
+      <label class="token-label" for="token-input">Access token</label>
+      <input class="token-input" id="token-input" name="token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <button class="token-save" type="submit">Save</button>
+    </form>
+  </main>
+</body>
+</html>
