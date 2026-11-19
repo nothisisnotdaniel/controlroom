@@ -2,9 +2,9 @@
 
 // Live updates: one timer asks /api/changes (metadata fingerprints) every PollInterval while the page is visible,
 // and only what changed is fetched again: the board (pollBoard in board.js), the backlog sections of changed
-// projects, the open story (app.js) and the inbox with its nav count (inbox.js). A failed check shows one fixed
-// connection notice. Loaded after inbox.js and before app.js; the functions of the other scripts are only called at
-// run time. Fingerprints are compared, never shown; only fixed texts are rendered, with textContent.
+// projects, the open story (app.js), the inbox with its nav count (inbox.js) and the tasks with theirs (tasks.js). A
+// failed check shows one fixed connection notice. Loaded after tasks.js and before app.js; the functions of the
+// other scripts are only called at run time. Fingerprints are compared, never shown; only fixed texts are rendered, with textContent.
 
 const LiveTexts = {
   lost: "Connection lost. Reconnecting…",
@@ -24,6 +24,8 @@ let boardStale = false;
 let jobStale = false;
 // Any project's backlog or stories changed: the inbox count (and the list, while shown) is fetched again.
 let inboxStale = false;
+// The same for the tasks and their ready count.
+let tasksStale = false;
 const staleBacklogs = new Set();
 const staleStories = new Set();
 let backlogsRefreshing = false;
@@ -83,6 +85,7 @@ function noteChanges(next, recovered) {
     boardStale = true;
     jobStale = true;
     inboxStale = true;
+    tasksStale = true;
     for (const name of names) {
       staleBacklogs.add(name);
       staleStories.add(name);
@@ -102,11 +105,13 @@ function noteChanges(next, recovered) {
     if (backlogChanged) {
       boardStale = true;
       inboxStale = true;
+      tasksStale = true;
       staleBacklogs.add(name);
       staleStories.add(name);
     } else if (before.stories !== after.stories) {
       staleStories.add(name);
       inboxStale = true;
+      tasksStale = true;
     }
   }
 }
@@ -155,6 +160,7 @@ async function refreshShownViews() {
   jobStale = false;
   await refreshStaleBacklogs();
   await refreshStaleStory();
+  await refreshStaleTasks();
   await refreshStaleInbox();
 }
 
@@ -167,6 +173,18 @@ async function refreshStaleInbox() {
   inboxStale = false;
   if (!(await loadInbox())) {
     inboxStale = true;
+  }
+}
+
+// The same for the tasks: the ready count follows every change; loadTasks leaves the list alone while a change is
+// sent (changeBusy) and reports it, so it is tried again on the next check.
+async function refreshStaleTasks() {
+  if (!tasksStale) {
+    return;
+  }
+  tasksStale = false;
+  if (!(await loadTasks())) {
+    tasksStale = true;
   }
 }
 

@@ -33,7 +33,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `POST /api/backlog/change`, one change at a time, only on its `develop` branch, only with a clean
     `backlog.md` and `backlog/`, checked against the version (SHA-256) the client saw (refused as changed
     otherwise), written atomically without following symlinks (`SafeFileWriter`), then committed in that
-    project's repo with only the changed files (and pushed when there is an `origin`). Nothing else in the
+    project's repo with only the changed files (and pushed when there is an `origin`). The actions are approve,
+    drop, up/down/top, add, title, story and `done` (only a `[h]` line becomes `[x]`). Nothing else in the
     factory root is written.
   - Text from files (backlog lines, job records) is shown as text, never as raw HTML; Markdown is rendered
     with raw HTML turned off.
@@ -113,17 +114,21 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `ProjectFinder` (project discovery), `SafeFileReader` (no-follow, regular-file, size-capped text or bytes read, SHA-256 version),
     `SafeFileWriter` (temp file in the same folder, then rename; refuses a symlinked target or folder),
     `BacklogReader` (safe `backlog.md` read), `BacklogParser` (lines to entries, old and numbered `[#N](…)`
-    format), `BacklogsEndpoint` (`GET /api/backlogs`, with `waiting`, `line` and
-    the file `version`), `BacklogEditor` (`EditableText` lines that keep their bytes; approve, drop, move, title
+    format), `BacklogWaiting` (the Ready/Waiting rule: a dependency is met only by a done line of the named, or the
+    same, project; unknown counts as unmet), `BacklogsEndpoint` (`GET /api/backlogs`, with `waiting`, `line` and
+    the file `version`), `BacklogEditor` (`EditableText` lines that keep their bytes; approve, drop, done, move, title
     and add edits, slug, next number and story template like `job.py`), `ProjectGit` (fixed-argument git calls
     with timeouts and `GIT_TERMINAL_PROMPT=0`), `BacklogChangeEndpoint` (`POST /api/backlog/change`: request
-    checks, `not_develop`/`dirty`/`changed`, write, commit, push), `StoryReader` (fenced read of
+    checks, `not_develop`/`dirty`/`changed`, write, commit, push; `done` commits `backlog: done #N`), `StoryReader` (fenced read of
     `<project>/backlog/NNN-slug.md`), `StoryMarkdown` (Markdown to a JSON block tree, no HTML),
     `StoryEndpoint` (`GET /api/story?project=&number=`, with `markdown`
     and `storyVersion`), `InboxEndpoint` (`GET /api/inbox`: every `[?]` line as `{project, version, line, number, title,
     rest, job}` plus `unreadable` project names, `no-store`; `job` from the first `Proposed by job <id>` in the story's
     `## Notes` through `StoryReader`, kept only as `^[0-9]{1,6}-[a-z0-9]+(-[a-z0-9]+)*$` up to 80 chars; with a job first by
-    its number, then without, ties by project (ordinal) and line), `JobReader` (`factory/jobs/<id>/state.json` to a typed
+    its number, then without, ties by project (ordinal) and line), `TasksEndpoint` (`GET /api/tasks`: every `[h]` line as
+    `{project, version, line, number, title, rest, story, after}` split into `ready` and `waiting` by `BacklogWaiting`
+    (`after` only the unmet dependencies, `project` always set), plus `unreadable` names, `no-store`; project order, then
+    file order), `JobReader` (`factory/jobs/<id>/state.json` to a typed
     `JobSummary`), `BoardEndpoint` (`GET /api/board`: jobs and `[h]` tasks), `ChangeFingerprint` (SHA-256 fingerprints from `lstat`
     metadata only: `jobs` over each `state.json` of `JobReader.ListFolders`, per project `backlog` over `backlog.md`
     and `stories` over `backlog/*.md`; a symlink adds only a `link` marker, a missing path `missing`; `NoFollowStat`:
@@ -148,11 +153,14 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     pending, and at once on becoming visible; refetches only the board, the changed backlog sections (kept while a form
     is open or focus is inside) and the open story (in place, never while Edit story is open); a failed check shows
     the fixed `Connection lost. Reconnecting…` notice under the header, or in the `board-status` line on the board;
-    script order `token.js`, `board.js`, `push.js`, `edit.js`, `inbox.js`, `live.js`, `app.js`; a changed `backlog` or
-    `stories` fingerprint refetches the inbox and its count), `inbox.js` (the `#inbox` view: every `[?]` item with project,
+    script order `token.js`, `board.js`, `push.js`, `edit.js`, `inbox.js`, `tasks.js`, `live.js`, `app.js`; a changed
+    `backlog` or `stories` fingerprint refetches the inbox and the tasks and their counts), `inbox.js` (the `#inbox` view: every `[?]` item with project,
     `#N Title`, `Proposed by <job>` link, Approve and Drop through `sendChange` (never rebuilt while `changeBusy`), fixed
     texts; the nav count, hidden at 0 or unknown, fetched once per page load, after a token is saved and after every
-    committed change), `push.js` (Notifications section on the
+    committed change), `tasks.js` (the `#tasks` view: `Ready now` and `Waiting` sections of `[h]` items with project,
+    `#N Title` story link, `rest` and `Waits for` links (`Project#N` or `#N`), a Done button on Ready items only
+    (confirm, then `action:"done"` through `sendChange`, never rebuilt while `changeBusy`), fixed texts in `TasksTexts`;
+    the nav count of Ready items, hidden at 0 or unknown, fetched as the inbox count), `push.js` (Notifications section on the
     board: state texts, Turn on (permission only from the tap), done and update switches, Send test, Turn off),
     `sw.js` (service worker: caches only the fixed app shell, never `/api/`; bump its cache version when the
     shell list changes; `push` shows a notification from fixed titles, `notificationclick` opens `#job/<id>`,

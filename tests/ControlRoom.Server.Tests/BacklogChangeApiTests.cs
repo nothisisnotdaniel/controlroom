@@ -447,6 +447,119 @@ public sealed class BacklogChangeApiTests
         Assert.Equal("- [ ] A\r\n- [ ] B\r\nno final newline", File.ReadAllText(repo.BacklogPath));
     }
 
+    private const string HandBacklog =
+        "# Alpha backlog\n"                                           // 0
+        + "- [x] [#1](backlog/001-done.md) Done one\n"                // 1
+        + "- [h] [#2](backlog/002-open.md) Hand two (after: #1)\n"    // 2
+        + "Prose line.\n"                                             // 3
+        + "- [h] Old hand: no number\n"                               // 4
+        + "- [?] [#3](backlog/003-proposal.md) Proposal three\n"      // 5
+        + "- [ ] Plain open: old line\n";                             // 6
+
+    [Fact]
+    public async Task Done_TicksOffAHandLineInOneBacklogOnlyCommitAndPushes()
+    {
+        using Repo repo = Repo.Create(HandBacklog);
+        string remote = repo.Root.AddBareRemote(repo.Folder);
+        string storyBefore = repo.StoryVersion(2);
+
+        JsonElement result = await repo.Change(new { action = "done", line = 2 });
+
+        Assert.Equal(
+            Encoding.UTF8.GetBytes(HandBacklog.Replace("- [h] [#2]", "- [x] [#2]", StringComparison.Ordinal)),
+            File.ReadAllBytes(repo.BacklogPath));
+        repo.AssertOneCommit("backlog: done #2", ["backlog.md"]);
+        Assert.Equal(storyBefore, repo.StoryVersion(2));
+        Assert.Equal(repo.Version(), result.GetProperty("version").GetString());
+        Assert.True(result.GetProperty("committed").GetBoolean());
+        Assert.True(result.GetProperty("pushed").GetBoolean());
+        Assert.Equal(
+            TempFactoryRoot.Git(repo.Folder, "rev-parse", "HEAD"),
+            TempFactoryRoot.Git(remote, "rev-parse", "refs/heads/develop"));
+        Assert.Equal("", TempFactoryRoot.Git(repo.Folder, "status", "--porcelain"));
+    }
+
+    [Fact]
+    public async Task Done_AnUnnumberedLineNamesItsLineNumber()
+    {
+        using Repo repo = Repo.Create(HandBacklog);
+
+        JsonElement result = await repo.Change(new { action = "done", line = 4 });
+
+        Assert.Contains("- [x] Old hand: no number\n", File.ReadAllText(repo.BacklogPath), StringComparison.Ordinal);
+        repo.AssertOneCommit("backlog: done line 5", ["backlog.md"]);
+        Assert.False(result.GetProperty("pushed").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(3)]
+    [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
+    [InlineData(99)]
+    [InlineData(null)]
+    public async Task Done_OnALineThatIsNotHandOrWithoutALine_Is400InvalidAndWritesNothing(int? line)
+    {
+        using Repo repo = Repo.Create(HandBacklog);
+        using HttpClient client = repo.Factory.CreateTokenClient();
+        IReadOnlyList<string> before = repo.State();
+        object body = line is null
+            ? new { project = "Alpha", version = repo.Version(), action = "done" }
+            : new { project = "Alpha", version = repo.Version(), action = "done", line = line.Value };
+
+        using HttpResponseMessage response = await client.PostAsync(Route, Json(body));
+
+        await AssertError(response, HttpStatusCode.BadRequest, "invalid");
+        Assert.Equal(before, repo.State());
+    }
+
+    [Fact]
+    public async Task Done_WithAStaleVersion_Is409ChangedAndHeadStays()
+    {
+        using Repo repo = Repo.Create(HandBacklog);
+        using HttpClient client = repo.Factory.CreateTokenClient();
+        IReadOnlyList<string> before = repo.State();
+
+        using HttpResponseMessage response = await client.PostAsync(
+            Route, Json(new { project = "Alpha", version = new string('0', 64), action = "done", line = 2 }));
+
+        await AssertError(response, HttpStatusCode.Conflict, "changed");
+        Assert.Equal(before, repo.State());
+    }
+
+    [Fact]
+    public async Task Done_WithADirtyBacklog_Is409DirtyAndHeadStays()
+    {
+        using Repo repo = Repo.Create(HandBacklog);
+        File.AppendAllText(repo.BacklogPath, "- [ ] Uncommitted: line\n");
+        using HttpClient client = repo.Factory.CreateTokenClient();
+        IReadOnlyList<string> before = repo.State();
+
+        using HttpResponseMessage response = await client.PostAsync(
+            Route, Json(new { project = "Alpha", version = repo.Version(), action = "done", line = 2 }));
+
+        await AssertError(response, HttpStatusCode.Conflict, "dirty");
+        Assert.Equal(before, repo.State());
+    }
+
+    [Fact]
+    public async Task Done_OnAnotherBranch_Is409NotDevelopAndHeadStays()
+    {
+        using Repo repo = Repo.Create(HandBacklog);
+        TempFactoryRoot.Git(repo.Folder, "checkout", "-q", "-b", "feature");
+        using HttpClient client = repo.Factory.CreateTokenClient();
+        IReadOnlyList<string> before = repo.State();
+
+        using HttpResponseMessage response = await client.PostAsync(
+            Route, Json(new { project = "Alpha", version = repo.Version(), action = "done", line = 2 }));
+
+        await AssertError(response, HttpStatusCode.Conflict, "not_develop");
+        Assert.Equal(before, repo.State());
+        Assert.Equal("feature", TempFactoryRoot.Git(repo.Folder, "branch", "--show-current"));
+    }
+
     [Fact]
     public async Task Change_PushesToOrigin()
     {

@@ -9,7 +9,7 @@ public sealed partial class ServiceWorkerTests
 {
     private static readonly string[] ShellPaths =
     [
-        "/", "/index.html", "/app.css", "/app.js", "/board.js", "/edit.js", "/inbox.js", "/live.js", "/push.js", "/token.js", "/manifest.webmanifest", "/icons/apple-touch-icon.png",
+        "/", "/index.html", "/app.css", "/app.js", "/board.js", "/edit.js", "/inbox.js", "/tasks.js", "/live.js", "/push.js", "/token.js", "/manifest.webmanifest", "/icons/apple-touch-icon.png",
         "/icons/icon-192.png", "/icons/icon-512.png",
     ];
 
@@ -46,7 +46,7 @@ public sealed partial class ServiceWorkerTests
     {
         string js = await Fetch();
 
-        Assert.Contains("const CacheVersion = \"v9\";", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v10\";", js, StringComparison.Ordinal);
         Assert.Contains("  \"/edit.js\",\n", js, StringComparison.Ordinal);
         Assert.Contains("  \"/inbox.js\",\n", js, StringComparison.Ordinal);
         Assert.Contains("  \"/live.js\",\n", js, StringComparison.Ordinal);
