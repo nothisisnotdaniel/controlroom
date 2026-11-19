@@ -63,6 +63,58 @@ public sealed class JobApiTests
     }
 
     [Fact]
+    public async Task Job_ReturnsEveryStateField()
+    {
+        using TempFactoryRoot root = new();
+        root.AddJob(Id, JobSamples.FullState.Replace("\"decision\": null", "\"decision\": \"ESCALATE\"",
+            StringComparison.Ordinal));
+        root.AddJob("8-wrong", JobSamples.WrongTypes);
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+
+        using JsonDocument full = JsonDocument.Parse(await client.GetStringAsync("/api/job?id=" + Id));
+        JsonElement job = full.RootElement.GetProperty("job");
+
+        Assert.Equal("review", job.GetProperty("stage").GetString());
+        Assert.Equal(2, job.GetProperty("round").GetInt32());
+        Assert.Equal("quality", job.GetProperty("mode").GetString());
+        Assert.Equal("full", job.GetProperty("path").GetString());
+        Assert.Equal("high", job.GetProperty("risk").GetString());
+        Assert.Equal(
+            [("security", "PASS"), ("ux", "pending"), ("ui", "skipped"), ("code", "CHANGES")],
+            Pairs(job.GetProperty("reviews")));
+        JsonElement past = Assert.Single(job.GetProperty("pastRounds").EnumerateArray());
+        Assert.Equal(
+            [("security", "CHANGES"), ("ux", "PASS"), ("ui", "skipped"), ("code", "PASS")], Pairs(past));
+        Assert.Equal("PASS", job.GetProperty("specReview").GetString());
+        Assert.True(job.GetProperty("specRevised").GetBoolean());
+        Assert.Equal("ESCALATE", job.GetProperty("decision").GetString());
+        Assert.Equal("waiting on ci", job.GetProperty("note").GetString());
+        Assert.Equal("passed", job.GetProperty("ciStatus").GetString());
+
+        using JsonDocument wrong = JsonDocument.Parse(await client.GetStringAsync("/api/job?id=8-wrong"));
+        JsonElement broken = wrong.RootElement.GetProperty("job");
+
+        foreach (string name in new[]
+                 {
+                     "stage", "round", "mode", "path", "risk", "specReview", "specRevised", "decision", "note",
+                     "ciStatus",
+                 })
+        {
+            Assert.True(broken.GetProperty(name).ValueKind == JsonValueKind.Null, name);
+        }
+
+        Assert.Equal(JsonValueKind.Object, broken.GetProperty("reviews").ValueKind);
+        Assert.Empty(broken.GetProperty("reviews").EnumerateObject());
+        Assert.Equal(0, broken.GetProperty("pastRounds").GetArrayLength());
+    }
+
+    private static (string, string?)[] Pairs(JsonElement map)
+    {
+        return map.EnumerateObject().Select(property => (property.Name, property.Value.GetString())).ToArray();
+    }
+
+    [Fact]
     public async Task Job_ListsReviewsOfAtMostTwentyRounds()
     {
         using TempFactoryRoot root = new();

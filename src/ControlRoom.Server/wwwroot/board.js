@@ -31,6 +31,10 @@ const BoardTexts = {
   channelStable: "Stable",
   channelDevelop: "Develop (prereleases)",
   channelFailed: "Can't change the update channel. Try again.",
+  jobState: "Job state",
+  jobRound: " · round ",
+  specCheck: "spec check",
+  ci: "CI ",
 };
 
 const AutoUpdateRoute = "/api/update/settings";
@@ -128,7 +132,12 @@ function asMap(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
-function roundRow(label, reviews, past) {
+// On the card a chip shows only its reviewer (the value is in title); on the job page it also shows the value.
+function chipText(key, value, visible) {
+  return visible ? key + " " + value : key;
+}
+
+function roundRow(label, reviews, past, visible) {
   const row = element("div", past ? "round past" : "round");
   row.appendChild(element("span", "round-label", label));
   const map = asMap(reviews);
@@ -137,7 +146,7 @@ function roundRow(label, reviews, past) {
     if (value === "skipped") {
       continue;
     }
-    const chip = element("span", chipClass(value), key);
+    const chip = element("span", chipClass(value), chipText(key, value, visible));
     chip.title = key + ": " + value;
     row.appendChild(chip);
   }
@@ -168,6 +177,29 @@ function rightText(job) {
   return round ? "round " + round : "";
 }
 
+// One row per round: the spec check, each past round, then the current round once reviews have started.
+// Shared by the board card and the job page; visible puts each chip's value in its text.
+function reviewRounds(job, visible) {
+  const rounds = element("div", "rounds");
+  const specReview = asText(job.specReview);
+  if (specReview) {
+    const row = element("div", job.stage === "spec" ? "round" : "round past");
+    row.appendChild(element("span", "round-label", job.specRevised === true ? "Spec·2" : "Spec"));
+    const chip = element("span", chipClass(specReview), chipText(BoardTexts.specCheck, specReview, visible));
+    chip.title = BoardTexts.specCheck + ": " + specReview;
+    row.appendChild(chip);
+    rounds.appendChild(row);
+  }
+  asList(job.pastRounds).forEach((reviews, index) => {
+    rounds.appendChild(roundRow("R" + (index + 1), reviews, true, visible));
+  });
+  const round = asNumber(job.round);
+  if (round && job.stage !== "spec" && job.stage !== "build") {
+    rounds.appendChild(roundRow("R" + round, job.reviews, false, visible));
+  }
+  return rounds;
+}
+
 function renderCard(job) {
   const id = asText(job.id);
   const card = element("a", job.stage === "needs-human" ? "card card-human" : "card");
@@ -190,23 +222,7 @@ function renderCard(job) {
   card.appendChild(head);
   card.appendChild(element("span", "card-title", asText(job.title) || id));
 
-  const rounds = element("div", "rounds");
-  const specReview = asText(job.specReview);
-  if (specReview) {
-    const row = element("div", job.stage === "spec" ? "round" : "round past");
-    row.appendChild(element("span", "round-label", job.specRevised === true ? "Spec·2" : "Spec"));
-    const chip = element("span", chipClass(specReview), "spec check");
-    chip.title = "spec check: " + specReview;
-    row.appendChild(chip);
-    rounds.appendChild(row);
-  }
-  asList(job.pastRounds).forEach((reviews, index) => {
-    rounds.appendChild(roundRow("R" + (index + 1), reviews, true));
-  });
-  const round = asNumber(job.round);
-  if (round && job.stage !== "spec" && job.stage !== "build") {
-    rounds.appendChild(roundRow("R" + round, job.reviews, false));
-  }
+  const rounds = reviewRounds(job, false);
   if (rounds.childElementCount > 0) {
     card.appendChild(rounds);
   }
@@ -730,6 +746,47 @@ function renderTabs(records, onSelect) {
   return tabs;
 }
 
+// The board's label for a stage; an unknown stage is shown as its own text.
+function stageLabel(stage) {
+  if (stage === "needs-human") {
+    return BoardTexts.needsYou;
+  }
+  const known = Stages.find((entry) => entry.key === stage);
+  return known ? known.label : stage;
+}
+
+// Stage and round, reviews per round, decision, CI and note; a missing or empty field adds nothing.
+function renderJobState(job) {
+  const section = element("section", "job-state");
+  section.setAttribute("aria-label", BoardTexts.jobState);
+  const stage = asText(job.stage);
+  if (stage) {
+    const round = asNumber(job.round);
+    section.appendChild(element("p", "job-stage", stageLabel(stage) + (round ? BoardTexts.jobRound + round : "")));
+  }
+  const rounds = reviewRounds(job, true);
+  if (rounds.childElementCount > 0) {
+    section.appendChild(rounds);
+  }
+  const outcome = element("div", "job-outcome");
+  const decision = asText(job.decision);
+  if (decision) {
+    outcome.appendChild(element("span", chipClass(decision), decision));
+  }
+  const ci = asText(job.ciStatus);
+  if (ci) {
+    outcome.appendChild(element("span", "job-ci", BoardTexts.ci + ci));
+  }
+  if (outcome.childElementCount > 0) {
+    section.appendChild(outcome);
+  }
+  const note = asText(job.note);
+  if (note) {
+    section.appendChild(element("p", "job-note", note));
+  }
+  return section;
+}
+
 function renderJobPage(data) {
   const job = asMap(data && data.job);
   const records = asList(data && data.records);
@@ -750,6 +807,10 @@ function renderJobPage(data) {
     asText(job.risk) ? job.risk + " risk" : "",
   ].filter((fact) => fact !== "");
   article.appendChild(element("p", "job-facts", facts.join(" · ")));
+  const state = renderJobState(job);
+  if (state.childElementCount > 0) {
+    article.appendChild(state);
+  }
 
   const panel = element("div", "record-panel");
   panel.id = "record-panel";

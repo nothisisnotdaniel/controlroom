@@ -401,11 +401,15 @@ public sealed partial class WebAppTests
         Assert.Contains("text += \" · high risk\";", js, StringComparison.Ordinal);
         Assert.Contains("const Reviewers = [\"security\", \"ux\", \"ui\", \"code\"];", js, StringComparison.Ordinal);
         Assert.Contains("if (value === \"skipped\") {", js, StringComparison.Ordinal);
-        Assert.Contains("element(\"span\", chipClass(specReview), \"spec check\")", js, StringComparison.Ordinal);
-        Assert.Contains("rounds.appendChild(roundRow(\"R\" + (index + 1), reviews, true));",
+        Assert.Contains("specCheck: \"spec check\",", js, StringComparison.Ordinal);
+        Assert.Contains(
+            "element(\"span\", chipClass(specReview), chipText(BoardTexts.specCheck, specReview, visible))", js,
+            StringComparison.Ordinal);
+        Assert.Contains("rounds.appendChild(roundRow(\"R\" + (index + 1), reviews, true, visible));",
             js, StringComparison.Ordinal);
-        Assert.Contains("rounds.appendChild(roundRow(\"R\" + round, job.reviews, false));",
+        Assert.Contains("rounds.appendChild(roundRow(\"R\" + round, job.reviews, false, visible));",
             js, StringComparison.Ordinal);
+        Assert.Contains("const rounds = reviewRounds(job, false);", js, StringComparison.Ordinal);
         Assert.Contains("element(\"span\", \"card-note\", asText(job.note))", js, StringComparison.Ordinal);
         Assert.Contains("element(\"span\", \"card-branch\", asText(job.branch))", js, StringComparison.Ordinal);
         Assert.Contains(
@@ -479,6 +483,117 @@ public sealed partial class WebAppTests
         Assert.DoesNotContain(".message", js, StringComparison.Ordinal);
         Assert.DoesNotContain("statusText", js, StringComparison.Ordinal);
         Assert.DoesNotContain("caches", js, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BoardJs_JobPageStateShowsStageAndRoundWithTheBoardLabels()
+    {
+        string js = await Fetch("/board.js");
+
+        Assert.Contains("jobState: \"Job state\",", js, StringComparison.Ordinal);
+        Assert.Contains("jobRound: \" · round \",", js, StringComparison.Ordinal);
+        Assert.Contains("needsYou: \"Needs you\",", js, StringComparison.Ordinal);
+        foreach (string stage in new[]
+                 {
+                     "{ key: \"spike\", label: \"Spike\" }", "{ key: \"spec\", label: \"Spec\" }",
+                     "{ key: \"build\", label: \"Build\" }", "{ key: \"review\", label: \"Review\" }",
+                     "{ key: \"approve\", label: \"Approve\" }",
+                     "{ key: \"done\", label: \"Merged\", collapsed: true }",
+                 })
+        {
+            Assert.Contains(stage, js, StringComparison.Ordinal);
+        }
+
+        string label = Body(js, "function stageLabel(stage) {");
+        Assert.Contains("if (stage === \"needs-human\") {\n    return BoardTexts.needsYou;", label,
+            StringComparison.Ordinal);
+        Assert.Contains("const known = Stages.find((entry) => entry.key === stage);", label, StringComparison.Ordinal);
+        Assert.Contains("return known ? known.label : stage;", label, StringComparison.Ordinal);
+
+        string state = Body(js, "function renderJobState(job) {");
+        Assert.Contains("section.setAttribute(\"aria-label\", BoardTexts.jobState);", state, StringComparison.Ordinal);
+        Assert.Contains("const stage = asText(job.stage);\n  if (stage) {", state, StringComparison.Ordinal);
+        Assert.Contains(
+            "element(\"p\", \"job-stage\", stageLabel(stage) + (round ? BoardTexts.jobRound + round : \"\"))", state,
+            StringComparison.Ordinal);
+        Assert.Contains("const round = asNumber(job.round);", state, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BoardJs_JobPageStateReusesRoundRowWithVisibleValues()
+    {
+        string js = await Fetch("/board.js");
+
+        Assert.Contains("return visible ? key + \" \" + value : key;", js, StringComparison.Ordinal);
+        Assert.Contains("element(\"span\", chipClass(value), chipText(key, value, visible))", js,
+            StringComparison.Ordinal);
+        Assert.Contains("if (value === \"skipped\") {\n      continue;", Body(js, "function roundRow("),
+            StringComparison.Ordinal);
+        Assert.Contains("job.specRevised === true ? \"Spec·2\" : \"Spec\"", js, StringComparison.Ordinal);
+        Assert.Contains("if (round && job.stage !== \"spec\" && job.stage !== \"build\") {", js,
+            StringComparison.Ordinal);
+
+        string state = Body(js, "function renderJobState(job) {");
+        Assert.Contains("const rounds = reviewRounds(job, true);\n  if (rounds.childElementCount > 0) {", state,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BoardJs_JobPageStateShowsDecisionCiAndNoteOnlyWhenSet()
+    {
+        string js = await Fetch("/board.js");
+
+        Assert.Contains("ci: \"CI \",", js, StringComparison.Ordinal);
+        string state = Body(js, "function renderJobState(job) {");
+        Assert.Contains("const decision = asText(job.decision);\n  if (decision) {", state, StringComparison.Ordinal);
+        Assert.Contains("outcome.appendChild(element(\"span\", chipClass(decision), decision));", state,
+            StringComparison.Ordinal);
+        // Every CI status is shown here, skipped included (the card hides skipped).
+        Assert.Contains("const ci = asText(job.ciStatus);\n  if (ci) {", state, StringComparison.Ordinal);
+        Assert.Contains("element(\"span\", \"job-ci\", BoardTexts.ci + ci)", state, StringComparison.Ordinal);
+        Assert.Contains("if (outcome.childElementCount > 0) {", state, StringComparison.Ordinal);
+        Assert.Contains("const note = asText(job.note);\n  if (note) {", state, StringComparison.Ordinal);
+        Assert.Contains("element(\"p\", \"job-note\", note)", state, StringComparison.Ordinal);
+        // Classes come only from fixed names and the fixed chipClass map.
+        Assert.DoesNotContain("className", state, StringComparison.Ordinal);
+        Assert.DoesNotContain("classList", state, StringComparison.Ordinal);
+        Assert.DoesNotContain("innerHTML", js, StringComparison.Ordinal);
+        Assert.DoesNotContain(".message", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("statusText", js, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BoardJs_JobPagePutsTheStateBetweenFactsAndTabs()
+    {
+        string js = await Fetch("/board.js");
+
+        string page = Body(js, "function renderJobPage(data) {");
+        int facts = page.IndexOf("article.appendChild(element(\"p\", \"job-facts\"", StringComparison.Ordinal);
+        int state = page.IndexOf(
+            "const state = renderJobState(job);\n  if (state.childElementCount > 0) {\n    article.appendChild(state);",
+            StringComparison.Ordinal);
+        int tabs = page.IndexOf("tabs = renderTabs(records, select);", StringComparison.Ordinal);
+        Assert.True(facts >= 0 && state > facts && tabs > state, "facts, state, tabs");
+        // A job with only an id still gets its title, facts and tabs: the state section is the only optional part.
+        Assert.Contains("element(\"h1\", \"story-title\", asText(job.title) || asText(job.id))", page,
+            StringComparison.Ordinal);
+        Assert.Contains("const job = asMap(data && data.job);", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AppCss_StylesTheJobStateSoItWraps()
+    {
+        string css = await Fetch("/app.css");
+
+        foreach (string selector in new[] { ".job-state {", ".job-stage {", ".job-outcome {", ".job-note {", ".job-ci {" })
+        {
+            Assert.Contains(selector, css, StringComparison.Ordinal);
+        }
+
+        Assert.Contains("flex-wrap: wrap;", Body(css, ".job-outcome {"), StringComparison.Ordinal);
+        Assert.Contains("overflow-wrap: anywhere;", Body(css, ".job-note {"), StringComparison.Ordinal);
+        Assert.Contains("white-space: normal;", Body(css, ".job-state .chip {"), StringComparison.Ordinal);
+        Assert.DoesNotContain("overflow-x", Body(css, ".job-state {"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -712,6 +827,16 @@ public sealed partial class WebAppTests
         Assert.Contains("font-weight: 400;", rule, StringComparison.Ordinal);
         Assert.Contains("font-style: italic;", rule, StringComparison.Ordinal);
         Assert.DoesNotContain("#", rule, StringComparison.Ordinal);
+    }
+
+    /// <summary>The text from <paramref name="start"/> to the next line that closes a top-level block.</summary>
+    private static string Body(string text, string start)
+    {
+        text = text.Replace("\r\n", "\n", StringComparison.Ordinal);
+        int from = text.IndexOf(start, StringComparison.Ordinal);
+        Assert.True(from >= 0, start);
+        int end = text.IndexOf("\n}\n", from, StringComparison.Ordinal);
+        return end < 0 ? text[from..] : text[from..end];
     }
 
     private static async Task<string> Fetch(string path)

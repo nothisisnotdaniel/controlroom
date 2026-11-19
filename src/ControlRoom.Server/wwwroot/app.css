@@ -623,6 +623,44 @@ a.card:focus-visible {
   font: 0.85rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+/* Job state: stage line, review rows, decision and CI, note. Rows wrap; nothing scrolls sideways. */
+.job-state {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 12px;
+  min-width: 0;
+}
+
+.job-stage {
+  margin: 0;
+  font-weight: 600;
+}
+
+.job-outcome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 0.85rem;
+}
+
+.job-ci {
+  color: var(--muted);
+}
+
+.job-note {
+  margin: 0;
+  color: var(--human);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.job-state .chip {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .tabs {
   display: flex;
   gap: 4px;
