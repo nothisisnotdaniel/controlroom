@@ -43,6 +43,7 @@ const ChangeErrors = {
   commit_failed: "The commit failed. Nothing was changed.",
   write_failed: "Can't write the file. Nothing was changed.",
   push_failed: "Committed, but the push failed.",
+  worktree_failed: "Could not prepare the backlog branch. Nothing was changed.",
   unreachable: "Can't reach the server. Reload to see whether the change was saved.",
   notEditable: "This story can't be edited.",
   failed: "The change failed. Reload to see whether it was saved.",

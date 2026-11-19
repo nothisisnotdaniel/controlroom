@@ -34,18 +34,20 @@ internal static partial class InboxEndpoint
 
     public static void Map(WebApplication app)
     {
-        app.MapMethods(Route, [HttpMethods.Get, HttpMethods.Head], (FactoryRoot root, HttpContext context) =>
+        app.MapMethods(Route, [HttpMethods.Get, HttpMethods.Head], async (
+            FactoryRoot root, BacklogWorktree worktree, HttpContext context) =>
         {
             context.Response.Headers.CacheControl = "no-store";
-            return Results.Json(Build(root.Path));
+            return Results.Json(Build(await BacklogSource.ForAll(ProjectFinder.Find(root.Path), worktree)));
         });
     }
 
-    public static InboxResponse Build(string factoryRoot)
+    /// <summary>The response from each project's backlog source folder (<see cref="BacklogSource"/>).</summary>
+    public static InboxResponse Build(IReadOnlyList<ProjectFolder> sources)
     {
         List<InboxItem> items = [];
         List<string> unreadable = [];
-        foreach (ProjectFolder project in ProjectFinder.Find(factoryRoot))
+        foreach (ProjectFolder project in sources)
         {
             BacklogFile? file = BacklogReader.ReadFile(project);
             if (file is null)

@@ -181,13 +181,19 @@ public sealed partial class BacklogChangeApiTests
     }
 
     [Fact]
-    public async Task Capture_OnAnotherBranch_Is409NotDevelop()
+    public async Task Capture_OnAnotherBranch_CommitsOnBacklogAndTheCheckoutStays()
     {
         using Repo repo = Repo.Create();
         TempFactoryRoot.Git(repo.Folder, "checkout", "-q", "-b", "feature");
-        await AssertCaptureRefused(
-            repo, "{\"action\":\"capture\",\"text\":\"Idea\"}", HttpStatusCode.Conflict, "not_develop");
+        IReadOnlyList<string> before = repo.State();
+
+        JsonElement result = await repo.Change(new { action = "capture", text = "Idea" });
+
+        Assert.False(result.GetProperty("pushed").GetBoolean());
+        Assert.Equal(before, repo.State());
         Assert.Equal("feature", TempFactoryRoot.Git(repo.Folder, "branch", "--show-current"));
+        string story = Path.GetFileName(Directory.GetFiles(Path.Combine(repo.WorktreePath, "backlog"), "004-*.md").Single());
+        repo.AssertBacklogCommit("backlog: capture #4", ["backlog.md", "backlog/" + story]);
     }
 
     [Fact]

@@ -49,7 +49,8 @@ internal static partial class SearchEndpoint
 
     public static void Map(WebApplication app)
     {
-        app.MapMethods(Route, [HttpMethods.Get, HttpMethods.Head], (FactoryRoot root, HttpContext context) =>
+        app.MapMethods(Route, [HttpMethods.Get, HttpMethods.Head], async (
+            FactoryRoot root, BacklogWorktree worktree, HttpContext context) =>
         {
             context.Response.Headers.CacheControl = "no-store";
             IReadOnlyList<ProjectFolder> projects = ProjectFinder.Find(root.Path);
@@ -59,7 +60,7 @@ internal static partial class SearchEndpoint
                 return Results.Content(InvalidBody, "application/json", statusCode: StatusCodes.Status400BadRequest);
             }
 
-            return Results.Json(Build(projects, query));
+            return Results.Json(Build(await BacklogSource.ForAll(projects, worktree), query));
         });
     }
 

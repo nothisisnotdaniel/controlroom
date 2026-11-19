@@ -5,7 +5,8 @@ internal sealed record FactoryRoot(string Path);
 
 /// <summary>One project in the <c>GET /api/backlogs</c> response. <c>Version</c> is the SHA-256 of the
 /// <c>backlog.md</c> bytes (<c>null</c> when unreadable), sent back with every change. <c>Next</c>, <c>Stopped</c> and
-/// <c>Blocked</c> come from <see cref="BacklogPlan"/> (<c>null</c>, <c>false</c> and empty when unreadable).</summary>
+/// <c>Blocked</c> come from <see cref="BacklogPlan"/> (<c>null</c>, <c>false</c> and empty when unreadable).
+/// <c>Pending</c> is true when the backlog is read from the <see cref="BacklogWorktree"/> (<see cref="BacklogSource"/>).</summary>
 internal sealed record ProjectBacklog(
     string Name,
     bool Readable,
@@ -16,7 +17,8 @@ internal sealed record ProjectBacklog(
     string? Version,
     PlanItem? Next,
     bool Stopped,
-    IReadOnlyList<BlockedItem> Blocked);
+    IReadOnlyList<BlockedItem> Blocked,
+    bool Pending = false);
 
 /// <summary>The <c>GET /api/backlogs</c> response.</summary>
 internal sealed record BacklogsResponse(IReadOnlyList<ProjectBacklog> Projects);
@@ -29,23 +31,27 @@ internal static class BacklogsEndpoint
 
     public static void Map(WebApplication app)
     {
-        app.MapMethods(Route, [HttpMethods.Get, HttpMethods.Head], (FactoryRoot root, HttpContext context) =>
+        app.MapMethods(Route, [HttpMethods.Get, HttpMethods.Head], async (
+            FactoryRoot root, BacklogWorktree worktree, HttpContext context) =>
         {
             context.Response.Headers.CacheControl = "no-store";
-            return Results.Json(Build(root.Path));
+            IReadOnlyList<ProjectFolder> projects = ProjectFinder.Find(root.Path);
+            return Results.Json(Build(projects, await BacklogSource.ForAll(projects, worktree)));
         });
     }
 
-    public static BacklogsResponse Build(string factoryRoot)
+    /// <summary>The response for the projects, each read from its source folder (same order).</summary>
+    public static BacklogsResponse Build(IReadOnlyList<ProjectFolder> projectList, IReadOnlyList<ProjectFolder> sources)
     {
-        List<(ProjectFolder Project, BacklogFile? File)> read = ProjectFinder.Find(factoryRoot)
-            .Select(project => (project, BacklogReader.ReadFile(project)))
+        List<(ProjectFolder Project, BacklogFile? File)> read = sources
+            .Select(source => (source, BacklogReader.ReadFile(source)))
             .ToList();
         BacklogWaiting waiting = BacklogWaiting.From(read.Select(pair => (pair.Project.Name, pair.File?.Backlog)));
 
         List<ProjectBacklog> projects = [];
-        foreach ((ProjectFolder project, BacklogFile? file) in read)
+        for (int index = 0; index < read.Count; index++)
         {
+            (ProjectFolder project, BacklogFile? file) = read[index];
             Backlog groups = file?.Backlog ?? Backlog.Empty;
             ProjectPlan plan = BacklogPlan.For(file?.Backlog, project.Name, waiting);
             projects.Add(new ProjectBacklog(
@@ -58,7 +64,8 @@ internal static class BacklogsEndpoint
                 file?.Version,
                 plan.Next,
                 plan.Stopped,
-                plan.Blocked));
+                plan.Blocked,
+                BacklogSource.IsPending(projectList[index], project)));
         }
 
         return new BacklogsResponse(projects);

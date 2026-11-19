@@ -54,8 +54,10 @@ internal sealed record ChangePlan(
 }
 
 /// <summary><c>POST /api/backlog/change</c>: one checked change of a project's <c>backlog.md</c> (and its story
-/// files), committed on <c>develop</c> and pushed when there is an <c>origin</c>. The project is matched against
-/// <see cref="ProjectFinder"/>; every path comes from the backlog line, never from the request.</summary>
+/// files), committed on <c>develop</c> and pushed when there is an <c>origin</c>, or, while a job has the checkout on
+/// another branch, committed on the local <c>backlog</c> branch in the server's <see cref="BacklogWorktree"/>. The
+/// project is matched against <see cref="ProjectFinder"/>; every path comes from the backlog line, never from the
+/// request.</summary>
 internal static class BacklogChangeEndpoint
 {
     public const string Route = "/api/backlog/change";
@@ -78,6 +80,8 @@ internal static class BacklogChangeEndpoint
 
     public const string PushFailed = "push_failed";
 
+    public const string WorktreeFailed = "worktree_failed";
+
     private static readonly HashSet<string> Fields = new(StringComparer.Ordinal)
     {
         "project", "version", "action", "line", "where", "title", "what", "why", "story", "storyVersion", "markdown", "note",
@@ -88,7 +92,12 @@ internal static class BacklogChangeEndpoint
 
     public static void Map(WebApplication app)
     {
-        app.MapPost(Route, async (FactoryRoot root, BacklogWriteLock writeLock, TimeProvider time, HttpContext context) =>
+        app.MapPost(Route, async (
+            FactoryRoot root,
+            BacklogWriteLock writeLock,
+            BacklogWorktree worktree,
+            TimeProvider time,
+            HttpContext context) =>
         {
             context.Response.Headers.CacheControl = "no-store";
             if (!IsJson(context.Request.ContentType))
@@ -110,7 +119,7 @@ internal static class BacklogChangeEndpoint
             await writeLock.Gate.WaitAsync(context.RequestAborted);
             try
             {
-                return await Change(project, request, DateOnly.FromDateTime(time.GetLocalNow().DateTime));
+                return await Change(project, request, worktree, DateOnly.FromDateTime(time.GetLocalNow().DateTime));
             }
             finally
             {
@@ -119,11 +128,34 @@ internal static class BacklogChangeEndpoint
         });
     }
 
-    private static async Task<IResult> Change(ProjectFolder project, BacklogChangeRequest request, DateOnly today)
+    /// <summary>Checks, writes and commits one change. On <c>develop</c> it goes into the project checkout and is
+    /// pushed; on any other branch (or a detached HEAD) into the <see cref="BacklogWorktree"/>, never pushed. A
+    /// folder without its own repo is refused as <c>not_develop</c> first.</summary>
+    private static async Task<IResult> Change(
+        ProjectFolder checkout, BacklogChangeRequest request, BacklogWorktree worktree, DateOnly today)
     {
-        if (await ProjectGit.CurrentBranch(project.Path) != ProjectGit.Branch)
+        string? branch = await ProjectGit.CurrentBranch(checkout.Path);
+        if (branch is null)
         {
             return Error(StatusCodes.Status409Conflict, NotDevelop);
+        }
+
+        bool onDevelop = branch == ProjectGit.Branch;
+        ProjectFolder project = checkout;
+        if (!onDevelop)
+        {
+            WorktreeState state = await worktree.Ensure(checkout);
+            if (state == WorktreeState.Dirty)
+            {
+                return Error(StatusCodes.Status409Conflict, Dirty);
+            }
+
+            if (state != WorktreeState.Ready)
+            {
+                return Error(StatusCodes.Status500InternalServerError, WorktreeFailed);
+            }
+
+            project = new ProjectFolder(checkout.Name, worktree.PathFor(checkout));
         }
 
         if (!await ProjectGit.BacklogIsClean(project.Path))
@@ -194,7 +226,7 @@ internal static class BacklogChangeEndpoint
 
         bool pushed = false;
         string? warning = null;
-        if (await ProjectGit.HasOrigin(project.Path))
+        if (onDevelop && await ProjectGit.HasOrigin(project.Path))
         {
             pushed = await ProjectGit.Push(project.Path);
             warning = pushed ? null : PushFailed;

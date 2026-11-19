@@ -838,6 +838,33 @@ public sealed partial class WebAppTests
         return end < 0 ? text[from..] : text[from..end];
     }
 
+    [Fact]
+    public async Task EditJs_HasTheWorktreeFailedText()
+    {
+        string js = await Fetch("/edit.js");
+
+        Assert.Contains("worktree_failed: \"Could not prepare the backlog branch. Nothing was changed.\"", js,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AppJs_ShowsTheFixedPendingTextOnlyForAPendingProject()
+    {
+        string js = await Fetch("/app.js");
+
+        Assert.Contains("pending: \"Edits wait for the running job and go into develop after it.\"", js,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "  section.appendChild(head);\n"
+            + "  // Edits go to the backlog branch while a job runs; a fixed text, never git output.\n"
+            + "  if (project && project.pending === true) {\n"
+            + "    section.appendChild(element(\"p\", \"backlog-pending\", Texts.pending));\n"
+            + "  }\n",
+            js,
+            StringComparison.Ordinal);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(js, @"Texts\.pending\b"));
+    }
+
     private static async Task<string> Fetch(string path)
     {
         using TempFactoryRoot root = new();

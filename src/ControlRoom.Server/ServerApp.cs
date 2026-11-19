@@ -139,8 +139,9 @@ internal static class ServerApp
         return app;
     }
 
-    /// <summary>The push store next to the token file, the crypto (clock from the container, subject from
-    /// <c>PushSubject</c>), the real no-redirect transport, the watcher and the update check.</summary>
+    /// <summary>The push store and the backlog worktrees folder next to the token file, the crypto (clock from the
+    /// container, subject from <c>PushSubject</c>), the real no-redirect transport, the watcher and the update
+    /// check.</summary>
     private static void AddPush(WebApplicationBuilder builder, string tokenPath)
     {
         string folder = Path.GetDirectoryName(Path.GetFullPath(tokenPath))!;
@@ -148,6 +149,7 @@ internal static class ServerApp
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton(new PushStore(folder));
         builder.Services.AddSingleton(new UpdateSettingsStore(folder, UnixOwner.CurrentUser()));
+        builder.Services.AddSingleton(new BacklogWorktree(folder, UnixOwner.CurrentUser()));
         builder.Services.AddSingleton(_ => PushTransport.CreateDefault());
         builder.Services.AddSingleton(services => new PushCrypto(
             services.GetRequiredService<TimeProvider>(), PushCrypto.SystemEphemeralKey, AccessToken.SystemRandom, subject));

@@ -204,12 +204,18 @@ public sealed partial class BacklogChangeApiTests
     }
 
     [Fact]
-    public async Task Note_OnAnotherBranch_Is409NotDevelop()
+    public async Task Note_OnAnotherBranch_CommitsOnBacklogAndTheCheckoutStays()
     {
         using Repo repo = Repo.Create();
         TempFactoryRoot.Git(repo.Folder, "checkout", "-q", "-b", "feature");
-        await AssertNoteRefused(repo, NoteFields(StoryTwo), HttpStatusCode.Conflict, "not_develop");
+        IReadOnlyList<string> before = repo.State();
+
+        JsonElement result = await repo.Change(new { action = "note", line = 3, storyVersion = repo.StoryVersion(2), note = "n" });
+
+        Assert.False(result.GetProperty("pushed").GetBoolean());
+        Assert.Equal(before, repo.State());
         Assert.Equal("feature", TempFactoryRoot.Git(repo.Folder, "branch", "--show-current"));
+        repo.AssertBacklogCommit("backlog: note on #2", ["backlog/002-open.md"]);
     }
 
     private static string NoteFields(string story)
