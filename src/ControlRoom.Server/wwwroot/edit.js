@@ -1,6 +1,6 @@
 "use strict";
 
-// Backlog editing: per-project edit mode (approve, drop, move, edit title, add) and the story editor. Every change
+// Backlog editing: per-project edit mode (approve, drop, move, edit title, add), the story editor and Add note. Every change
 // is one POST to /api/backlog/change through authFetch with the version the view loaded. Only fixed texts are shown;
 // server text never is. Uses element() and the views' reload functions from app.js at call time.
 
@@ -25,6 +25,9 @@ const EditTexts = {
   bottom: "Bottom",
   editStory: "Edit story",
   storyLabel: "Story (Markdown)",
+  addNote: "Add note",
+  noteLabel: "Note",
+  noteHint: "Saved as one line under Notes, with today's date.",
   dismiss: "Close",
   confirmDrop: "Drop this proposal? Its line and story file are removed in one commit.",
   saved: "Saved.",
@@ -284,7 +287,7 @@ function storyEditButton(target, data, reload) {
   const number = asNumber(data && data.number);
   const button = editButton(EditTexts.editStory, "edit-story-button", async () => {
     const article = document.querySelector("#story .story");
-    if (!article || document.querySelector("#story .edit-story-form")) {
+    if (!article || storyFormOpen()) {
       return;
     }
     let found;
@@ -302,7 +305,7 @@ function storyEditButton(target, data, reload) {
     }
     // A live refresh (live.js) may have replaced the story while the line was looked up.
     const shown = document.querySelector("#story .story");
-    if (!shown || document.querySelector("#story .edit-story-form")) {
+    if (!shown || storyFormOpen()) {
       return;
     }
     const form = element("form", "edit-form edit-story-form");
@@ -316,7 +319,7 @@ function storyEditButton(target, data, reload) {
     save.type = "submit";
     const cancel = editButton(EditTexts.cancel, null, () => {
       form.replaceWith(shown);
-      button.hidden = false;
+      showStoryButtons(true);
     });
     actions.append(save, cancel);
     form.append(labelled(EditTexts.storyLabel, area), actions);
@@ -335,7 +338,100 @@ function storyEditButton(target, data, reload) {
       }
     });
     shown.replaceWith(form);
+    showStoryButtons(false);
+    area.focus({ preventScroll: true });
+  });
+  if (number === null) {
     button.hidden = true;
+  }
+  return button;
+}
+
+// True while Edit story or Add note is open in the story view.
+function storyFormOpen() {
+  return document.querySelector("#story .edit-story-form, #story .add-note-form") !== null;
+}
+
+// Shows or hides both story bar buttons, so Edit story and Add note are never open at once.
+function showStoryButtons(visible) {
+  for (const button of document.querySelectorAll("#story .edit-story-button, #story .add-note-button")) {
+    button.hidden = !visible;
+  }
+}
+
+// The Add note button of the story view: a one-line note (Return is joined into the line by the server), dated by
+// the server and appended under the story's Notes, saved with storyVersion.
+function storyNoteButton(target, data, reload) {
+  const storyVersion = asText(data && data.storyVersion);
+  const number = asNumber(data && data.number);
+  const button = editButton(EditTexts.addNote, "add-note-button", async () => {
+    if (!document.querySelector("#story .story") || storyFormOpen()) {
+      return;
+    }
+    let found;
+    try {
+      found = await findStoryLine(target.project, number);
+    } catch {
+      if (!tokenViewShown()) {
+        showEditNotice(ChangeErrors.unreachable, true);
+      }
+      return;
+    }
+    if (found === null || storyVersion === "") {
+      showEditNotice(ChangeErrors.notEditable, true);
+      return;
+    }
+    // A live refresh (live.js) may have replaced the story while the line was looked up.
+    const shown = document.querySelector("#story .story");
+    if (!shown || storyFormOpen()) {
+      return;
+    }
+    const form = element("form", "edit-form add-note-form");
+    form.noValidate = true;
+    const area = element("textarea", "edit-input add-note-text");
+    area.rows = 4;
+    area.maxLength = 1000;
+    area.setAttribute("maxlength", "1000");
+    area.spellcheck = true;
+    const hint = element("p", "edit-hint", EditTexts.noteHint);
+    hint.id = "add-note-hint";
+    area.setAttribute("aria-describedby", hint.id);
+    const actions = element("div", "edit-actions");
+    const save = element("button", "edit-button edit-primary", EditTexts.save);
+    save.type = "submit";
+    const cancel = editButton(EditTexts.cancel, null, () => {
+      form.replaceWith(shown);
+      showStoryButtons(true);
+    });
+    // An empty note would only be refused, so Save waits for some text.
+    const blank = () => area.value.trim() === "";
+    save.disabled = true;
+    area.addEventListener("input", () => {
+      save.disabled = blank();
+    });
+    actions.append(save, cancel);
+    form.append(labelled(EditTexts.noteLabel, area), hint, actions);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (changeBusy || blank()) {
+        return;
+      }
+      save.disabled = true;
+      const ok = await sendChange({
+        project: target.project,
+        version: found.version,
+        action: "note",
+        line: found.line,
+        storyVersion: storyVersion,
+        note: area.value,
+      });
+      save.disabled = blank();
+      if (ok) {
+        reload();
+      }
+    });
+    shown.replaceWith(form);
+    showStoryButtons(false);
     area.focus({ preventScroll: true });
   });
   if (number === null) {

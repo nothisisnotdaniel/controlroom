@@ -24,7 +24,8 @@ internal sealed record BacklogChangeRequest(
     string? Why,
     string? Story,
     string? StoryVersion,
-    string? Markdown);
+    string? Markdown,
+    string? Note = null);
 
 /// <summary>The <c>200</c> response of a change.</summary>
 internal sealed record BacklogChangeResponse(
@@ -78,14 +79,14 @@ internal static class BacklogChangeEndpoint
 
     private static readonly HashSet<string> Fields = new(StringComparer.Ordinal)
     {
-        "project", "version", "action", "line", "where", "title", "what", "why", "story", "storyVersion", "markdown",
+        "project", "version", "action", "line", "where", "title", "what", "why", "story", "storyVersion", "markdown", "note",
     };
 
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
     public static void Map(WebApplication app)
     {
-        app.MapPost(Route, async (FactoryRoot root, BacklogWriteLock writeLock, HttpContext context) =>
+        app.MapPost(Route, async (FactoryRoot root, BacklogWriteLock writeLock, TimeProvider time, HttpContext context) =>
         {
             context.Response.Headers.CacheControl = "no-store";
             if (!IsJson(context.Request.ContentType))
@@ -107,7 +108,7 @@ internal static class BacklogChangeEndpoint
             await writeLock.Gate.WaitAsync(context.RequestAborted);
             try
             {
-                return await Change(project, request);
+                return await Change(project, request, DateOnly.FromDateTime(time.GetLocalNow().DateTime));
             }
             finally
             {
@@ -116,7 +117,7 @@ internal static class BacklogChangeEndpoint
         });
     }
 
-    private static async Task<IResult> Change(ProjectFolder project, BacklogChangeRequest request)
+    private static async Task<IResult> Change(ProjectFolder project, BacklogChangeRequest request, DateOnly today)
     {
         if (await ProjectGit.CurrentBranch(project.Path) != ProjectGit.Branch)
         {
@@ -145,7 +146,7 @@ internal static class BacklogChangeEndpoint
             return Error(StatusCodes.Status400BadRequest, Invalid);
         }
 
-        ChangePlan plan = Plan(project, request, text, file);
+        ChangePlan plan = Plan(project, request, text, file, today);
         if (plan.Error is not null)
         {
             return Error(plan.Status, plan.Error);
@@ -202,8 +203,10 @@ internal static class BacklogChangeEndpoint
         return Results.Json(new BacklogChangeResponse(true, pushed, SafeFileReader.Version(plan.BacklogBytes), warning));
     }
 
-    /// <summary>The files and commit message of a change, or its refusal. Nothing is written here.</summary>
-    public static ChangePlan Plan(ProjectFolder project, BacklogChangeRequest request, EditableText text, BacklogFile file)
+    /// <summary>The files and commit message of a change, or its refusal. Nothing is written here.
+    /// <paramref name="today"/> is the local date a note is dated with.</summary>
+    public static ChangePlan Plan(
+        ProjectFolder project, BacklogChangeRequest request, EditableText text, BacklogFile file, DateOnly today)
     {
         int line = request.Line ?? -1;
         string backlogPath = Path.Combine(project.Path, BacklogReader.FileName);
@@ -244,6 +247,8 @@ internal static class BacklogChangeEndpoint
                 return PlanTitle(project, request, text, line, backlogPath, file);
             case "story":
                 return PlanStory(project, request, text, line, file);
+            case "note":
+                return PlanNote(project, request, text, line, file, today);
             default:
                 return InvalidPlan();
         }
@@ -365,14 +370,76 @@ internal static class BacklogChangeEndpoint
     private static ChangePlan PlanStory(
         ProjectFolder project, BacklogChangeRequest request, EditableText text, int line, BacklogFile file)
     {
-        BacklogEntry? entry = BacklogEditor.NumberedEntry(text, line);
+        ChangePlan? refused = OpenStory(project, request, text, line, out BacklogEntry? entry, out string? storyPath,
+            out byte[]? old);
+        if (refused is not null)
+        {
+            return refused;
+        }
+
+        byte[] next = StrictUtf8.GetBytes(request.Markdown!);
+        if (next.Length > MaxStoryBytes || next.AsSpan().SequenceEqual(old))
+        {
+            return InvalidPlan();
+        }
+
+        return new ChangePlan(
+            [new FileChange(StoryRelative(storyPath!), storyPath!, next, old)],
+            "backlog: edit story " + Subject(entry!),
+            file.Bytes);
+    }
+
+    /// <summary>Appends a dated note to the story's <c>## Notes</c> section, with the same checks as
+    /// <c>story</c>.</summary>
+    private static ChangePlan PlanNote(
+        ProjectFolder project, BacklogChangeRequest request, EditableText text, int line, BacklogFile file, DateOnly today)
+    {
+        ChangePlan? refused = OpenStory(project, request, text, line, out BacklogEntry? entry, out string? storyPath,
+            out byte[]? old);
+        if (refused is not null)
+        {
+            return refused;
+        }
+
+        EditableText? story = EditableText.Parse(old!);
+        if (story is null)
+        {
+            return InvalidPlan();
+        }
+
+        byte[] next = BacklogEditor.AppendNote(story, today, request.Note!).ToBytes();
+        if (next.Length > MaxStoryBytes)
+        {
+            return InvalidPlan();
+        }
+
+        return new ChangePlan(
+            [new FileChange(StoryRelative(storyPath!), storyPath!, next, old)],
+            "backlog: note on " + Subject(entry!),
+            file.Bytes);
+    }
+
+    /// <summary>The checks <c>story</c> and <c>note</c> share: a numbered open item, its story path from the line, a
+    /// safe read and the <c>storyVersion</c> the client saw. <c>null</c> when all pass, else the refusal.</summary>
+    private static ChangePlan? OpenStory(
+        ProjectFolder project,
+        BacklogChangeRequest request,
+        EditableText text,
+        int line,
+        out BacklogEntry? entry,
+        out string? storyPath,
+        out byte[]? old)
+    {
+        entry = BacklogEditor.NumberedEntry(text, line);
+        storyPath = null;
+        old = null;
         if (entry?.Number is null || !BacklogEditor.IsOpenItem(text, line))
         {
             return InvalidPlan();
         }
 
-        string? storyPath = StoryReader.ResolvePath(project, entry);
-        byte[]? old = storyPath is null ? null : SafeFileReader.ReadBytes(storyPath, StoryReader.MaxBytes);
+        storyPath = StoryReader.ResolvePath(project, entry);
+        old = storyPath is null ? null : SafeFileReader.ReadBytes(storyPath, StoryReader.MaxBytes);
         if (storyPath is null || old is null)
         {
             return InvalidPlan();
@@ -383,19 +450,16 @@ internal static class BacklogChangeEndpoint
             return ChangePlan.Refused(StatusCodes.Status409Conflict, Changed);
         }
 
-        byte[] next = StrictUtf8.GetBytes(request.Markdown!);
-        if (next.Length > MaxStoryBytes || next.AsSpan().SequenceEqual(old))
-        {
-            return InvalidPlan();
-        }
+        return null;
+    }
 
-        string subject = "#" + entry.Number.Value.ToString(CultureInfo.InvariantCulture);
-        return new ChangePlan(
-            [new FileChange(StoryRelative(storyPath), storyPath, next, old)], "backlog: edit story " + subject, file.Bytes);
+    private static string Subject(BacklogEntry entry)
+    {
+        return "#" + entry.Number!.Value.ToString(CultureInfo.InvariantCulture);
     }
 
     /// <summary>Parses and checks the body: a JSON object with known fields of the right types, a known action
-    /// with the fields it needs, and clean title, what, why, story and markdown texts. <c>null</c> otherwise.</summary>
+    /// with the fields it needs, and clean title, what, why, story, markdown and note texts. <c>null</c> otherwise.</summary>
     public static BacklogChangeRequest? ParseRequest(byte[] body)
     {
         Dictionary<string, JsonElement> fields = new(StringComparer.Ordinal);
@@ -435,7 +499,8 @@ internal static class BacklogChangeEndpoint
             || !TryString(fields, "why", out string? why)
             || !TryString(fields, "story", out string? story)
             || !TryString(fields, "storyVersion", out string? storyVersion)
-            || !TryString(fields, "markdown", out string? markdown))
+            || !TryString(fields, "markdown", out string? markdown)
+            || !TryString(fields, "note", out string? note))
         {
             return null;
         }
@@ -494,6 +559,14 @@ internal static class BacklogChangeEndpoint
                 }
 
                 return request with { StoryVersion = storyVersion, Markdown = markdown };
+            case "note":
+            {
+                string? clean = BacklogEditor.CleanNote(note);
+                return line is null || storyVersion is null || clean is null
+                    ? null
+                    : request with { StoryVersion = storyVersion, Note = clean };
+            }
+
             default:
                 return null;
         }
