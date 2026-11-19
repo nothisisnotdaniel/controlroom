@@ -120,7 +120,10 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     checks, `not_develop`/`dirty`/`changed`, write, commit, push), `StoryReader` (fenced read of
     `<project>/backlog/NNN-slug.md`), `StoryMarkdown` (Markdown to a JSON block tree, no HTML),
     `StoryEndpoint` (`GET /api/story?project=&number=`, with `markdown`
-    and `storyVersion`), `JobReader` (`factory/jobs/<id>/state.json` to a typed
+    and `storyVersion`), `InboxEndpoint` (`GET /api/inbox`: every `[?]` line as `{project, version, line, number, title,
+    rest, job}` plus `unreadable` project names, `no-store`; `job` from the first `Proposed by job <id>` in the story's
+    `## Notes` through `StoryReader`, kept only as `^[0-9]{1,6}-[a-z0-9]+(-[a-z0-9]+)*$` up to 80 chars; with a job first by
+    its number, then without, ties by project (ordinal) and line), `JobReader` (`factory/jobs/<id>/state.json` to a typed
     `JobSummary`), `BoardEndpoint` (`GET /api/board`: jobs and `[h]` tasks), `ChangeFingerprint` (SHA-256 fingerprints from `lstat`
     metadata only: `jobs` over each `state.json` of `JobReader.ListFolders`, per project `backlog` over `backlog.md`
     and `stories` over `backlog/*.md`; a symlink adds only a `link` marker, a missing path `missing`; `NoFollowStat`:
@@ -145,7 +148,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     pending, and at once on becoming visible; refetches only the board, the changed backlog sections (kept while a form
     is open or focus is inside) and the open story (in place, never while Edit story is open); a failed check shows
     the fixed `Connection lost. Reconnecting…` notice under the header, or in the `board-status` line on the board;
-    script order `token.js`, `board.js`, `push.js`, `edit.js`, `live.js`, `app.js`), `push.js` (Notifications section on the
+    script order `token.js`, `board.js`, `push.js`, `edit.js`, `inbox.js`, `live.js`, `app.js`; a changed `backlog` or
+    `stories` fingerprint refetches the inbox and its count), `inbox.js` (the `#inbox` view: every `[?]` item with project,
+    `#N Title`, `Proposed by <job>` link, Approve and Drop through `sendChange` (never rebuilt while `changeBusy`), fixed
+    texts; the nav count, hidden at 0 or unknown, fetched once per page load, after a token is saved and after every
+    committed change), `push.js` (Notifications section on the
     board: state texts, Turn on (permission only from the tap), done and update switches, Send test, Turn off),
     `sw.js` (service worker: caches only the fixed app shell, never `/api/`; bump its cache version when the
     shell list changes; `push` shows a notification from fixed titles, `notificationclick` opens `#job/<id>`,

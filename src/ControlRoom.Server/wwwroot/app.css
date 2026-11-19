@@ -368,9 +368,10 @@ main {
   white-space: pre;
 }
 
-/* Top nav: Jobs and Backlogs */
+/* Top nav: Jobs, Backlogs and Inbox */
 .nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin: 0 0 8px;
 }
@@ -1139,4 +1140,56 @@ body:has(#edit-notice:not([hidden])) {
   align-items: center;
   min-height: 44px;
   color: var(--link);
+}
+
+/* Inbox: the waiting count in the nav, and one card row per proposal. */
+.nav-count {
+  display: inline-block;
+  min-width: 1.4em;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--primary-fg);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.nav a[aria-current="page"] .nav-count {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.inbox-list {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 4px 14px;
+}
+
+.inbox-item {
+  overflow-wrap: anywhere;
+}
+
+.inbox-project {
+  display: block;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.inbox-head {
+  display: block;
+  font-weight: 700;
+}
+
+.inbox-job {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--link);
+  font-size: 0.95rem;
+}
+
+.inbox-unreadable {
+  margin: 0 0 12px;
 }
