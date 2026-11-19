@@ -87,3 +87,6 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#77](backlog/077-refuse-invisible-unicode-format-characters-in.md) Refuse invisible Unicode format characters in written text
 - [?] [#78](backlog/078-character-counter-on-the-note-box.md) Character counter on the note box
 - [?] [#79](backlog/079-notes-section-end-ignores-headings-inside.md) Notes section end ignores headings inside code blocks
+- [?] [#80](backlog/080-ask-for-the-project-before-a.md) Ask for the project before a capture is saved
+- [?] [#81](backlog/081-escape-a-leading-in-captured-text.md) Escape a leading # in captured text
+- [?] [#82](backlog/082-browser-check-of-capture-and-the.md) Browser check of Capture and the two-row nav
