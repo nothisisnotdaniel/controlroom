@@ -101,4 +101,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#91](backlog/091-tell-the-user-the-ci-link.md) Tell the user the CI link opens a new tab
 - [?] [#92](backlog/092-don-t-follow-a-symlinked-git.md) Don't follow a symlinked .git in ProjectGit
 - [?] [#93](backlog/093-browser-check-of-the-backlogs-status.md) Browser check of the Backlogs status line
-- [ ] [#94](backlog/094-edit-backlogs-while-a-job-runs.md) Edit backlogs while a job runs (after: factory#17)
+- [x] [#94](backlog/094-edit-backlogs-while-a-job-runs.md) Edit backlogs while a job runs (after: factory#17) → 299-edit-backlog-during-jobs
