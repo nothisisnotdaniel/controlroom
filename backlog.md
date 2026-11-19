@@ -20,7 +20,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#9](backlog/009-empty-titles-and-retry-hint.md) Empty titles and retry hint → 190-empty-titles-retry-hint
 - [x] [#10](backlog/010-ac-1-test-without-reflection.md) AC-1 test without reflection → 191-listen-test-no-reflection
 - [x] [#69](backlog/069-fix-ci-updatechecker-stopasync-throws-after.md) Fix CI: UpdateChecker.StopAsync throws after Dispose → 252-updatechecker-stop-dispose
-- [h] [#11](backlog/011-tailscale.md) Tailscale
+- [x] [#11](backlog/011-tailscale.md) Tailscale
 - [?] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone
 - [?] [#13](backlog/013-releases-overview.md) Releases overview
 - [x] [#15](backlog/015-job-detail.md) Job detail (after: #2) → 248-job-detail-gaps
