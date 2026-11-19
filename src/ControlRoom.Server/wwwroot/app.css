@@ -1780,8 +1780,9 @@ body:has(#edit-notice:not([hidden])) {
 
 .doctor-line,
 .doctor-branch {
-  display: block;
-  padding: 10px 0 4px;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
 }
 
 .doctor-facts {
