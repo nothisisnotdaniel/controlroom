@@ -302,6 +302,31 @@ main {
   border: 1px solid var(--line);
 }
 
+/* Project status: last CI result and develop/main count, between the head and the plan. Wraps on narrow screens;
+   a bad CI result is said in its text and only marked by colour. */
+.project-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.project-status .status-ci {
+  font-weight: 600;
+}
+
+.project-status .status-ci-link {
+  color: var(--link);
+}
+
+.project-status .ci-bad,
+.project-status .ci-bad .status-ci-link {
+  color: var(--error);
+}
+
 /* Plan: the next item and the Waiting group, between the head and the groups. */
 .plan {
   margin: 0 0 4px;

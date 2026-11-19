@@ -28,7 +28,9 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   - The server never runs a shell command, `claude` or any program built from request input. Git is called
     with a fixed argument list (`ProcessStartInfo.ArgumentList`), never through a shell. Besides the project repos,
     git runs read-only in the factory root itself: only `git status --porcelain --untracked-files=all -- factory/jobs`
-    for `GET /api/doctor` (`ProjectGit.Run`, `GIT_OPTIONAL_LOCKS=0`).
+    for `GET /api/doctor` (`ProjectGit.Run`, `GIT_OPTIONAL_LOCKS=0`). In a project repo `GET /api/status` runs only the
+    read-only `git rev-list --count refs/heads/main..refs/heads/develop` (`ProjectGit.AheadOfMain`); it never runs `gh`
+    or calls the network.
   - Paths come only from the discovered project list and the jobs folder, never from a request as a path;
     names from a request are matched against that list.
   - Writes are limited to a project's `backlog.md` and its `backlog/NNN-slug.md` story files: only through
@@ -170,7 +172,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     number, title, story, filter, each by project then file line; at most 100 items; a repeated parameter, unknown mark or
     project, or `q` over 200 chars gives `400 {"error":"invalid"}`), `JobReader` (`factory/jobs/<id>/state.json` to a typed
     `JobSummary`; `request` is the `human.json` action, filled only for `needs-human`; `tokens` is `null` when no agent
-    gives a valid count; `Updated` (never in JSON) only from an exact `YYYY-MM-DDTHH:MM:SSZ` `updated`), `BoardEndpoint` (`GET /api/board`: jobs and `[h]` tasks), `ChangeFingerprint` (SHA-256 fingerprints from `lstat`
+    gives a valid count; `Updated`, `CiUrl` and `CiSha` (never in JSON); `Updated` only from an exact `YYYY-MM-DDTHH:MM:SSZ` `updated`), `BoardEndpoint` (`GET /api/board`: jobs and `[h]` tasks), `ChangeFingerprint` (SHA-256 fingerprints from `lstat`
     metadata only: `jobs` over each `state.json` and `human.json` of `JobReader.ListFolders`, per project `backlog` over `backlog.md`
     and `stories` over `backlog/*.md`; a symlink adds only a `link` marker, a missing path `missing`; `NoFollowStat`:
     `lstat`, `O_NOFOLLOW` folder listing and `fstatat` via P/Invoke, never a file opened or a target followed),
@@ -200,6 +202,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     target, never resolved) and `orphan` (`line` the file name), titles at most 80 chars, story files never opened;
     a project with an unreadable `backlog.md` or a failed git call is only named in `unreadable`), `DoctorEndpoint`
     (`GET|HEAD /api/doctor`: `{stuck, uncommitted, mergedBranches, stories, unreadable}`, `no-store`, no parameters),
+    `ProjectStatusEndpoint` (`GET|HEAD /api/status`: `{projects:[{name, ci, ahead}]}` in `ProjectFinder` order, `no-store`,
+    any query parameter `400 invalid`; `ci` `{status, url, sha, time}` from the project's (exact name) highest-numbered
+    job (ties by id descending) with `ci.status` `success|failure|timeout|skipped`, `url` only a plain
+    `https://github.com/…` URL up to 500 chars, `sha` 7–40 lowercase hex sent as 7 chars, `time` the job's `Updated`;
+    `ahead` from `ProjectGit.AheadOfMain` or `null`),
     `wwwroot/` (`index.html`, `app.css`, `token.js` (stored token under
     `controlroom-token`, `authFetch` for every `/api/` call, the token view), `app.js` (routing, backlogs (each readable project's `div.plan` between the head and the groups: `Next:` item
     with a `Spike` badge, `Nothing ready to run.` or the fixed stopped text, and a `Waiting (k)` group with `Waits for`
@@ -210,10 +217,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     pending, and at once on becoming visible; refetches only the board, the changed backlog sections (kept while a form
     is open or focus is inside) and the open story (in place, never while Edit story or Add note is open); a failed check shows
     the fixed `Connection lost. Reconnecting…` notice under the header, or in the `board-status` line on the board;
-    script order `token.js`, `board.js`, `act.js`, `push.js`, `edit.js`, `inbox.js`, `tasks.js`, `search.js`, `capture.js`, `history.js`, `doctor.js`, `live.js`, `app.js`; a changed
+    script order `token.js`, `board.js`, `act.js`, `push.js`, `edit.js`, `inbox.js`, `tasks.js`, `search.js`, `capture.js`, `history.js`, `doctor.js`, `status.js`, `live.js`, `app.js`; a changed
     `backlog` or `stories` fingerprint refetches the inbox and the tasks and their counts and re-runs the current search;
     a changed `jobs` fingerprint refetches the history while it is shown; a changed `jobs`, `backlog` or `stories`
-    fingerprint refetches the health view while it is shown), `act.js` (the "Your decision" section under the state section of a `needs-human` job page only: Approve (after a
+    fingerprint refetches the health view while it is shown; a changed `jobs` or `backlog` fingerprint refetches the
+    status lines while Backlogs is shown), `act.js` (the "Your decision" section under the state section of a `needs-human` job page only: Approve (after a
     confirm), Rework with a note box (`maxlength` 1000) and Send (off while blank); with a pending request the fixed
     `Waiting for the next /factory session for <project>: <Approve|Rework> sent <local time>` text, the note as text and
     Cancel request; fixed texts per error code in `ActErrors`; `jobDecisionBusy` (a send in flight, or the note box has
@@ -240,7 +248,13 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     records`, `Merged leftover branches`, `Story problems`), each with the fixed text of what `/factory doctor` would
     do; stuck jobs link `#job/<id>` with `<stage>, <n> h` or `no update time`, numbered story problems link
     `#story/<project>/<n>`; only `All healthy.` when every list is empty, `Could not check: <names>`; fetched on every
-    show, never on a timer; fixed texts in `DoctorTexts`), `push.js` (Notifications section on the
+    show, never on a timer; fixed texts in `DoctorTexts`), `status.js` (a `div.project-status` line per readable project
+    on Backlogs, between the head and `div.plan`: `CI passed|failed|timed out|skipped` or `No CI recorded` (a link,
+    `target="_blank"` `rel="noopener noreferrer"`, only to the server-kept `https://github.com/` URL; `ci-bad` on
+    failed/timed out), the local time, then `N commits on develop not on main` / `develop is level with main` /
+    `Git status unavailable`; a failed call shows only `Status unavailable.`; fetched on every Backlogs show and, while
+    shown, after a changed `jobs` or `backlog` fingerprint; a refresh replaces only the lines, never one with focus;
+    fixed texts in `StatusTexts`), `push.js` (Notifications section on the
     board: state texts, Turn on (permission only from the tap), done and update switches, Send test, Turn off),
     `sw.js` (service worker: caches only the fixed app shell, never `/api/`; bump its cache version when the
     shell list changes; `push` shows a notification from fixed titles, `notificationclick` opens `#job/<id>`,

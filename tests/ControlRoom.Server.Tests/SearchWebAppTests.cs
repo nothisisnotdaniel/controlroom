@@ -25,14 +25,14 @@ public sealed partial class SearchWebAppTests
     {
         string html = await Fetch("/index.html");
         string[] scripts =
-            ["/token.js", "/board.js", "/act.js", "/push.js", "/edit.js", "/inbox.js", "/tasks.js", "/search.js", "/capture.js", "/history.js", "/doctor.js", "/live.js", "/app.js"];
+            ["/token.js", "/board.js", "/act.js", "/push.js", "/edit.js", "/inbox.js", "/tasks.js", "/search.js", "/capture.js", "/history.js", "/doctor.js", "/status.js", "/live.js", "/app.js"];
 
         int[] positions = scripts
             .Select(script => html.IndexOf("<script src=\"" + script + "\" defer></script>", StringComparison.Ordinal))
             .ToArray();
         Assert.All(positions, position => Assert.True(position >= 0));
         Assert.Equal(positions.OrderBy(position => position), positions);
-        Assert.Equal(13, ScriptTag().Matches(html).Count);
+        Assert.Equal(14, ScriptTag().Matches(html).Count);
     }
 
     [Fact]
@@ -201,8 +201,8 @@ public sealed partial class SearchWebAppTests
     {
         string js = await Fetch("/sw.js");
 
-        Assert.Contains("const CacheVersion = \"v15\";", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/tasks.js\",\n  \"/search.js\",\n  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v16\";", js, StringComparison.Ordinal);
+        Assert.Contains("  \"/tasks.js\",\n  \"/search.js\",\n  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/search", js, StringComparison.Ordinal);
         Assert.Contains("if (url.pathname.startsWith(\"/api/\") || url.pathname === \"/health\") {\n    return false;", js,
             StringComparison.Ordinal);

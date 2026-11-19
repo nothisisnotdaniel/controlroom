@@ -143,7 +143,7 @@ public sealed class ActWebAppTests
         string js = await Fetch("/sw.js");
 
         Assert.Contains("  \"/board.js\",\n  \"/act.js\",\n", js, StringComparison.Ordinal);
-        Assert.Contains("const CacheVersion = \"v15\";", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v16\";", js, StringComparison.Ordinal);
     }
 
     [Fact]

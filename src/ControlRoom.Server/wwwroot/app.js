@@ -283,6 +283,7 @@ function renderProject(project) {
   if (version !== "") {
     head.appendChild(editToggle(name, section));
   }
+  section.appendChild(statusLine(name));
   section.appendChild(renderPlan(name, project));
   let shown = 0;
   for (const group of Groups) {
@@ -749,6 +750,7 @@ function route() {
     showDoctor();
     return;
   }
+  showStatus();
   window.scrollTo(0, listScroll);
 }
 

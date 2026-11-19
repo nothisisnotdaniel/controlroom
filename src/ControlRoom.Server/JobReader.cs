@@ -10,7 +10,8 @@ internal sealed record JobFolder(string Id, string Path);
 
 /// <summary>One job as the board shows it, mapped field by field from its <c>state.json</c>. A field that is
 /// missing or of the wrong type is <c>null</c> (or an empty list or map); fields it doesn't know are dropped.
-/// <c>CiStatus</c> comes from <c>ci.status</c>, <c>Tokens</c> is the sum of <c>input</c>, <c>cacheRead</c> and
+/// <c>CiStatus</c>, <c>CiUrl</c> and <c>CiSha</c> come from <c>ci.status</c>, <c>ci.url</c> and <c>ci.sha</c> (the
+/// last two never in a job's JSON), <c>Tokens</c> is the sum of <c>input</c>, <c>cacheRead</c> and
 /// <c>output</c> over every agent in <c>tokens</c> (<c>null</c> when no agent gives a valid count). <c>Updated</c> is
 /// <c>updated</c> when it is exactly <c>YYYY-MM-DDTHH:MM:SSZ</c> (UTC); it is never sent in a job's JSON. <c>Request</c> is the action of a pending <c>human.json</c>
 /// (<c>approve</c>, <c>rework</c> or <c>unreadable</c>), filled by <see cref="JobAction.WithRequest"/> only for a
@@ -34,7 +35,9 @@ internal sealed record JobSummary(
     string? CiStatus,
     long? Tokens,
     string? Request = null,
-    [property: JsonIgnore] DateTimeOffset? Updated = null);
+    [property: JsonIgnore] DateTimeOffset? Updated = null,
+    [property: JsonIgnore] string? CiUrl = null,
+    [property: JsonIgnore] string? CiSha = null);
 
 /// <summary>Reads the jobs folder <c>&lt;root&gt;/factory/jobs</c>. The folder is refused when <c>factory</c> or
 /// <c>jobs</c> is a symlink; only job folders that are not symlinks and whose name matches
@@ -188,7 +191,9 @@ internal static partial class JobReader
                 CiStatus(state),
                 Tokens(state),
                 Request: null,
-                Updated: Updated(state));
+                Updated: Updated(state),
+                CiUrl: CiText(state, "url"),
+                CiSha: CiText(state, "sha"));
         }
     }
 
@@ -267,7 +272,12 @@ internal static partial class JobReader
 
     private static string? CiStatus(JsonElement state)
     {
-        return Property(state, "ci") is { ValueKind: JsonValueKind.Object } ci ? Text(ci, "status") : null;
+        return CiText(state, "status");
+    }
+
+    private static string? CiText(JsonElement state, string name)
+    {
+        return Property(state, "ci") is { ValueKind: JsonValueKind.Object } ci ? Text(ci, name) : null;
     }
 
     /// <summary><c>updated</c> as a UTC time, only when it is a string of exactly the form

@@ -26,7 +26,7 @@ public sealed partial class HistoryWebAppTests
         string[] scripts =
         [
             "/token.js", "/board.js", "/act.js", "/push.js", "/edit.js", "/inbox.js", "/tasks.js", "/search.js",
-            "/capture.js", "/history.js", "/doctor.js", "/live.js", "/app.js",
+            "/capture.js", "/history.js", "/doctor.js", "/status.js", "/live.js", "/app.js",
         ];
 
         int[] positions = scripts
@@ -34,7 +34,7 @@ public sealed partial class HistoryWebAppTests
             .ToArray();
         Assert.All(positions, position => Assert.True(position >= 0));
         Assert.Equal(positions.OrderBy(position => position), positions);
-        Assert.Equal(13, ScriptTag().Matches(html).Count);
+        Assert.Equal(14, ScriptTag().Matches(html).Count);
         Assert.Contains(
             "<script src=\"/capture.js\" defer></script>\n  <script src=\"/history.js\" defer></script>\n"
             + "  <script src=\"/doctor.js\" defer></script>", html, StringComparison.Ordinal);
@@ -234,7 +234,7 @@ public sealed partial class HistoryWebAppTests
     {
         string js = await Fetch("/sw.js");
 
-        Assert.Contains("const CacheVersion = \"v15\";", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v16\";", js, StringComparison.Ordinal);
         Assert.Contains("  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/history", js, StringComparison.Ordinal);
     }
