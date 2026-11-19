@@ -110,30 +110,32 @@ public sealed partial class ReleaseWorkflowTests
             "if ! git merge-base --is-ancestor \"$MERGE_SHA\" origin/main; then",
             "          else\n            echo \"Only a push to develop or a merged release pull request makes a release\" >&2\n            exit 1\n",
             "if [ \"$GITHUB_EVENT_NAME\" = \"push\" ]; then",
-            "VERSION=\"$(git tag --list 'v*' | sh .github/scripts/develop-version.sh \"$GITHUB_RUN_NUMBER\")\"",
-            "TARGET=\"$GITHUB_SHA\"",
-            "VERSION=\"$(git tag --list 'v*' | sh .github/scripts/release-version.sh \"$PR_TITLE\")\"",
-            "TARGET=\"$MERGE_SHA\"",
-            "echo \"TARGET=$TARGET\" >> \"$GITHUB_ENV\"",
+            "RELEASE_VERSION=\"$(git tag --list 'v*' | sh .github/scripts/develop-version.sh \"$GITHUB_RUN_NUMBER\")\"",
+            "RELEASE_TARGET=\"$GITHUB_SHA\"",
+            "RELEASE_VERSION=\"$(git tag --list 'v*' | sh .github/scripts/release-version.sh \"$PR_TITLE\")\"",
+            "RELEASE_TARGET=\"$MERGE_SHA\"",
+            "echo \"RELEASE_VERSION=$RELEASE_VERSION\" >> \"$GITHUB_ENV\"",
+            "echo \"RELEASE_TARGET=$RELEASE_TARGET\" >> \"$GITHUB_ENV\"",
             "run: dotnet test -c Release\n",
-            "dotnet publish src/ControlRoom.Server -c Release -r osx-arm64 --self-contained -p:Version=\"$VERSION\"",
+            "dotnet publish src/ControlRoom.Server -c Release -r osx-arm64 --self-contained -p:Version=\"$RELEASE_VERSION\"",
             "ACTUAL=\"$(\"$RUNNER_TEMP/publish/ControlRoom.Server\" version)\"",
-            "if [ \"$ACTUAL\" != \"ControlRoom $VERSION\" ]; then",
-            "NAME=\"controlroom-$VERSION-osx-arm64\"",
+            "if [ \"$ACTUAL\" != \"ControlRoom $RELEASE_VERSION\" ]; then",
+            "NAME=\"controlroom-$RELEASE_VERSION-osx-arm64\"",
             "mv \"$RUNNER_TEMP/publish\" \"$RUNNER_TEMP/pack/$NAME\"",
             "$NAME/wwwroot/index.html",
             "tar -czf \"dist/$NAME.tar.gz\" -C \"$RUNNER_TEMP/pack\" \"$NAME\"",
-            "shasum -a 256 \"controlroom-$VERSION-osx-arm64.tar.gz\" > SHA256SUMS",
+            "shasum -a 256 \"controlroom-$RELEASE_VERSION-osx-arm64.tar.gz\" > SHA256SUMS",
             "uses: actions/attest-build-provenance@",
-            "subject-path: dist/controlroom-${{ env.VERSION }}-osx-arm64.tar.gz",
-            "*-*) PRERELEASE=\"--prerelease\" ;;",
-            "gh release create \"v$VERSION\" \"dist/controlroom-$VERSION-osx-arm64.tar.gz\" dist/SHA256SUMS ",
-            "--target \"$TARGET\" $PRERELEASE",
+            "subject-path: dist/controlroom-${{ env.RELEASE_VERSION }}-osx-arm64.tar.gz",
+            "case \"$RELEASE_VERSION\" in\n            *-*) PRERELEASE=\"--prerelease\" ;;",
+            "gh release create \"v$RELEASE_VERSION\" \"dist/controlroom-$RELEASE_VERSION-osx-arm64.tar.gz\" dist/SHA256SUMS ",
+            "--target \"$RELEASE_TARGET\" $PRERELEASE",
             "- name: Prune old prereleases\n        continue-on-error: true\n",
-            "*-*)\n              echo \"Version $VERSION is a prerelease; nothing to prune\"\n              exit 0\n",
+            "case \"$RELEASE_VERSION\" in\n",
+            "*-*)\n              echo \"Version $RELEASE_VERSION is a prerelease; nothing to prune\"\n              exit 0\n",
             "set -o pipefail\n",
             "gh release list --limit 1000 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease) | .tagName' |",
-            "sh .github/scripts/old-prereleases.sh \"$VERSION\" |",
+            "sh .github/scripts/old-prereleases.sh \"$RELEASE_VERSION\" |",
             "while IFS= read -r tag; do",
             "gh release delete \"$tag\" --cleanup-tag --yes || echo \"::warning::Could not delete prerelease $tag\"",
         ];
@@ -145,6 +147,36 @@ public sealed partial class ReleaseWorkflowTests
             Assert.True(index > last, "step out of order or missing: " + step);
             last = index;
         }
+    }
+
+    [Fact]
+    public void GithubEnv_HoldsOnlyReleaseNamesThatNoMsBuildPropertyReads()
+    {
+        string yaml = Workflow();
+        string[] msBuildProperties =
+        [
+            "Version", "VersionPrefix", "VersionSuffix", "PackageVersion", "AssemblyVersion", "FileVersion",
+            "InformationalVersion", "Configuration", "Target",
+        ];
+
+        string[] envLines = [.. yaml.Split('\n').Where(line => line.Contains(">> \"$GITHUB_ENV\"", StringComparison.Ordinal))];
+        string[] written = [.. envLines.Select(line => GithubEnvWrite().Match(line)).Where(match => match.Success)
+            .Select(match => match.Groups["name"].Value)];
+        Assert.Equal(envLines.Length, written.Length);
+        Assert.Equal(["RELEASE_VERSION", "RELEASE_TARGET"], written);
+
+        List<string> keys = EnvBlockKeys(yaml);
+        Assert.Contains("PR_TITLE", keys);
+        Assert.Contains("GH_TOKEN", keys);
+        Assert.All(written.Concat(keys), name => Assert.DoesNotContain(name, msBuildProperties, StringComparer.OrdinalIgnoreCase));
+        Assert.Empty(BareVersionOrTarget().Matches(yaml));
+
+        int version = yaml.IndexOf("\n      - name: Version\n", StringComparison.Ordinal);
+        int test = yaml.IndexOf("\n      - name: Test\n", StringComparison.Ordinal);
+        int publish = yaml.IndexOf("\n      - name: Publish\n", StringComparison.Ordinal);
+        Assert.True(version >= 0 && test > version && publish > test, "Test must come after Version and before Publish");
+        string testStep = yaml[(test + "\n      - name: Test\n".Length)..publish];
+        Assert.Equal("        run: dotnet test -c Release\n", testStep.TrimEnd('\n') + "\n");
     }
 
     [Fact]
@@ -244,6 +276,45 @@ public sealed partial class ReleaseWorkflowTests
 
         return blocks;
     }
+
+    /// <summary>Every key of every <c>env:</c> block (job or step): the more indented lines after <c>env:</c>,
+    /// comments left out.</summary>
+    private static List<string> EnvBlockKeys(string yaml)
+    {
+        string[] lines = yaml.Split('\n');
+        List<string> keys = [];
+        for (int index = 0; index < lines.Length; index++)
+        {
+            if (lines[index].Trim() != "env:")
+            {
+                continue;
+            }
+
+            int indent = lines[index].Length - lines[index].TrimStart().Length;
+            while (index + 1 < lines.Length
+                   && lines[index + 1].Trim().Length > 0
+                   && lines[index + 1].Length - lines[index + 1].TrimStart().Length > indent)
+            {
+                index++;
+                Match key = EnvKey().Match(lines[index]);
+                if (key.Success)
+                {
+                    keys.Add(key.Groups["name"].Value);
+                }
+            }
+        }
+
+        return keys;
+    }
+
+    [GeneratedRegex(@"^\s*echo ""(?<name>[A-Za-z_][A-Za-z0-9_]*)=[^""]*"" >> ""\$GITHUB_ENV""$")]
+    private static partial Regex GithubEnvWrite();
+
+    [GeneratedRegex(@"^\s*(?<name>[A-Za-z_][A-Za-z0-9_]*):")]
+    private static partial Regex EnvKey();
+
+    [GeneratedRegex(@"(?<![A-Za-z0-9_])(\$\{?VERSION\b|\$TARGET\b|env\.VERSION\b)")]
+    private static partial Regex BareVersionOrTarget();
 
     [GeneratedRegex(@"^[a-z]+:", RegexOptions.Multiline)]
     private static partial Regex TopLevelKey();

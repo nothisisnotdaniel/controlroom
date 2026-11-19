@@ -130,33 +130,36 @@ jobs:
         run: |
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
             # Push to develop: one patch above the highest release tag, as a prerelease.
-            if ! VERSION="$(git tag --list 'v*' | sh .github/scripts/develop-version.sh "$GITHUB_RUN_NUMBER")"; then
+            if ! RELEASE_VERSION="$(git tag --list 'v*' | sh .github/scripts/develop-version.sh "$GITHUB_RUN_NUMBER")"; then
               echo "The run number does not make a develop version" >&2
               exit 1
             fi
-            TARGET="$GITHUB_SHA"
+            RELEASE_TARGET="$GITHUB_SHA"
           else
-            if ! VERSION="$(git tag --list 'v*' | sh .github/scripts/release-version.sh "$PR_TITLE")"; then
+            if ! RELEASE_VERSION="$(git tag --list 'v*' | sh .github/scripts/release-version.sh "$PR_TITLE")"; then
               echo "The release pull request title must be exactly 'release vX.Y.Z' for a new version" >&2
               exit 1
             fi
-            TARGET="$MERGE_SHA"
+            RELEASE_TARGET="$MERGE_SHA"
           fi
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "TARGET=$TARGET" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
+          echo "RELEASE_TARGET=$RELEASE_TARGET" >> "$GITHUB_ENV"
 
       # The tests run on the normal build (no version override): they expect the version "dev".
+      # MSBuild reads every environment variable as a property, ignoring case, so a $GITHUB_ENV name like
+      # VERSION would become $(Version) here. That is why the names above are RELEASE_VERSION and
+      # RELEASE_TARGET, which match no MSBuild property.
       - name: Test
         run: dotnet test -c Release
 
       - name: Publish
-        run: dotnet publish src/ControlRoom.Server -c Release -r osx-arm64 --self-contained -p:Version="$VERSION" -o "$RUNNER_TEMP/publish"
+        run: dotnet publish src/ControlRoom.Server -c Release -r osx-arm64 --self-contained -p:Version="$RELEASE_VERSION" -o "$RUNNER_TEMP/publish"
 
       - name: Smoke check the published server
         run: |
           ACTUAL="$("$RUNNER_TEMP/publish/ControlRoom.Server" version)"
-          if [ "$ACTUAL" != "ControlRoom $VERSION" ]; then
-            echo "ControlRoom.Server version printed '$ACTUAL', expected 'ControlRoom $VERSION'" >&2
+          if [ "$ACTUAL" != "ControlRoom $RELEASE_VERSION" ]; then
+            echo "ControlRoom.Server version printed '$ACTUAL', expected 'ControlRoom $RELEASE_VERSION'" >&2
             exit 1
           fi
 
@@ -165,7 +168,7 @@ jobs:
           # No ._ AppleDouble entries for extended attributes: the tarball holds only the publish output.
           COPYFILE_DISABLE: "1"
         run: |
-          NAME="controlroom-$VERSION-osx-arm64"
+          NAME="controlroom-$RELEASE_VERSION-osx-arm64"
           mkdir -p "$RUNNER_TEMP/pack" dist
           mv "$RUNNER_TEMP/publish" "$RUNNER_TEMP/pack/$NAME"
           if [ ! -f "$RUNNER_TEMP/pack/$NAME/wwwroot/index.html" ]; then
@@ -177,13 +180,13 @@ jobs:
       - name: Checksums
         run: |
           cd dist
-          shasum -a 256 "controlroom-$VERSION-osx-arm64.tar.gz" > SHA256SUMS
+          shasum -a 256 "controlroom-$RELEASE_VERSION-osx-arm64.tar.gz" > SHA256SUMS
           cat SHA256SUMS
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: dist/controlroom-${{ env.VERSION }}-osx-arm64.tar.gz
+          subject-path: dist/controlroom-${{ env.RELEASE_VERSION }}-osx-arm64.tar.gz
 
       - name: Create GitHub release
         env:
@@ -191,10 +194,10 @@ jobs:
         run: |
           # Left unquoted below on purpose: when empty it must add no argument at all.
           PRERELEASE=""
-          case "$VERSION" in
+          case "$RELEASE_VERSION" in
             *-*) PRERELEASE="--prerelease" ;;
           esac
-          gh release create "v$VERSION" "dist/controlroom-$VERSION-osx-arm64.tar.gz" dist/SHA256SUMS --title "ControlRoom $VERSION" --generate-notes --target "$TARGET" $PRERELEASE
+          gh release create "v$RELEASE_VERSION" "dist/controlroom-$RELEASE_VERSION-osx-arm64.tar.gz" dist/SHA256SUMS --title "ControlRoom $RELEASE_VERSION" --generate-notes --target "$RELEASE_TARGET" $PRERELEASE
 
       # Housekeeping after a proper release: delete the -develop prereleases (and their tags) at or below the
       # release (.github/scripts/old-prereleases.sh). It runs only after the release was created, so
@@ -204,9 +207,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          case "$VERSION" in
+          case "$RELEASE_VERSION" in
             *-*)
-              echo "Version $VERSION is a prerelease; nothing to prune"
+              echo "Version $RELEASE_VERSION is a prerelease; nothing to prune"
               exit 0
               ;;
           esac
@@ -215,7 +218,7 @@ jobs:
           # Tag names are external text: they reach the shell only as data, and only exact
           # v<X.Y.Z>-develop.<n> tags at or below the release come out of the filter.
           gh release list --limit 1000 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease) | .tagName' |
-            sh .github/scripts/old-prereleases.sh "$VERSION" |
+            sh .github/scripts/old-prereleases.sh "$RELEASE_VERSION" |
             while IFS= read -r tag; do
               echo "Deleting prerelease $tag"
               gh release delete "$tag" --cleanup-tag --yes || echo "::warning::Could not delete prerelease $tag"
