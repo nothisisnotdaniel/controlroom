@@ -123,6 +123,7 @@ internal static class ServerApp
         StoryEndpoint.Map(app);
         InboxEndpoint.Map(app);
         TasksEndpoint.Map(app);
+        HistoryEndpoint.Map(app);
         SearchEndpoint.Map(app);
         BoardEndpoint.Map(app);
         ChangesEndpoint.Map(app);

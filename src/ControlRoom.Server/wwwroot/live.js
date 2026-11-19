@@ -2,10 +2,10 @@
 
 // Live updates: one timer asks /api/changes (metadata fingerprints) every PollInterval while the page is visible,
 // and only what changed is fetched again: the board (pollBoard in board.js), the backlog sections of changed
-// projects, the open story (app.js), the inbox with its nav count (inbox.js), the tasks with theirs (tasks.js) and
-// the current search (search.js). A failed check shows one fixed connection notice. Loaded after search.js and
-// before app.js; the functions of the
-// other scripts are only called at run time. Fingerprints are compared, never shown; only fixed texts are rendered,
+// projects, the open story (app.js), the inbox with its nav count (inbox.js), the tasks with theirs (tasks.js), the
+// current search (search.js) and the history (history.js) while it is shown. A failed check shows one fixed
+// connection notice. Loaded after history.js and before app.js; the functions of the other scripts are only called
+// at run time. Fingerprints are compared, never shown; only fixed texts are rendered,
 // with textContent.
 
 const LiveTexts = {
@@ -28,6 +28,8 @@ let jobStale = false;
 let inboxStale = false;
 // The same for the tasks and their ready count.
 let tasksStale = false;
+// The jobs changed: the history (history.js) is fetched again while it is shown; showing it fetches it anyway.
+let historyStale = false;
 // The same for the current search (search.js), re-run while shown and on the next show while hidden.
 let searchChanged = false;
 const staleBacklogs = new Set();
@@ -84,6 +86,10 @@ function readChanges(data) {
 function noteChanges(next, recovered) {
   const previous = liveLast;
   liveLast = next;
+  // The history follows the jobs fingerprint only; after a lost connection it is fetched once as well.
+  if (recovered || (previous !== null && previous.jobs !== next.jobs)) {
+    historyStale = true;
+  }
   const names = new Set([...next.projects.keys(), ...(previous ? previous.projects.keys() : [])]);
   if (recovered) {
     boardStale = true;
@@ -168,6 +174,7 @@ async function refreshShownViews() {
   await refreshStaleBacklogs();
   await refreshStaleStory();
   await refreshStaleSearch();
+  await refreshStaleHistory();
   await refreshStaleTasks();
   await refreshStaleInbox();
 }
@@ -193,6 +200,21 @@ async function refreshStaleTasks() {
   tasksStale = false;
   if (!(await loadTasks())) {
     tasksStale = true;
+  }
+}
+
+// A changed jobs fingerprint fetches the history again while it is shown; while hidden there is nothing to do, as
+// showing it fetches it. A failed fetch is tried again on the next check.
+async function refreshStaleHistory() {
+  if (!historyStale) {
+    return;
+  }
+  historyStale = false;
+  if (document.getElementById("history").hidden) {
+    return;
+  }
+  if (!(await loadHistory())) {
+    historyStale = true;
   }
 }
 

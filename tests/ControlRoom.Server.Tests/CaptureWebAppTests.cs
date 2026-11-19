@@ -17,7 +17,7 @@ public sealed class CaptureWebAppTests
         Assert.Contains("<main id=\"capture\" hidden></main>", html, StringComparison.Ordinal);
         Assert.Contains(
             "<script src=\"/search.js\" defer></script>\n  <script src=\"/capture.js\" defer></script>\n"
-            + "  <script src=\"/live.js\" defer></script>", html, StringComparison.Ordinal);
+            + "  <script src=\"/history.js\" defer></script>", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -27,7 +27,7 @@ public sealed class CaptureWebAppTests
 
         Assert.Contains("  if (hash === CaptureRoute) {\n    return \"capture\";\n  }", app, StringComparison.Ordinal);
         Assert.Contains("  if (next === \"capture\") {\n    showCapture();\n    return;\n  }", app, StringComparison.Ordinal);
-        Assert.Contains("  capture: \"Capture\" };", app, StringComparison.Ordinal);
+        Assert.Contains("  capture: \"Capture\", history: \"History\" };", app, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -133,8 +133,8 @@ public sealed class CaptureWebAppTests
     {
         string js = await Fetch("/sw.js");
 
-        Assert.Contains("const CacheVersion = \"v13\";", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/search.js\",\n  \"/capture.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v14\";", js, StringComparison.Ordinal);
+        Assert.Contains("  \"/search.js\",\n  \"/capture.js\",\n  \"/history.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
     }
 
     [Fact]

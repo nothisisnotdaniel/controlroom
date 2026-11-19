@@ -7,7 +7,7 @@ namespace ControlRoom.Server.Tests;
 /// reload, the notice appearing and going away) is checked by hand.</summary>
 public sealed partial class LiveWebAppTests
 {
-    private static readonly string[] Scripts = ["/token.js", "/board.js", "/act.js", "/push.js", "/edit.js", "/inbox.js", "/tasks.js", "/search.js", "/capture.js", "/live.js", "/app.js"];
+    private static readonly string[] Scripts = ["/token.js", "/board.js", "/act.js", "/push.js", "/edit.js", "/inbox.js", "/tasks.js", "/search.js", "/capture.js", "/history.js", "/live.js", "/app.js"];
 
     [Fact]
     public async Task IndexHtml_LoadsLiveJsAfterEditJsAndBeforeAppJs()
@@ -196,9 +196,9 @@ public sealed partial class LiveWebAppTests
     {
         string js = await Fetch("/sw.js");
 
-        Assert.Contains("const CacheVersion = \"v13\";", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v14\";", js, StringComparison.Ordinal);
         Assert.DoesNotContain("const CacheVersion = \"v9\";", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/edit.js\",\n  \"/inbox.js\",\n  \"/tasks.js\",\n  \"/search.js\",\n  \"/capture.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("  \"/edit.js\",\n  \"/inbox.js\",\n  \"/tasks.js\",\n  \"/search.js\",\n  \"/capture.js\",\n  \"/history.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/changes", js, StringComparison.Ordinal);
         Assert.Contains("return Shell.includes(url.pathname);", js, StringComparison.Ordinal);
     }

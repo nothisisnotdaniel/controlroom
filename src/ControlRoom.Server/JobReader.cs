@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace ControlRoom.Server;
@@ -9,7 +11,8 @@ internal sealed record JobFolder(string Id, string Path);
 /// <summary>One job as the board shows it, mapped field by field from its <c>state.json</c>. A field that is
 /// missing or of the wrong type is <c>null</c> (or an empty list or map); fields it doesn't know are dropped.
 /// <c>CiStatus</c> comes from <c>ci.status</c>, <c>Tokens</c> is the sum of <c>input</c>, <c>cacheRead</c> and
-/// <c>output</c> over every agent in <c>tokens</c>. <c>Request</c> is the action of a pending <c>human.json</c>
+/// <c>output</c> over every agent in <c>tokens</c> (<c>null</c> when no agent gives a valid count). <c>Updated</c> is
+/// <c>updated</c> when it is exactly <c>YYYY-MM-DDTHH:MM:SSZ</c> (UTC); it is never sent in a job's JSON. <c>Request</c> is the action of a pending <c>human.json</c>
 /// (<c>approve</c>, <c>rework</c> or <c>unreadable</c>), filled by <see cref="JobAction.WithRequest"/> only for a
 /// <c>needs-human</c> job.</summary>
 internal sealed record JobSummary(
@@ -30,7 +33,8 @@ internal sealed record JobSummary(
     string? Note,
     string? CiStatus,
     long? Tokens,
-    string? Request = null);
+    string? Request = null,
+    [property: JsonIgnore] DateTimeOffset? Updated = null);
 
 /// <summary>Reads the jobs folder <c>&lt;root&gt;/factory/jobs</c>. The folder is refused when <c>factory</c> or
 /// <c>jobs</c> is a symlink; only job folders that are not symlinks and whose name matches
@@ -182,7 +186,9 @@ internal static partial class JobReader
                 Text(state, "decision"),
                 Text(state, "note"),
                 CiStatus(state),
-                Tokens(state));
+                Tokens(state),
+                Request: null,
+                Updated: Updated(state));
         }
     }
 
@@ -264,8 +270,32 @@ internal static partial class JobReader
         return Property(state, "ci") is { ValueKind: JsonValueKind.Object } ci ? Text(ci, "status") : null;
     }
 
+    /// <summary><c>updated</c> as a UTC time, only when it is a string of exactly the form
+    /// <c>YYYY-MM-DDTHH:MM:SSZ</c> that is a real date and time; <c>null</c> otherwise.</summary>
+    private static DateTimeOffset? Updated(JsonElement state)
+    {
+        string? text = Text(state, "updated");
+        if (text is null || !UpdatedPattern().IsMatch(text))
+        {
+            return null;
+        }
+
+        return DateTimeOffset.TryParseExact(
+            text,
+            UpdatedFormat,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+            out DateTimeOffset updated)
+            ? updated
+            : null;
+    }
+
+    /// <summary>The form of <c>updated</c> (and of a history job's <c>finished</c>).</summary>
+    public const string UpdatedFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'";
+
     /// <summary>The sum of <c>input</c>, <c>cacheRead</c> and <c>output</c> over every agent object; a missing or
-    /// non-integer count adds nothing. <c>null</c> when <c>tokens</c> is not an object.</summary>
+    /// non-integer count adds nothing. <c>null</c> when <c>tokens</c> is not an object or no agent gives at least
+    /// one valid count (unknown, never 0).</summary>
     private static long? Tokens(JsonElement state)
     {
         if (Property(state, "tokens") is not { ValueKind: JsonValueKind.Object } tokens)
@@ -274,6 +304,7 @@ internal static partial class JobReader
         }
 
         long total = 0;
+        bool known = false;
         foreach (JsonProperty agent in tokens.EnumerateObject())
         {
             if (agent.Value.ValueKind != JsonValueKind.Object)
@@ -288,13 +319,17 @@ internal static partial class JobReader
                     && count.TryGetInt64(out long value)
                     && value >= 0)
                 {
+                    known = true;
                     total = total > long.MaxValue - value ? long.MaxValue : total + value;
                 }
             }
         }
 
-        return total;
+        return known ? total : null;
     }
+
+    [GeneratedRegex(@"\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\z", RegexOptions.CultureInvariant)]
+    private static partial Regex UpdatedPattern();
 
     [GeneratedRegex(@"\A[0-9]{1,6}-[a-z0-9-]{1,80}\z", RegexOptions.CultureInvariant)]
     public static partial Regex IdPattern();
