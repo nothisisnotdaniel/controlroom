@@ -449,6 +449,99 @@ public sealed class BacklogEditorTests
         Assert.NotNull(BacklogEditor.CleanNote("  " + new string('a', 1000) + "\n"));
     }
 
+    // AC-2: the title of a capture. 60 runes stay whole; longer text is cut at the last space at or before rune 60
+    // (a hard cut at 60 when there is none); trailing .,;:!? and spaces go.
+    [Theory]
+    [InlineData("Short idea", "Short idea")]
+    [InlineData("Short idea.", "Short idea")]
+    [InlineData("What about this?!", "What about this")]
+    [InlineData("Trailing mix ,;: . ", "Trailing mix")]
+    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("Show the jobs board on the phone with a compact layout and big buttons",
+        "Show the jobs board on the phone with a compact layout and")]
+    [InlineData("Show the jobs board on the phone with a compact layout, then more",
+        "Show the jobs board on the phone with a compact layout")]
+    [InlineData("!!!", "")]
+    public void CaptureTitle_CutsAtTheLastSpaceAndDropsTrailingPunctuation(string clean, string title)
+    {
+        Assert.Equal(title, BacklogEditor.CaptureTitle(clean));
+        Assert.True(BacklogEditor.CaptureTitle(clean).EnumerateRunes().Count() <= 60);
+    }
+
+    [Fact]
+    public void CaptureTitle_CountsRunesNotChars()
+    {
+        string emoji = "\U0001F600";
+        string text = string.Concat(Enumerable.Repeat(emoji, 61));
+
+        Assert.Equal(string.Concat(Enumerable.Repeat(emoji, 60)), BacklogEditor.CaptureTitle(text));
+    }
+
+    // The arrow and "(after:" are refused by CleanTitle only when they land inside the cut title.
+    [Theory]
+    [InlineData("Move it → later", false)]
+    [InlineData("Wait (after: #3) for it", false)]
+    [InlineData("A long enough idea that pushes the arrow past rune sixty here → x", true)]
+    public void CaptureTitle_PassesCleanTitleOnlyWithoutArrowOrAfterInTheTitle(string text, bool accepted)
+    {
+        string? clean = BacklogEditor.CleanCapture(text);
+        Assert.NotNull(clean);
+        Assert.Equal(accepted, BacklogEditor.CleanTitle(BacklogEditor.CaptureTitle(clean)) is not null);
+    }
+
+    [Theory]
+    [InlineData("  Use the\n\nblue\tone. ", "Use the blue one.")]
+    [InlineData("one", "one")]
+    public void CleanCapture_JoinsWhitespaceIntoOneLine(string text, string clean)
+    {
+        Assert.Equal(clean, BacklogEditor.CleanCapture(text));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" \n\t ")]
+    [InlineData("bell \u0007 here")]
+    [InlineData("del \u007F here")]
+    [InlineData("Proposed by job 12-x")]
+    [InlineData("see: proposed BY\n job 12-x")]
+    public void CleanCapture_RefusesEmptyControlAndProposedByJob(string? text)
+    {
+        Assert.Null(BacklogEditor.CleanCapture(text));
+    }
+
+    [Fact]
+    public void CleanCapture_RefusesALoneSurrogateAndAllowsAtMost2000Runes()
+    {
+        string emoji = "\U0001F600";
+        Assert.Null(BacklogEditor.CleanCapture("lone " + (char)0xD800 + " surrogate"));
+        Assert.NotNull(BacklogEditor.CleanCapture(string.Concat(Enumerable.Repeat(emoji, 2000))));
+        Assert.Null(BacklogEditor.CleanCapture(string.Concat(Enumerable.Repeat(emoji, 2001))));
+        Assert.NotNull(BacklogEditor.CleanCapture(" " + new string('a', 2000) + "\n"));
+        Assert.Null(BacklogEditor.CleanCapture(new string('a', 2001)));
+    }
+
+    [Fact]
+    public void RenderDraft_IsTheFixedDraftTemplate()
+    {
+        Assert.Equal(
+            "# 007 Idea\n\n## What\n\nIdea. With more.\n\n## Why\n\nStill to be written: this is a quick-capture draft.\n\n"
+            + "## Notes\n\n- 2026-03-02: Draft from ControlRoom\n",
+            BacklogEditor.RenderDraft(7, "Idea", "Idea. With more.", new DateOnly(2026, 3, 2)));
+    }
+
+    [Fact]
+    public void Add_WithTheQuestionMarkWritesADraftLine()
+    {
+        BacklogEdit edit = BacklogEditor.Add(Text(Sample), 12, "Draft", AddPosition.Bottom, "?");
+
+        Assert.Equal("- [?] [#12](backlog/012-draft.md) Draft", edit.Text.Lines[9]);
+        Assert.Equal("#12", edit.Subject);
+    }
+
     private static EditableText Text(string text)
     {
         return EditableText.Parse(Encoding.UTF8.GetBytes(text))!;

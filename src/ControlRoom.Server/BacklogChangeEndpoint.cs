@@ -25,7 +25,8 @@ internal sealed record BacklogChangeRequest(
     string? Story,
     string? StoryVersion,
     string? Markdown,
-    string? Note = null);
+    string? Note = null,
+    string? Text = null);
 
 /// <summary>The <c>200</c> response of a change.</summary>
 internal sealed record BacklogChangeResponse(
@@ -80,6 +81,7 @@ internal static class BacklogChangeEndpoint
     private static readonly HashSet<string> Fields = new(StringComparer.Ordinal)
     {
         "project", "version", "action", "line", "where", "title", "what", "why", "story", "storyVersion", "markdown", "note",
+        "text",
     };
 
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
@@ -243,6 +245,8 @@ internal static class BacklogChangeEndpoint
                 return PlanDrop(project, text, line, backlogPath, file);
             case "add":
                 return PlanAdd(project, request, text, backlogPath, file);
+            case "capture":
+                return PlanCapture(project, request, text, backlogPath, file, today);
             case "title":
                 return PlanTitle(project, request, text, line, backlogPath, file);
             case "story":
@@ -293,6 +297,46 @@ internal static class BacklogChangeEndpoint
     private static ChangePlan PlanAdd(
         ProjectFolder project, BacklogChangeRequest request, EditableText text, string backlogPath, BacklogFile file)
     {
+        string title = request.Title!;
+        if (!NewStory(project, text, title, out int number, out string relative, out string storyPath))
+        {
+            return InvalidPlan();
+        }
+
+        string story = BacklogEditor.RenderStory(number, title, request.Story, request.What!, request.Why!);
+        BacklogEdit edit = BacklogEditor.Add(text, number, title, request.Where ?? AddPosition.Bottom);
+        return NewItemPlan(edit, "add", backlogPath, file, relative, storyPath, story);
+    }
+
+    /// <summary>A quick-capture draft: a <c>[?]</c> line after the last item and a draft story, with the same checks
+    /// as <c>add</c>. <paramref name="today"/> dates the draft note.</summary>
+    private static ChangePlan PlanCapture(
+        ProjectFolder project,
+        BacklogChangeRequest request,
+        EditableText text,
+        string backlogPath,
+        BacklogFile file,
+        DateOnly today)
+    {
+        string title = request.Title!;
+        if (!NewStory(project, text, title, out int number, out string relative, out string storyPath))
+        {
+            return InvalidPlan();
+        }
+
+        string story = BacklogEditor.RenderDraft(number, title, request.Text!, today);
+        BacklogEdit edit = BacklogEditor.Add(text, number, title, AddPosition.Bottom, "?");
+        return NewItemPlan(edit, "capture", backlogPath, file, relative, storyPath, story);
+    }
+
+    /// <summary>The number and story path of a new item: refused (<c>false</c>) when <c>backlog/</c> is a symlink or
+    /// a file, can't be listed, or the story path already exists in any form.</summary>
+    private static bool NewStory(
+        ProjectFolder project, EditableText text, string title, out int number, out string relative, out string storyPath)
+    {
+        number = 0;
+        relative = "";
+        storyPath = "";
         string folder = Path.Combine(project.Path, StoryReader.FolderName);
         List<string> names = [];
         try
@@ -300,7 +344,7 @@ internal static class BacklogChangeEndpoint
             DirectoryInfo info = new(folder);
             if (info.LinkTarget is not null || File.Exists(folder))
             {
-                return InvalidPlan();
+                return false;
             }
 
             if (info.Exists)
@@ -310,25 +354,31 @@ internal static class BacklogChangeEndpoint
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            return InvalidPlan();
+            return false;
         }
 
-        string title = request.Title!;
-        int number = BacklogEditor.NextNumber(text, names);
-        string relative = BacklogEditor.StoryPath(number, title);
-        string storyPath = Path.Combine(project.Path, relative);
-        if (File.Exists(storyPath) || Directory.Exists(storyPath) || new FileInfo(storyPath).LinkTarget is not null)
-        {
-            return InvalidPlan();
-        }
+        number = BacklogEditor.NextNumber(text, names);
+        relative = BacklogEditor.StoryPath(number, title);
+        storyPath = Path.Combine(project.Path, relative);
+        return !StoryPathTaken(storyPath);
+    }
 
-        string story = BacklogEditor.RenderStory(number, title, request.Story, request.What!, request.Why!);
+    /// <summary>True when something is already at the path: a file, a folder or a symlink (even a dangling
+    /// one).</summary>
+    public static bool StoryPathTaken(string storyPath)
+    {
+        return File.Exists(storyPath) || Directory.Exists(storyPath) || new FileInfo(storyPath).LinkTarget is not null;
+    }
+
+    private static ChangePlan NewItemPlan(
+        BacklogEdit edit, string verb, string backlogPath, BacklogFile file, string relative, string storyPath,
+        string story)
+    {
         byte[] storyBytes = StrictUtf8.GetBytes(story);
-        BacklogEdit edit = BacklogEditor.Add(text, number, title, request.Where ?? AddPosition.Bottom);
         byte[] bytes = edit.Text.ToBytes();
         return new ChangePlan(
             [new(BacklogReader.FileName, backlogPath, bytes, file.Bytes), new(relative, storyPath, storyBytes, null)],
-            "backlog: add " + edit.Subject,
+            "backlog: " + verb + " " + edit.Subject,
             bytes);
     }
 
@@ -459,7 +509,7 @@ internal static class BacklogChangeEndpoint
     }
 
     /// <summary>Parses and checks the body: a JSON object with known fields of the right types, a known action
-    /// with the fields it needs, and clean title, what, why, story, markdown and note texts. <c>null</c> otherwise.</summary>
+    /// with the fields it needs, and clean title, what, why, story, markdown, note and capture texts. <c>null</c> otherwise.</summary>
     public static BacklogChangeRequest? ParseRequest(byte[] body)
     {
         Dictionary<string, JsonElement> fields = new(StringComparer.Ordinal);
@@ -500,7 +550,8 @@ internal static class BacklogChangeEndpoint
             || !TryString(fields, "story", out string? story)
             || !TryString(fields, "storyVersion", out string? storyVersion)
             || !TryString(fields, "markdown", out string? markdown)
-            || !TryString(fields, "note", out string? note))
+            || !TryString(fields, "note", out string? note)
+            || !TryString(fields, "text", out string? captured))
         {
             return null;
         }
@@ -543,6 +594,15 @@ internal static class BacklogChangeEndpoint
                 }
 
                 return request with { Where = position, Title = clean, What = what, Why = why, Story = story };
+            }
+
+            case "capture":
+            {
+                string? clean = BacklogEditor.CleanCapture(captured);
+                string? captureTitle = clean is null ? null : BacklogEditor.CleanTitle(BacklogEditor.CaptureTitle(clean));
+                return clean is null || captureTitle is null
+                    ? null
+                    : request with { Title = captureTitle, Text = clean };
             }
 
             case "title":

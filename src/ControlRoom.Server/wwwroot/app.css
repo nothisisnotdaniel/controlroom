@@ -1395,15 +1395,15 @@ body:has(#edit-notice:not([hidden])) {
   margin: 0 0 12px;
 }
 
-/* Five nav links fit on one row at iPhone width (375 px). */
+/* Six nav links fit in two rows of three at iPhone width (375 px). */
 @media (max-width: 420px) {
   .nav {
     gap: 4px;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
   }
 
   .nav a {
-    flex: 1 1 auto;
+    flex: 1 1 calc((100% - 8px) / 3);
     justify-content: center;
     padding: 8px 5px;
     font-size: 0.875rem;
@@ -1413,4 +1413,81 @@ body:has(#edit-notice:not([hidden])) {
     margin-left: 3px;
     padding: 0 4px;
   }
+}
+
+/* Capture: a project select and a large text field for a quick idea; 16px text keeps iOS from zooming. */
+.capture-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 12px;
+}
+
+.capture-label {
+  display: block;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.capture-select,
+.capture-text {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 16px;
+}
+
+.capture-text {
+  min-height: 9em;
+  resize: vertical;
+  line-height: 1.4;
+}
+
+.capture-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.capture-save {
+  align-self: flex-start;
+  min-width: 120px;
+  min-height: 48px;
+  margin-top: 8px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--primary-fg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.capture-save:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.capture-save:focus-visible,
+.capture-select:focus-visible,
+.capture-text:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.capture-status {
+  margin: 0 0 8px;
+}
+
+.capture-saved {
+  color: var(--pass-fg);
+  font-weight: 600;
 }

@@ -99,6 +99,14 @@ internal static partial class BacklogEditor
 
     public const int MaxNoteLength = 1000;
 
+    public const int MaxCaptureLength = 2000;
+
+    public const int MaxCaptureTitleLength = 60;
+
+    private const string CaptureWhy = "Still to be written: this is a quick-capture draft.";
+
+    private const string CaptureNote = "Draft from ControlRoom";
+
     private const string NotesHeading = "## Notes";
 
     private const string ProposedByJob = "Proposed by job";
@@ -211,9 +219,10 @@ internal static partial class BacklogEditor
         return new BacklogEdit(text.With(lines), Subject(text, line));
     }
 
-    /// <summary>Inserts <c>- [ ] [#N](backlog/NNN-slug.md) Title</c>: <c>Top</c> before the first item that is not
+    /// <summary>Inserts <c>- [m] [#N](backlog/NNN-slug.md) Title</c> with the mark <paramref name="mark"/>
+    /// (<c>" "</c> for <c>add</c>, <c>"?"</c> for <c>capture</c>): <c>Top</c> before the first item that is not
     /// done, <c>Bottom</c> after the last item line (at the end when there is none).</summary>
-    public static BacklogEdit Add(EditableText text, int number, string title, AddPosition where)
+    public static BacklogEdit Add(EditableText text, int number, string title, AddPosition where, string mark = " ")
     {
         List<int> items = ItemRows(text);
         int end = items.Count > 0 ? items[^1] + 1 : text.Lines.Count;
@@ -225,7 +234,7 @@ internal static partial class BacklogEditor
 
         string ending = text.Lines.Count > 0 && text.Lines[0].EndsWith('\r') ? "\r" : "";
         List<string> lines = [.. text.Lines];
-        lines.Insert(at, "- [ ] [#" + number.ToString(CultureInfo.InvariantCulture) + "](" + StoryPath(number, title)
+        lines.Insert(at, "- [" + mark + "] [#" + number.ToString(CultureInfo.InvariantCulture) + "](" + StoryPath(number, title)
             + ") " + LineTitle(title) + ending);
         return new BacklogEdit(text.With(lines), "#" + number.ToString(CultureInfo.InvariantCulture));
     }
@@ -422,6 +431,74 @@ internal static partial class BacklogEditor
         }
 
         return clean;
+    }
+
+    /// <summary>A quick-capture text as one line: every whitespace run becomes one space, then trimmed. <c>null</c>
+    /// when it is empty, over <see cref="MaxCaptureLength"/> characters (runes), not valid Unicode, holds another
+    /// control character, or contains <c>Proposed by job</c> (ignoring case).</summary>
+    public static string? CleanCapture(string? text)
+    {
+        if (text is null || !IsValidUnicode(text))
+        {
+            return null;
+        }
+
+        string clean = Whitespace().Replace(text, " ").Trim();
+        if (clean.Length == 0 || clean.EnumerateRunes().Count() > MaxCaptureLength
+            || clean.Contains(ProposedByJob, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        foreach (char c in clean)
+        {
+            if (char.IsControl(c) || c == '\u2028' || c == '\u2029')
+            {
+                return null;
+            }
+        }
+
+        return clean;
+    }
+
+    /// <summary>The title of a capture: the clean text, cut when it is over <see cref="MaxCaptureTitleLength"/>
+    /// runes at the last space at or before that rune (a hard cut there when there is none), then trailing
+    /// <c>.,;:!?</c> and spaces removed. It may be empty; the caller checks it with <see cref="CleanTitle"/>.</summary>
+    public static string CaptureTitle(string clean)
+    {
+        Rune[] runes = clean.EnumerateRunes().ToArray();
+        string title = clean;
+        if (runes.Length > MaxCaptureTitleLength)
+        {
+            int cut = MaxCaptureTitleLength;
+            for (int i = MaxCaptureTitleLength - 1; i > 0; i--)
+            {
+                if (runes[i].Value == ' ')
+                {
+                    cut = i;
+                    break;
+                }
+            }
+
+            StringBuilder builder = new();
+            foreach (Rune rune in runes.Take(cut))
+            {
+                builder.Append(rune.ToString());
+            }
+
+            title = builder.ToString();
+        }
+
+        return title.TrimEnd('.', ',', ';', ':', '!', '?', ' ');
+    }
+
+    /// <summary>The story file of a capture: heading, the text under <c>## What</c>, a fixed <c>## Why</c> and a
+    /// dated <c>Draft from ControlRoom</c> note.</summary>
+    public static string RenderDraft(int number, string title, string text, DateOnly today)
+    {
+        return "# " + number.ToString("D3", CultureInfo.InvariantCulture) + " " + title + "\n\n## What\n\n" + text
+            + "\n\n## Why\n\n" + CaptureWhy + "\n\n" + NotesHeading + "\n\n- "
+            + today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ": " + CaptureNote + "\n";
     }
 
     /// <summary>Appends <c>- YYYY-MM-DD: note</c> to the story's first <c>## Notes</c> section (which ends at the
