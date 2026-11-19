@@ -69,3 +69,6 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#59](backlog/059-behaviour-tests-for-the-web-app.md) Behaviour tests for the web app's JavaScript
 - [?] [#60](backlog/060-calmer-colour-for-non-urgent-job.md) Calmer colour for non-urgent job notes
 - [?] [#61](backlog/061-check-that-the-job-page-refreshes.md) Check that the job page refreshes in place
+- [?] [#62](backlog/062-refresh-version-and-update-info-on.md) Refresh version and update info on live changes
+- [?] [#63](backlog/063-browser-check-of-the-live-update.md) Browser check of the live-update notice
+- [?] [#64](backlog/064-keep-stale-story-marks-across-route.md) Keep stale story marks across route changes
