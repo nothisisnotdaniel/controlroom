@@ -10,7 +10,7 @@
 const CaptureTexts = {
   projectLabel: "Project",
   ideaLabel: "Idea",
-  hint: "Saved as a [?] draft at the end of the backlog. Rewrite and approve it later.",
+  hint: "Saved as a draft at the end of the backlog. Rewrite and approve it later.",
   save: "Save",
   loading: "Loading projects…",
   noProjects: "No backlog can be written to right now.",
