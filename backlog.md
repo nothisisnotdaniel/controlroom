@@ -29,7 +29,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#27](backlog/027-my-tasks.md) My tasks (after: #4; #14) → 254-my-tasks
 - [x] [#18](backlog/018-search-and-filter.md) Search and filter → 255-search-and-filter
 - [x] [#19](backlog/019-next-and-blocked.md) Next and blocked (after: #14) → 257-next-and-blocked
-- [ ] [#20](backlog/020-notes-on-a-story.md) Notes on a story (after: #3)
+- [x] [#20](backlog/020-notes-on-a-story.md) Notes on a story (after: #3) → 259-notes-on-story
 - [ ] [#21](backlog/021-quick-capture.md) Quick capture (after: #3)
 - [ ] [#22](backlog/022-act-on-escalated-jobs.md) Act on escalated jobs (after: #2; #3)
 - [ ] [#23](backlog/023-costs-and-history.md) Costs and history (after: #2)
