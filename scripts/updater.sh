@@ -8,7 +8,8 @@
 # `launch-agent.sh install --release`, swaps it in, confirms it through the public GET /health route (counted only
 # while launchd runs the server and its pid is the one listening on the port) and rolls back when it doesn't
 # answer or the marker can't be updated. After every bootout it waits until launchd has removed the service, and a
-# failed bootstrap is tried again a few times (one that never succeeds is bootstrap_failed). It writes update-result.json for the server's push and prints exactly one line,
+# failed bootstrap is tried again a few times (one that never succeeds is bootstrap_failed). It writes
+# update-result.json for the server's push and prints exactly one line,
 # "<UTC ISO-8601> <word>[ <tags>]", which launchd appends to ~/Library/Logs/ControlRoom/updater.log. The words:
 # off, not_release, busy, job_running, current, latest_failed, download_failed, check_failed, skipped_failed,
 # updated, rolled_back, bootstrap_failed, swap_failed, rollback_failed.
