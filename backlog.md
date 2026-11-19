@@ -34,7 +34,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#22](backlog/022-act-on-escalated-jobs.md) Act on escalated jobs (after: #2; #3) → 262-act-on-escalated
 - [x] [#23](backlog/023-costs-and-history.md) Costs and history (after: #2) → 264-costs-and-history
 - [x] [#24](backlog/024-doctor-view.md) Doctor view → 266-doctor-view
-- [ ] [#25](backlog/025-ci-and-git-status.md) CI and git status
+- [x] [#25](backlog/025-ci-and-git-status.md) CI and git status → 269-ci-and-git-status
 - [ ] [#26](backlog/026-usage-view-spike.md) Usage view spike
 - [?] [#28](backlog/028-close-the-symlink-race-when-reading.md) Close the symlink race when reading story files
 - [?] [#29](backlog/029-drop-the-hand-written-equality-on.md) Drop the hand-written equality on BacklogEntry
