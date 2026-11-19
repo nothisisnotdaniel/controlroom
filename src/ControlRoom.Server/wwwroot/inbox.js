@@ -58,7 +58,7 @@ function readInbox(data) {
       version: version,
       line: line,
       number: asNumber(item.number),
-      title: item.title,
+      title: asText(item.title),
       rest: asText(item.rest),
       job: InboxJobId.test(job) ? job : null,
     });
