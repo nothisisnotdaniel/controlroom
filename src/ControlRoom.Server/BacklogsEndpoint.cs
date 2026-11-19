@@ -37,14 +37,7 @@ internal static class BacklogsEndpoint
         List<(ProjectFolder Project, BacklogFile? File)> read = ProjectFinder.Find(factoryRoot)
             .Select(project => (project, BacklogReader.ReadFile(project)))
             .ToList();
-        Dictionary<string, HashSet<int>> doneNumbers = new(StringComparer.Ordinal);
-        foreach ((ProjectFolder project, BacklogFile? file) in read)
-        {
-            doneNumbers[project.Name] = (file?.Backlog ?? Backlog.Empty).Done
-                .Where(entry => entry.Number is not null)
-                .Select(entry => entry.Number!.Value)
-                .ToHashSet();
-        }
+        BacklogWaiting waiting = BacklogWaiting.From(read.Select(pair => (pair.Project.Name, pair.File?.Backlog)));
 
         List<ProjectBacklog> projects = [];
         foreach ((ProjectFolder project, BacklogFile? file) in read)
@@ -53,28 +46,22 @@ internal static class BacklogsEndpoint
             projects.Add(new ProjectBacklog(
                 project.Name,
                 file is not null,
-                WithWaiting(groups.Open, project.Name, doneNumbers),
-                WithWaiting(groups.Approval, project.Name, doneNumbers),
-                WithWaiting(groups.User, project.Name, doneNumbers),
-                WithWaiting(groups.Done, project.Name, doneNumbers),
+                WithWaiting(groups.Open, project.Name, waiting),
+                WithWaiting(groups.Approval, project.Name, waiting),
+                WithWaiting(groups.User, project.Name, waiting),
+                WithWaiting(groups.Done, project.Name, waiting),
                 file?.Version));
         }
 
         return new BacklogsResponse(projects);
     }
 
-    /// <summary>Marks an entry waiting when any of its dependencies is not a done line of the named (or the same)
-    /// project; an unknown project or number counts as not done.</summary>
+    /// <summary>Marks an entry waiting when any of its dependencies is not met (<see cref="BacklogWaiting"/>).</summary>
     private static List<BacklogEntry> WithWaiting(
-        IReadOnlyList<BacklogEntry> entries, string projectName, Dictionary<string, HashSet<int>> doneNumbers)
+        IReadOnlyList<BacklogEntry> entries, string projectName, BacklogWaiting waiting)
     {
         return entries
-            .Select(entry => entry with
-            {
-                Waiting = entry.After.Any(dependency =>
-                    !doneNumbers.TryGetValue(dependency.Project ?? projectName, out HashSet<int>? done)
-                    || !done.Contains(dependency.Number)),
-            })
+            .Select(entry => entry with { Waiting = waiting.IsWaiting(entry, projectName) })
             .ToList();
     }
 }

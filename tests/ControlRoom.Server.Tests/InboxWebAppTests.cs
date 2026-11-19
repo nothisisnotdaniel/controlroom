@@ -25,14 +25,14 @@ public sealed partial class InboxWebAppTests
     public async Task IndexHtml_LoadsInboxJsBetweenEditJsAndLiveJs()
     {
         string html = await Fetch("/index.html");
-        string[] scripts = ["/token.js", "/board.js", "/push.js", "/edit.js", "/inbox.js", "/live.js", "/app.js"];
+        string[] scripts = ["/token.js", "/board.js", "/push.js", "/edit.js", "/inbox.js", "/tasks.js", "/live.js", "/app.js"];
 
         int[] positions = scripts
             .Select(script => html.IndexOf("<script src=\"" + script + "\" defer></script>", StringComparison.Ordinal))
             .ToArray();
         Assert.All(positions, position => Assert.True(position >= 0));
         Assert.Equal(positions.OrderBy(position => position), positions);
-        Assert.Equal(7, ScriptTag().Matches(html).Count);
+        Assert.Equal(8, ScriptTag().Matches(html).Count);
     }
 
     [Fact]
@@ -41,8 +41,8 @@ public sealed partial class InboxWebAppTests
         string app = await Fetch("/app.js");
         string inbox = await Fetch("/inbox.js");
 
-        Assert.Contains("const Views = [\"backlogs\", \"board\", \"inbox\", \"job\", \"story\"];", app, StringComparison.Ordinal);
-        Assert.Contains("const ViewTitles = { backlogs: \"Backlogs\", board: \"Jobs\", inbox: \"Inbox\" };", app,
+        Assert.Contains("const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"job\", \"story\"];", app, StringComparison.Ordinal);
+        Assert.Contains("const ViewTitles = { backlogs: \"Backlogs\", board: \"Jobs\", inbox: \"Inbox\", tasks: \"Tasks\" };", app,
             StringComparison.Ordinal);
         Assert.Contains("if (hash === InboxRoute) {\n    return \"inbox\";\n  }", app, StringComparison.Ordinal);
         Assert.Contains("if (next === \"inbox\") {\n    showInbox();\n    return;\n  }", app, StringComparison.Ordinal);
@@ -56,7 +56,7 @@ public sealed partial class InboxWebAppTests
     {
         string js = await Fetch("/sw.js");
 
-        Assert.Contains("const CacheVersion = \"v9\";", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v10\";", js, StringComparison.Ordinal);
         Assert.Contains("  \"/inbox.js\",\n", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/inbox", js, StringComparison.Ordinal);
         Assert.Contains("if (url.pathname.startsWith(\"/api/\") || url.pathname === \"/health\") {\n    return false;", js,
@@ -184,8 +184,8 @@ public sealed partial class InboxWebAppTests
         // A load in progress never sets the count to 0: it changes only with a result or a failure.
         Assert.Equal(3, CountAssignment().Matches(js).Count);
         // Once per page load and after a token is saved (the inbox view fetches it itself).
-        Assert.Contains("route();\nload();\nloadInboxCount();\nstartLiveChecks();", app, StringComparison.Ordinal);
-        Assert.Contains("onTokenSaved(() => {\n  route();\n  load();\n  loadInboxCount();\n});", app, StringComparison.Ordinal);
+        Assert.Contains("route();\nload();\nloadInboxCount();\nloadTasksCount();\nstartLiveChecks();", app, StringComparison.Ordinal);
+        Assert.Contains("onTokenSaved(() => {\n  route();\n  load();\n  loadInboxCount();\n  loadTasksCount();\n});", app, StringComparison.Ordinal);
         Assert.Contains("function loadInboxCount() {\n  if (currentView !== \"inbox\") {\n    loadInbox();", js,
             StringComparison.Ordinal);
     }

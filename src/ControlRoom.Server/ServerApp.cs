@@ -121,6 +121,7 @@ internal static class ServerApp
         BacklogsEndpoint.Map(app);
         StoryEndpoint.Map(app);
         InboxEndpoint.Map(app);
+        TasksEndpoint.Map(app);
         BoardEndpoint.Map(app);
         ChangesEndpoint.Map(app);
         JobEndpoint.Map(app);

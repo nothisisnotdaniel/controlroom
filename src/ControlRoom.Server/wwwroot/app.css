@@ -368,7 +368,7 @@ main {
   white-space: pre;
 }
 
-/* Top nav: Jobs, Backlogs and Inbox */
+/* Top nav: Jobs, Backlogs, Inbox and Tasks */
 .nav {
   display: flex;
   flex-wrap: wrap;
@@ -1192,4 +1192,54 @@ body:has(#edit-notice:not([hidden])) {
 
 .inbox-unreadable {
   margin: 0 0 12px;
+}
+
+/* Tasks: the ready count in the nav, a Ready now and a Waiting section, one card row per task. */
+.tasks-section {
+  margin: 0 0 20px;
+}
+
+.tasks-heading {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+}
+
+.tasks-list {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 4px 14px;
+}
+
+.tasks-item {
+  overflow-wrap: anywhere;
+}
+
+.tasks-project {
+  display: block;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.tasks-head {
+  display: block;
+  font-weight: 700;
+}
+
+.tasks-after .dependency {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 8px;
+}
+
+.tasks-unreadable {
+  margin: 0 0 12px;
+}
+
+/* Four nav links fit on one row at iPhone width. */
+@media (max-width: 420px) {
+  .nav a {
+    padding: 8px 12px;
+  }
 }

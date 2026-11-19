@@ -258,6 +258,45 @@ public sealed class BacklogEditorTests
         Assert.False(BacklogEditor.IsStoryText("nul\0"));
     }
 
+    [Fact]
+    public void Done_TicksOffAHandLineAndKeepsEveryOtherByte()
+    {
+        BacklogEdit edit = BacklogEditor.Done(Text(Sample), 6)!;
+
+        Assert.Equal(
+            Encoding.UTF8.GetBytes(Sample.Replace("- [h] Hand task", "- [x] Hand task", StringComparison.Ordinal)),
+            edit.Text.ToBytes());
+        Assert.Equal("line 7", edit.Subject);
+    }
+
+    [Fact]
+    public void Done_OnANumberedLineNamesItsNumber_AndKeepsCrlfAndTheTail()
+    {
+        const string Crlf = "# B\r\n- [h] [#4](backlog/004-hand.md) Hand four (after: Other#1) → 3-x\r\n- [ ] Next: line\r\n";
+
+        BacklogEdit edit = BacklogEditor.Done(Text(Crlf), 1)!;
+
+        Assert.Equal(
+            Encoding.UTF8.GetBytes(Crlf.Replace("- [h] [#4]", "- [x] [#4]", StringComparison.Ordinal)),
+            edit.Text.ToBytes());
+        Assert.Equal("#4", edit.Subject);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(7)]
+    [InlineData(8)]
+    [InlineData(-1)]
+    [InlineData(11)]
+    public void Done_RefusesEveryLineThatIsNotHand(int line)
+    {
+        Assert.Null(BacklogEditor.Done(Text(Sample), line));
+    }
+
     private static EditableText Text(string text)
     {
         return EditableText.Parse(Encoding.UTF8.GetBytes(text))!;

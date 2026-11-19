@@ -19,6 +19,7 @@
   <script src="/push.js" defer></script>
   <script src="/edit.js" defer></script>
   <script src="/inbox.js" defer></script>
+  <script src="/tasks.js" defer></script>
   <script src="/live.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
@@ -28,6 +29,7 @@
       <a href="#jobs" data-view="board">Jobs</a>
       <a href="#backlogs" data-view="backlogs">Backlogs</a>
       <a href="#inbox" data-view="inbox">Inbox<span class="nav-count" id="inbox-count" hidden></span></a>
+      <a href="#tasks" data-view="tasks">Tasks<span class="nav-count" id="tasks-count" hidden></span></a>
     </nav>
     <h1 id="top-title">Backlogs</h1>
   </header>
@@ -52,6 +54,7 @@
     <div class="auto-update" id="auto-update" hidden></div>
   </main>
   <main id="inbox" hidden></main>
+  <main id="tasks" hidden></main>
   <main id="job" hidden></main>
   <main id="story" hidden></main>
   <div class="edit-notice" id="edit-notice" role="status" aria-live="polite" hidden>

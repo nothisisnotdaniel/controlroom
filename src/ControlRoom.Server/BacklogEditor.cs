@@ -110,6 +110,20 @@ internal static partial class BacklogEditor
         return new BacklogEdit(text.With(lines), Subject(text, line));
     }
 
+    /// <summary>Ticks off a <c>[h]</c> line: <c>- [h] </c> becomes <c>- [x] </c>, every other byte stays.</summary>
+    public static BacklogEdit? Done(EditableText text, int line)
+    {
+        if (!IsMark(text, line, 'h'))
+        {
+            return null;
+        }
+
+        string raw = text.Lines[line];
+        List<string> lines = [.. text.Lines];
+        lines[line] = "- [x] " + raw[6..];
+        return new BacklogEdit(text.With(lines), Subject(text, line));
+    }
+
     /// <summary>Removes a <c>[?]</c> line; the caller removes its story file.</summary>
     public static BacklogEdit? Drop(EditableText text, int line)
     {

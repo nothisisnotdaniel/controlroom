@@ -215,6 +215,12 @@ internal static class BacklogChangeEndpoint
                 return edit is null ? InvalidPlan() : BacklogOnly(edit, "approve", backlogPath, file);
             }
 
+            case "done":
+            {
+                BacklogEdit? edit = BacklogEditor.Done(text, line);
+                return edit is null ? InvalidPlan() : BacklogOnly(edit, "done", backlogPath, file);
+            }
+
             case "up":
             case "down":
             case "top":
@@ -451,6 +457,7 @@ internal static class BacklogChangeEndpoint
         {
             case "approve":
             case "drop":
+            case "done":
             case "up":
             case "down":
             case "top":

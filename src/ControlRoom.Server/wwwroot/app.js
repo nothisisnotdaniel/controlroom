@@ -533,8 +533,8 @@ async function refreshStory() {
   return true;
 }
 
-const Views = ["backlogs", "board", "inbox", "job", "story"];
-const ViewTitles = { backlogs: "Backlogs", board: "Jobs", inbox: "Inbox" };
+const Views = ["backlogs", "board", "inbox", "tasks", "job", "story"];
+const ViewTitles = { backlogs: "Backlogs", board: "Jobs", inbox: "Inbox", tasks: "Tasks" };
 let currentView = null;
 
 function viewFor(hash) {
@@ -546,6 +546,9 @@ function viewFor(hash) {
   }
   if (hash === InboxRoute) {
     return "inbox";
+  }
+  if (hash === TasksRoute) {
+    return "tasks";
   }
   return hash === BoardRoute ? "board" : "backlogs";
 }
@@ -584,6 +587,9 @@ function route() {
   if (currentView === "inbox" && next !== "inbox") {
     rememberInboxScroll();
   }
+  if (currentView === "tasks" && next !== "tasks") {
+    rememberTasksScroll();
+  }
   currentView = next;
   hideEditNotice();
   if (next !== "story") {
@@ -613,6 +619,10 @@ function route() {
     showInbox();
     return;
   }
+  if (next === "tasks") {
+    showTasks();
+    return;
+  }
   window.scrollTo(0, listScroll);
 }
 
@@ -624,11 +634,12 @@ function registerServiceWorker() {
   navigator.serviceWorker.register("/sw.js").catch(() => undefined);
 }
 
-// After Save: show the current view again and reload its data, the backlogs and the inbox count.
+// After Save: show the current view again and reload its data, the backlogs and the inbox and tasks counts.
 onTokenSaved(() => {
   route();
   load();
   loadInboxCount();
+  loadTasksCount();
 });
 if (!hasToken()) {
   showTokenView(false);
@@ -637,5 +648,6 @@ window.addEventListener("hashchange", route);
 route();
 load();
 loadInboxCount();
+loadTasksCount();
 startLiveChecks();
 registerServiceWorker();
