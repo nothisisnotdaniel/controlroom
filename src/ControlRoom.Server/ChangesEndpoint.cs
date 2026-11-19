@@ -9,10 +9,11 @@ internal static class ChangesEndpoint
 
     public static void Map(WebApplication app)
     {
-        app.MapMethods(Route, [HttpMethods.Get, HttpMethods.Head], (FactoryRoot root, HttpContext context) =>
+        app.MapMethods(Route, [HttpMethods.Get, HttpMethods.Head], (
+            FactoryRoot root, BacklogWorktree worktree, HttpContext context) =>
         {
             context.Response.Headers.CacheControl = "no-store";
-            return Results.Json(ChangeFingerprint.Build(root.Path));
+            return Results.Json(ChangeFingerprint.Build(root.Path, worktree));
         });
     }
 }

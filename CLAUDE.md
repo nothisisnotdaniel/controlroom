@@ -30,14 +30,27 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     git runs read-only in the factory root itself: only `git status --porcelain --untracked-files=all -- factory/jobs`
     for `GET /api/doctor` (`ProjectGit.Run`, `GIT_OPTIONAL_LOCKS=0`). In a project repo `GET /api/status` runs only the
     read-only `git rev-list --count refs/heads/main..refs/heads/develop` (`ProjectGit.AheadOfMain`); it never runs `gh`
-    or calls the network.
+    or calls the network. For edits while a job has the checkout on another branch, `BacklogWorktree` runs (fixed
+    arguments; the only variable one is the worktree path built from the token folder and a discovered project name)
+    `rev-parse --verify --quiet refs/heads/backlog`, `branch backlog refs/heads/develop`, `worktree prune`,
+    `worktree add -q <path> backlog`, `worktree list --porcelain`, `rev-list --count refs/heads/develop..refs/heads/backlog`
+    in the project repo, and `branch --show-current`, `merge -q --ff-only refs/heads/develop` (only when `backlog` has
+    nothing develop lacks), `status`, `add` and `commit` in the worktree; it never pushes `backlog`. The backlog reads
+    (`BacklogSource`) run `branch --show-current` and that `rev-list` per project.
   - Paths come only from the discovered project list and the jobs folder, never from a request as a path;
     names from a request are matched against that list.
   - Writes are limited to a project's `backlog.md` and its `backlog/NNN-slug.md` story files: only through
-    `POST /api/backlog/change`, one change at a time, only on its `develop` branch, only with a clean
-    `backlog.md` and `backlog/`, checked against the version (SHA-256) the client saw (refused as changed
-    otherwise), written atomically without following symlinks (`SafeFileWriter`), then committed in that
-    project's repo with only the changed files (and pushed when there is an `origin`). The actions are approve,
+    `POST /api/backlog/change`, one change at a time, only with a clean `backlog.md` and `backlog/`, checked against
+    the version (SHA-256) the client saw (refused as changed otherwise), written atomically without following symlinks
+    (`SafeFileWriter`), then committed with only the changed files. With the checkout on `develop` they go into the
+    checkout and are pushed when there is an `origin`. With the checkout on any other branch (a job's `factory/<id>`
+    or a detached HEAD) they go, with the same checks, into the server's own git worktree of the local `backlog`
+    branch at `<token folder>/worktrees/<project>` (outside the factory root; `BacklogWorktree.Ensure` first: creates
+    `backlog` from develop when missing, prunes, adds the worktree when its folder is missing, checks the
+    `worktree list` path, no symlink and the branch, and fast-forwards to develop when `backlog` has nothing of its
+    own; any failure gives `500 {"error":"worktree_failed"}` before a write), committed on `backlog`, never pushed
+    (`pushed:false`, no warning); `job.py` merges `backlog` into develop between jobs. The checkout is never touched
+    then. A project folder without its own repo gives `409 {"error":"not_develop"}` before every other check. The actions are approve,
     drop, up/down/top, add, title, story, `done` (only a `[h]` line becomes `[x]`) and `note` (on a numbered open
     item, with `storyVersion`: the note is cleaned to one line (whitespace runs to one space, trimmed), at most 1000
     characters, no control characters and no `Proposed by job`; dated `- YYYY-MM-DD: <note>` from the `TimeProvider`
@@ -71,6 +84,9 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     one owned by someone else) makes every `/api/push*` route return `500 {"error":"push_store"}` and is never
     overwritten. `POST /api/push/test` sends at most once per 10 s server-wide (`PushTestLimiter` on
     `TimeProvider`); a call inside that window returns `429 {"error":"too_many_requests"}` and sends nothing.
+  - Backlog worktrees live in `worktrees/` in the same folder (`worktrees/<project>`, one per project, made by
+    `git worktree add`); `worktrees/` follows the `PrivateFolder` rules (`0700`, owned by the user, not a symlink,
+    created `0700` when missing) and a symlinked `worktrees/<project>` is refused.
   - Update files live in the same folder, with the same rules (`PrivateFolder`): `settings.json` is exactly
     `{"autoUpdate":B}` (channel `stable`), `{"autoUpdate":B,"channel":"stable"}` or
     `{"autoUpdate":B,"channel":"develop"}` with `B` `true` or `false` (one optional trailing line break; missing is
@@ -145,12 +161,16 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `IsMissing`: unknown project or no line with that number in a readable backlog, never for an unreadable one or
     `factory`), `BacklogPlan` (the rule of `job.py next`: numbered `[ ]` lines in file order, blocked while a
     dependency is unmet, the first one not blocked is next, spikes too), `BacklogsEndpoint` (`GET /api/backlogs`, with
-    `waiting`, `line` and the file `version`, and per project `next` (`{number, title, story, spike}` or `null`),
+    `waiting`, `line` and the file `version`, and per project `pending` (true when read from the worktree), `next` (`{number, title, story, spike}` or `null`),
     `stopped` (a blocked line has a missing dependency) and `blocked` (`[{number, title, story, after:[{project, number,
     missing}]}]`, only unmet dependencies); `null`, `false`, `[]` when unreadable), `BacklogEditor` (`EditableText` lines that keep their bytes; approve, drop, done, move, title
     and add edits (`Add` takes the mark), `CleanNote` and `AppendNote`, `CleanCapture`, `CaptureTitle` and `RenderDraft`, slug, next number and story template like `job.py`), `ProjectGit` (fixed-argument git calls
-    with timeouts and `GIT_TERMINAL_PROMPT=0`), `BacklogChangeEndpoint` (`POST /api/backlog/change`: request
-    checks, `not_develop`/`dirty`/`changed`, write, commit, push; `done` commits `backlog: done #N`, `note` commits `backlog: note on #N`, `capture` commits `backlog: capture #N`), `StoryReader` (fenced read of
+    with timeouts and `GIT_TERMINAL_PROMPT=0`), `BacklogWorktree` (the `backlog` branch worktree at
+    `<token folder>/worktrees/<project>`: `Ensure`, `Pending` (`backlog` has commits develop lacks and the folder
+    exists), `Exists` (no git)) and `BacklogSource` (where `backlog.md` and stories are read: the worktree while the
+    checkout is not on `develop` and `Pending`, else the project; used by `GET /api/backlogs`, `/api/story`,
+    `/api/inbox`, `/api/tasks` and `/api/search`), `BacklogChangeEndpoint` (`POST /api/backlog/change`: request
+    checks, `not_develop` (no repo)/`worktree_failed`/`dirty`/`changed`, write, commit, push (develop only); `done` commits `backlog: done #N`, `note` commits `backlog: note on #N`, `capture` commits `backlog: capture #N`), `StoryReader` (fenced read of
     `<project>/backlog/NNN-slug.md`), `StoryMarkdown` (Markdown to a JSON block tree, no HTML),
     `StoryEndpoint` (`GET /api/story?project=&number=`, with `markdown`
     and `storyVersion`), `InboxEndpoint` (`GET /api/inbox`: every `[?]` line as `{project, version, line, number, title,
@@ -174,14 +194,14 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `JobSummary`; `request` is the `human.json` action, filled only for `needs-human`; `tokens` is `null` when no agent
     gives a valid count; `Updated`, `CiUrl` and `CiSha` (never in JSON); `Updated` only from an exact `YYYY-MM-DDTHH:MM:SSZ` `updated`), `BoardEndpoint` (`GET /api/board`: jobs and `[h]` tasks), `ChangeFingerprint` (SHA-256 fingerprints from `lstat`
     metadata only: `jobs` over each `state.json` and `human.json` of `JobReader.ListFolders`, per project `backlog` over `backlog.md`
-    and `stories` over `backlog/*.md`; a symlink adds only a `link` marker, a missing path `missing`; `NoFollowStat`:
+    and `stories` over `backlog/*.md`, each also over the worktree's copies when its folder exists; a symlink adds only a `link` marker, a missing path `missing`; `NoFollowStat`:
     `lstat`, `O_NOFOLLOW` folder listing and `fstatat` via P/Invoke, never a file opened or a target followed),
     `ChangesEndpoint` (`GET /api/changes`: `{"jobs":…,"projects":{"<name>":{"backlog":…,"stories":…}}}`, `no-store`), `JobEndpoint` (`GET /api/job?id=`:
     a job and its records from a fixed list, and `request`: `null`, the parsed `human.json` or `{"action":"unreadable"}`
     for a bad, symlinked or oversized file, read only through `SafeFileReader`), `JobAction` (the `human.json` schema:
     `Parse` (exact keys, at most 4 KiB), `Render`, no-follow `Read`), `JobActEndpoint` (`POST /api/job/act`), `PushCrypto` (RFC 8291 `aes128gcm`, RFC 8292 VAPID ES256 JWT, P-256
     point check, `Base64Url`), `PrivateFolder` (the `0700` folder next to the token file: no-follow `0600` reads,
-    atomic writes, `PrivateFileException`), `PushStore` (`push-keys.json`/`push.json` next to the token file;
+    atomic writes, `EnsureFolder`/`IsReady`, `PrivateFileException`), `PushStore` (`push-keys.json`/`push.json` next to the token file;
     `PushSubscriptionRules`: endpoint host allowlist and key checks), `PushSender` (`PushPayload` with the fixed
     reason table, `PushTransport` (the injectable `HttpMessageHandler`), one POST per subscription, `404`/`410`
     removes it), `PushWatcher` (hosted service, `Scan()` every 30 s on `TimeProvider`; first scan is the baseline),

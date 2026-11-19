@@ -135,6 +135,35 @@ internal sealed class PrivateFolder
         }
     }
 
+    /// <summary>Makes sure the folder itself follows the rules, creating it <c>0700</c> when missing. Throws
+    /// <see cref="PrivateFileException"/> otherwise.</summary>
+    public void EnsureFolder()
+    {
+        try
+        {
+            CheckFolder(create: true);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            throw new PrivateFileException("private folder refused", exception);
+        }
+    }
+
+    /// <summary>True when the folder is there and follows the rules; false when it is missing or breaks one.
+    /// Never creates it.</summary>
+    public bool IsReady()
+    {
+        try
+        {
+            return CheckFolder(create: false);
+        }
+        catch (Exception exception) when (exception is PrivateFileException or IOException
+                                              or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     /// <summary>True when the folder is a real folder (not a symlink) with mode <c>0700</c>, owned by
     /// <see cref="Owner"/>; false when it is missing and <paramref name="create"/> is not set (a missing folder is
     /// created <c>0700</c> otherwise). Throws for anything else.</summary>

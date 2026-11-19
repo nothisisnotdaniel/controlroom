@@ -31,16 +31,18 @@ internal static class TasksEndpoint
 
     public static void Map(WebApplication app)
     {
-        app.MapMethods(Route, [HttpMethods.Get, HttpMethods.Head], (FactoryRoot root, HttpContext context) =>
+        app.MapMethods(Route, [HttpMethods.Get, HttpMethods.Head], async (
+            FactoryRoot root, BacklogWorktree worktree, HttpContext context) =>
         {
             context.Response.Headers.CacheControl = "no-store";
-            return Results.Json(Build(root.Path));
+            return Results.Json(Build(await BacklogSource.ForAll(ProjectFinder.Find(root.Path), worktree)));
         });
     }
 
-    public static TasksResponse Build(string factoryRoot)
+    /// <summary>The response from each project's backlog source folder (<see cref="BacklogSource"/>).</summary>
+    public static TasksResponse Build(IReadOnlyList<ProjectFolder> sources)
     {
-        List<(ProjectFolder Project, BacklogFile? File)> read = ProjectFinder.Find(factoryRoot)
+        List<(ProjectFolder Project, BacklogFile? File)> read = sources
             .Select(project => (project, BacklogReader.ReadFile(project)))
             .ToList();
         BacklogWaiting rule = BacklogWaiting.From(read.Select(pair => (pair.Project.Name, pair.File?.Backlog)));

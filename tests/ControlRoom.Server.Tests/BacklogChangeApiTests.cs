@@ -188,19 +188,22 @@ public sealed partial class BacklogChangeApiTests
     }
 
     [Fact]
-    public async Task Change_OnAnotherBranch_Is409NotDevelopBeforeOtherChecks()
+    public async Task Change_InAFolderWithoutItsOwnRepo_Is409NotDevelopBeforeOtherChecks()
     {
-        using Repo repo = Repo.Create();
-        TempFactoryRoot.Git(repo.Folder, "checkout", "-q", "-b", "feature");
-        File.AppendAllText(repo.BacklogPath, "dirty\n");
-        using HttpClient client = repo.Factory.CreateTokenClient();
-        IReadOnlyList<string> before = repo.State();
+        using TempFactoryRoot root = new();
+        string folder = root.AddProject("Alpha", AlphaBacklog);
+        TempFactoryRoot.AddStory(folder, "003-proposal.md", "# 003 Proposal three\n");
+        File.AppendAllText(Path.Combine(folder, "backlog.md"), "dirty\n");
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+        IReadOnlyList<string> before = root.Snapshot();
 
         using HttpResponseMessage response = await client.PostAsync(
             Route, Json(new { project = "Alpha", version = "stale", action = "approve", line = 5 }));
 
         await AssertError(response, HttpStatusCode.Conflict, "not_develop");
-        Assert.Equal(before, repo.State());
+        Assert.Equal(before, root.Snapshot());
+        Assert.False(Directory.Exists(Path.Combine(Path.GetDirectoryName(factory.TokenFile)!, "worktrees")));
     }
 
     [Fact]
@@ -545,7 +548,7 @@ public sealed partial class BacklogChangeApiTests
     }
 
     [Fact]
-    public async Task Done_OnAnotherBranch_Is409NotDevelopAndHeadStays()
+    public async Task Done_OnAnotherBranch_CommitsOnBacklogAndTheCheckoutStays()
     {
         using Repo repo = Repo.Create(HandBacklog);
         TempFactoryRoot.Git(repo.Folder, "checkout", "-q", "-b", "feature");
@@ -555,9 +558,11 @@ public sealed partial class BacklogChangeApiTests
         using HttpResponseMessage response = await client.PostAsync(
             Route, Json(new { project = "Alpha", version = repo.Version(), action = "done", line = 2 }));
 
-        await AssertError(response, HttpStatusCode.Conflict, "not_develop");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(before, repo.State());
         Assert.Equal("feature", TempFactoryRoot.Git(repo.Folder, "branch", "--show-current"));
+        repo.AssertBacklogCommit("backlog: done #2", ["backlog.md"]);
+        Assert.StartsWith("- [x] [#2]", File.ReadAllLines(Path.Combine(repo.WorktreePath, "backlog.md"))[2], StringComparison.Ordinal);
     }
 
     [Fact]
@@ -676,6 +681,9 @@ public sealed partial class BacklogChangeApiTests
 
         public string BacklogPath => Path.Combine(Folder, "backlog.md");
 
+        /// <summary>The server's worktree of the <c>backlog</c> branch, next to the factory's token file.</summary>
+        public string WorktreePath => Path.Combine(Path.GetDirectoryName(Factory.TokenFile)!, "worktrees", "Alpha");
+
         public static Repo Create(string backlog = AlphaBacklog)
         {
             TempFactoryRoot root = new();
@@ -747,6 +755,20 @@ public sealed partial class BacklogChangeApiTests
             Assert.Equal(message, TempFactoryRoot.Git(Folder, "log", "-1", "--format=%s"));
             Assert.Equal("develop", TempFactoryRoot.Git(Folder, "branch", "--show-current"));
             string[] changed = TempFactoryRoot.Git(Folder, "show", "--name-only", "--format=", "HEAD")
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            Assert.Equal(files.Order(StringComparer.Ordinal), changed.Order(StringComparer.Ordinal));
+        }
+
+        /// <summary>Exactly one commit on <c>backlog</c> after develop, with the message and exactly the files, and
+        /// develop where it was.</summary>
+        public void AssertBacklogCommit(string message, string[] files)
+        {
+            Assert.Equal("1", TempFactoryRoot.Git(Folder, "rev-list", "--count", "refs/heads/develop..refs/heads/backlog"));
+            Assert.Equal(
+                setupCommits.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                TempFactoryRoot.Git(Folder, "rev-list", "--count", "refs/heads/develop"));
+            Assert.Equal(message, TempFactoryRoot.Git(Folder, "log", "-1", "--format=%s", "refs/heads/backlog"));
+            string[] changed = TempFactoryRoot.Git(Folder, "show", "--name-only", "--format=", "refs/heads/backlog")
                 .Split('\n', StringSplitOptions.RemoveEmptyEntries);
             Assert.Equal(files.Order(StringComparer.Ordinal), changed.Order(StringComparer.Ordinal));
         }

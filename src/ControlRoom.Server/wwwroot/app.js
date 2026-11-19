@@ -18,6 +18,7 @@ const Texts = {
   spike: "Spike",
   waitsFor: "Waits for",
   missing: "No such item",
+  pending: "Edits wait for the running job and go into develop after it.",
 };
 
 const Groups = [
@@ -276,6 +277,10 @@ function renderProject(project) {
   const head = element("div", "project-head");
   head.appendChild(element("h2", null, asText(project && project.name)));
   section.appendChild(head);
+  // Edits go to the backlog branch while a job runs; a fixed text, never git output.
+  if (project && project.pending === true) {
+    section.appendChild(element("p", "backlog-pending", Texts.pending));
+  }
   if (!project || project.readable !== true) {
     section.appendChild(element("p", "error", Texts.unreadable));
     return section;

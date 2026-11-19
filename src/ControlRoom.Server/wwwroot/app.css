@@ -302,6 +302,13 @@ main {
   border: 1px solid var(--line);
 }
 
+/* Pending note: backlog edits wait on the backlog branch while a job runs. */
+.backlog-pending {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 /* Project status: last CI result and develop/main count, between the head and the plan. Wraps on narrow screens;
    a bad CI result is said in its text and only marked by colour. */
 .project-status {

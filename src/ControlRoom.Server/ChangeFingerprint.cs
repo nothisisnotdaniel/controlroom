@@ -31,12 +31,20 @@ internal static class ChangeFingerprint
 
     public const string StoryExtension = ".md";
 
-    public static ChangesResponse Build(string factoryRoot)
+    /// <summary>Every fingerprint. With a <paramref name="worktree"/> whose folder exists for a project, that
+    /// project's <c>backlog</c> and <c>stories</c> also cover the worktree's <c>backlog.md</c> and
+    /// <c>backlog/*.md</c> (<c>lstat</c> only, no git).</summary>
+    public static ChangesResponse Build(string factoryRoot, BacklogWorktree? worktree = null)
     {
         Dictionary<string, ProjectChanges> projects = new(StringComparer.Ordinal);
         foreach (ProjectFolder project in ProjectFinder.Find(factoryRoot))
         {
-            projects[project.Name] = new ProjectChanges(Backlog(project), Stories(project));
+            ProjectFolder? copy = worktree is not null && worktree.Exists(project)
+                ? new ProjectFolder(project.Name, worktree.PathFor(project))
+                : null;
+            projects[project.Name] = copy is null
+                ? new ProjectChanges(Backlog(project), Stories(project))
+                : new ProjectChanges(Combine(Backlog(project), Backlog(copy)), Combine(Stories(project), Stories(copy)));
         }
 
         return new ChangesResponse(Jobs(factoryRoot), projects);
@@ -90,6 +98,14 @@ internal static class ChangeFingerprint
             Append(text, name, entry);
         }
 
+        return Hash(text);
+    }
+
+    /// <summary>One fingerprint over the checkout's and the worktree's.</summary>
+    private static string Combine(string checkout, string worktree)
+    {
+        StringBuilder text = new();
+        text.Append("checkout:").Append(checkout).Append('\n').Append("worktree:").Append(worktree).Append('\n');
         return Hash(text);
     }
 

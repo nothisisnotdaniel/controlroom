@@ -24,10 +24,12 @@ internal static partial class StoryEndpoint
 
     public static void Map(WebApplication app)
     {
-        app.MapMethods(Route, [HttpMethods.Get, HttpMethods.Head], (FactoryRoot root, HttpContext context) =>
+        app.MapMethods(Route, [HttpMethods.Get, HttpMethods.Head], async (
+            FactoryRoot root, BacklogWorktree worktree, HttpContext context) =>
         {
             context.Response.Headers.CacheControl = "no-store";
-            StoryResponse? story = Build(root.Path, context.Request.Query["project"], context.Request.Query["number"]);
+            StoryResponse? story = await Build(
+                root.Path, worktree, context.Request.Query["project"], context.Request.Query["number"]);
             if (story is null)
             {
                 return Results.Content(NotFoundBody, "application/json", statusCode: StatusCodes.Status404NotFound);
@@ -37,7 +39,10 @@ internal static partial class StoryEndpoint
         });
     }
 
-    public static StoryResponse? Build(string factoryRoot, StringValues projectValue, StringValues numberValue)
+    /// <summary>The story, read from the project's backlog source folder (<see cref="BacklogSource"/>), or
+    /// <c>null</c>.</summary>
+    public static async Task<StoryResponse?> Build(
+        string factoryRoot, BacklogWorktree worktree, StringValues projectValue, StringValues numberValue)
     {
         if (projectValue.Count != 1 || numberValue.Count != 1)
         {
@@ -51,12 +56,14 @@ internal static partial class StoryEndpoint
             return null;
         }
 
-        ProjectFolder? project = ProjectFinder.Find(factoryRoot)
+        ProjectFolder? found = ProjectFinder.Find(factoryRoot)
             .FirstOrDefault(folder => string.Equals(folder.Name, projectName, StringComparison.Ordinal));
-        if (project is null)
+        if (found is null)
         {
             return null;
         }
+
+        ProjectFolder project = await BacklogSource.For(found, worktree);
 
         Backlog? backlog = BacklogReader.Read(project);
         BacklogEntry? entry = backlog?.All.FirstOrDefault(line => line.Number == number);

@@ -25,9 +25,10 @@ public sealed class BacklogsApiTests
 
         JsonElement normal = projects[3];
         Assert.Equal(
-            ["name", "readable", "open", "approval", "user", "done", "version", "next", "stopped", "blocked"],
+            ["name", "readable", "open", "approval", "user", "done", "version", "next", "stopped", "blocked", "pending"],
             normal.EnumerateObject().Select(property => property.Name));
         Assert.True(normal.GetProperty("readable").GetBoolean());
+        Assert.False(normal.GetProperty("pending").GetBoolean());
         Assert.Equal(
             [("First open", "do `this` → 125-x"), ("Second open without rest", "")],
             Entries(normal, "open"));
