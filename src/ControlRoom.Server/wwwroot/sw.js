@@ -2,7 +2,7 @@
 
 // Caches only the app shell. Backlog, story and job data are never cached, so an unreachable server shows the
 // app's fixed text instead of old data. Bump the version when the shell list changes.
-const CacheVersion = "v14";
+const CacheVersion = "v15";
 const CacheName = "controlroom-shell-" + CacheVersion;
 
 const Shell = [
@@ -18,6 +18,7 @@ const Shell = [
   "/search.js",
   "/capture.js",
   "/history.js",
+  "/doctor.js",
   "/live.js",
   "/push.js",
   "/token.js",

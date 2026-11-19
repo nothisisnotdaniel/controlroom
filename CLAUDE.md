@@ -26,7 +26,9 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   The token is never logged, put in a URL or cached by the service worker.
 - **Safety rules:**
   - The server never runs a shell command, `claude` or any program built from request input. Git is called
-    with a fixed argument list (`ProcessStartInfo.ArgumentList`), never through a shell.
+    with a fixed argument list (`ProcessStartInfo.ArgumentList`), never through a shell. Besides the project repos,
+    git runs read-only in the factory root itself: only `git status --porcelain --untracked-files=all -- factory/jobs`
+    for `GET /api/doctor` (`ProjectGit.Run`, `GIT_OPTIONAL_LOCKS=0`).
   - Paths come only from the discovered project list and the jobs folder, never from a request as a path;
     names from a request are matched against that list.
   - Writes are limited to a project's `backlog.md` and its `backlog/NNN-slug.md` story files: only through
@@ -187,7 +189,18 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `RunningVersion`, `UpdateTransport` (the injectable handler and timeout), `UpdateState` (latest release, in
     memory), `UpdateChecker` (hosted service, `Check()` at start and every 6 h on `TimeProvider`, the `update` push
     once per version)), `UpdateEndpoint` (`GET /api/update`, `POST /api/update/settings`), `UpdateSettingsStore` (`settings.json`),
-    `UpdateResult` (`update-result.json` schema and `UpdateResultReader`), `HealthEndpoint` (`GET /health`), `wwwroot/` (`index.html`, `app.css`, `token.js` (stored token under
+    `UpdateResult` (`update-result.json` schema and `UpdateResultReader`), `HealthEndpoint` (`GET /health`), `DoctorCheck` (the
+    health report like `job.py doctor`, read-only: `stuck` active jobs (`spike|spec|build|review|approve`) over 24 h
+    since `Updated` or without it, `{id, project, stage, hours}`, `null` first then oldest, ties by id; `uncommitted` job
+    ids from `git status` in the factory root (ids by `JobReader.IdPattern`, no dot names; no `.git` or a failed call
+    adds `factory` to `unreadable`); `mergedBranches` `{project, branch}`: `factory/<id>` branches in `git branch
+    --merged develop` (else `main`, by `rev-parse --verify --quiet refs/heads/develop`) whose job is `done`;
+    `stories` `{project, number, problem, line}` with `no_story`, `duplicate`, `missing` (target
+    `backlog/NNN-slug.md`, `lstat` no regular file; a symlinked `backlog/` counts as missing), `bad_link` (any other
+    target, never resolved) and `orphan` (`line` the file name), titles at most 80 chars, story files never opened;
+    a project with an unreadable `backlog.md` or a failed git call is only named in `unreadable`), `DoctorEndpoint`
+    (`GET|HEAD /api/doctor`: `{stuck, uncommitted, mergedBranches, stories, unreadable}`, `no-store`, no parameters),
+    `wwwroot/` (`index.html`, `app.css`, `token.js` (stored token under
     `controlroom-token`, `authFetch` for every `/api/` call, the token view), `app.js` (routing, backlogs (each readable project's `div.plan` between the head and the groups: `Next:` item
     with a `Spike` badge, `Nothing ready to run.` or the fixed stopped text, and a `Waiting (k)` group with `Waits for`
     links, a missing one as text plus `No such item`; the plan's signature in `data-plan`, and a live refresh also
@@ -197,9 +210,10 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     pending, and at once on becoming visible; refetches only the board, the changed backlog sections (kept while a form
     is open or focus is inside) and the open story (in place, never while Edit story or Add note is open); a failed check shows
     the fixed `Connection lost. Reconnecting…` notice under the header, or in the `board-status` line on the board;
-    script order `token.js`, `board.js`, `act.js`, `push.js`, `edit.js`, `inbox.js`, `tasks.js`, `search.js`, `capture.js`, `history.js`, `live.js`, `app.js`; a changed
+    script order `token.js`, `board.js`, `act.js`, `push.js`, `edit.js`, `inbox.js`, `tasks.js`, `search.js`, `capture.js`, `history.js`, `doctor.js`, `live.js`, `app.js`; a changed
     `backlog` or `stories` fingerprint refetches the inbox and the tasks and their counts and re-runs the current search;
-    a changed `jobs` fingerprint refetches the history while it is shown), `act.js` (the "Your decision" section under the state section of a `needs-human` job page only: Approve (after a
+    a changed `jobs` fingerprint refetches the history while it is shown; a changed `jobs`, `backlog` or `stories`
+    fingerprint refetches the health view while it is shown), `act.js` (the "Your decision" section under the state section of a `needs-human` job page only: Approve (after a
     confirm), Rework with a note box (`maxlength` 1000) and Send (off while blank); with a pending request the fixed
     `Waiting for the next /factory session for <project>: <Approve|Rework> sent <local time>` text, the note as text and
     Cancel request; fixed texts per error code in `ActErrors`; `jobDecisionBusy` (a send in flight, or the note box has
@@ -221,7 +235,12 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     and modes (`formatTokens`, `+ k unknown`), a stacked bar chart per day built with `createElementNS` (`role="img"`,
     text `aria-label`, legend with each mode's 30-day total), then the job list (title links `#job/<id>`, outcome badge,
     tokens or `unknown`) with a `Project` select that filters only the list on the client (kept in `localStorage`
-    `controlroom-history-project`); fetched on every show; fixed texts in `HistoryTexts`), `push.js` (Notifications section on the
+    `controlroom-history-project`); fetched on every show; fixed texts in `HistoryTexts`), `doctor.js` (the `#doctor`
+    view, nav `Health` with no count, read-only: one section per non-empty list (`Stuck jobs`, `Uncommitted job
+    records`, `Merged leftover branches`, `Story problems`), each with the fixed text of what `/factory doctor` would
+    do; stuck jobs link `#job/<id>` with `<stage>, <n> h` or `no update time`, numbered story problems link
+    `#story/<project>/<n>`; only `All healthy.` when every list is empty, `Could not check: <names>`; fetched on every
+    show, never on a timer; fixed texts in `DoctorTexts`), `push.js` (Notifications section on the
     board: state texts, Turn on (permission only from the tap), done and update switches, Send test, Turn off),
     `sw.js` (service worker: caches only the fixed app shell, never `/api/`; bump its cache version when the
     shell list changes; `push` shows a notification from fixed titles, `notificationclick` opens `#job/<id>`,

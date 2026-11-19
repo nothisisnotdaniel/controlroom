@@ -124,6 +124,7 @@ internal static class ServerApp
         InboxEndpoint.Map(app);
         TasksEndpoint.Map(app);
         HistoryEndpoint.Map(app);
+        DoctorEndpoint.Map(app);
         SearchEndpoint.Map(app);
         BoardEndpoint.Map(app);
         ChangesEndpoint.Map(app);

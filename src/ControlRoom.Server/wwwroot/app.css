@@ -1416,7 +1416,7 @@ body:has(#edit-notice:not([hidden])) {
   margin: 0 0 12px;
 }
 
-/* Seven nav links fit in two rows (four, then three) at iPhone width (375 px). */
+/* Eight nav links fit in two rows of four at iPhone width (375 px). */
 @media (max-width: 420px) {
   .nav {
     gap: 4px;
@@ -1731,6 +1731,63 @@ body:has(#edit-notice:not([hidden])) {
 
 .history-tokens {
   font-variant-numeric: tabular-nums;
+}
+
+/* Health: one section per kind of problem, each with the fixed text of what /factory doctor would do. */
+.doctor-unreadable {
+  margin: 0 0 12px;
+}
+
+.doctor-section {
+  margin: 0 0 20px;
+}
+
+.doctor-heading {
+  margin: 0 0 4px;
+  font-size: 1.05rem;
+}
+
+.doctor-help {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.doctor-list {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 4px 14px;
+}
+
+.doctor-item {
+  overflow-wrap: anywhere;
+}
+
+.doctor-project {
+  display: block;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.doctor-title {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--link);
+  font-weight: 700;
+}
+
+.doctor-line,
+.doctor-branch {
+  display: block;
+  padding: 10px 0 4px;
+}
+
+.doctor-facts {
+  display: block;
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 /* "Your decision" section on a needs-human job page (act.js) */
