@@ -22,7 +22,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [h] [#11](backlog/011-tailscale.md) Tailscale
 - [?] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone
 - [?] [#13](backlog/013-releases-overview.md) Releases overview
-- [ ] [#15](backlog/015-job-detail.md) Job detail (after: #2)
+- [x] [#15](backlog/015-job-detail.md) Job detail (after: #2) → 248-job-detail-gaps
 - [ ] [#16](backlog/016-live-updates.md) Live updates
 - [ ] [#17](backlog/017-approval-inbox.md) Approval inbox (after: #4)
 - [ ] [#27](backlog/027-my-tasks.md) My tasks (after: #4; #14)
