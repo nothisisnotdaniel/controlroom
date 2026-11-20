@@ -300,7 +300,7 @@ public sealed partial class WebAppTests
         Assert.Contains("if (parseJobHash(hash) !== null) {", js, StringComparison.Ordinal);
         Assert.Contains("return hash === BoardRoute ? \"board\" : \"backlogs\";", js, StringComparison.Ordinal);
         Assert.Contains("showJob(parseJobHash(location.hash));", js, StringComparison.Ordinal);
-        Assert.Contains("loadStory(parseStoryHash(location.hash));", js, StringComparison.Ordinal);
+        Assert.Contains("const target = parseStoryHash(location.hash);\n    if (target !== null) {\n      chooseBacklogProject(target.project);\n    }\n    loadStory(target);", js, StringComparison.Ordinal);
         Assert.Contains("rememberBoardScroll();", js, StringComparison.Ordinal);
         Assert.Contains("window.scrollTo(0, listScroll);", js, StringComparison.Ordinal);
         Assert.Contains("link.setAttribute(\"aria-current\", \"page\");", js, StringComparison.Ordinal);
