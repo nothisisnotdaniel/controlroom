@@ -112,4 +112,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#97](backlog/097-raise-the-contrast-of-muted-text.md) Raise the contrast of muted text
 - [?] [#103](backlog/103-keep-the-runner-keychain-search-list.md) Keep the runner keychain search list non-empty when removing the signing keychain
 - [?] [#104](backlog/104-give-signing-keychain-sh-check-its.md) Give signing-keychain.sh check its own message for a malformed fingerprint
-- [ ] [#105](backlog/105-approve-and-drop-buttons-in-the.md) Approve and Drop buttons in the story view of a [?] item
+- [x] [#105](backlog/105-approve-and-drop-buttons-in-the.md) Approve and Drop buttons in the story view of a [?] item → 335-story-approve-drop
