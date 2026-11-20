@@ -331,7 +331,7 @@ public sealed partial class ReleaseWorkflowTests
     [InlineData("0123456789abcdef0123456789abcdef0123456g", 1, "")]
     [InlineData("", 1, "")]
     [InlineData("symlink", 1, "")]
-    public void FingerprintRule_MissingIsOffValidPrintsAndInvalidFails(string? content, int exit, string output)
+    public async Task FingerprintRule_MissingIsOffValidPrintsAndInvalidFails(string? content, int exit, string output)
     {
         if (OperatingSystem.IsWindows())
         {
@@ -369,9 +369,9 @@ public sealed partial class ReleaseWorkflowTests
             process.WaitForExit();
 
             Assert.Equal(exit, process.ExitCode);
-            Assert.Equal(output, stdout.Result);
+            Assert.Equal(output, await stdout);
             Assert.Equal(exit == 0 ? "" : file + " must be a regular file holding one 40-character SHA-1 fingerprint\n",
-                stderr.Result);
+                await stderr);
         }
         finally
         {
