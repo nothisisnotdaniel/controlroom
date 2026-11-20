@@ -25,7 +25,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#100](backlog/100-sign-release-builds-with-a-stable.md) Sign release builds with a stable identity → 301-sign-release-builds
 - [x] [#102](backlog/102-fix-the-release-sign-step-on.md) Fix the release Sign step on the macOS runner → 333-fix-release-signing
 - [h] [#101](backlog/101-set-up-the-release-signing-certificate.md) Set up the release signing certificate (after: #100)
-- [ ] [#99](backlog/099-updater-checks-soon-after-install-and.md) Updater checks soon after install and retries after a skipped run
+- [x] [#99](backlog/099-updater-checks-soon-after-install-and.md) Updater checks soon after install and retries after a skipped run → 337-updater-early-checks
 - [?] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone
 - [?] [#13](backlog/013-releases-overview.md) Releases overview
 - [x] [#15](backlog/015-job-detail.md) Job detail (after: #2) → 248-job-detail-gaps
