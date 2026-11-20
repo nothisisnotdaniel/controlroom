@@ -110,3 +110,5 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#95](backlog/095-clean-up-the-backlog-branch-when.md) Clean up the backlog branch when its worktree cannot be made
 - [?] [#96](backlog/096-note-for-waiting-edits-when-the.md) Note for waiting edits when the backlog worktree cannot be read
 - [?] [#97](backlog/097-raise-the-contrast-of-muted-text.md) Raise the contrast of muted text
+- [?] [#103](backlog/103-keep-the-runner-keychain-search-list.md) Keep the runner keychain search list non-empty when removing the signing keychain
+- [?] [#104](backlog/104-give-signing-keychain-sh-check-its.md) Give signing-keychain.sh check its own message for a malformed fingerprint
