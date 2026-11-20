@@ -297,7 +297,7 @@ public sealed partial class ReleaseWorkflowTests
         string[] order =
         [
             "security unlock-keychain -p \"$KEYCHAIN_PASSWORD\" \"$KEYCHAIN\"",
-            "sh .github/scripts/signing-keychain.sh add \"$KEYCHAIN\"\n",
+            "sh .github/scripts/signing-keychain.sh add \"$KEYCHAIN\" || exit 1\n",
             "security import \"$P12\"",
             "security set-key-partition-list ",
             "if ! sh .github/scripts/signing-keychain.sh check \"$KEYCHAIN\" \"$SHA1\"; then\n",

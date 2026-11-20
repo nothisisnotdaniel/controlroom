@@ -196,7 +196,7 @@ jobs:
           security set-keychain-settings -lut 3600 "$KEYCHAIN"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
           # codesign finds an identity only in a keychain on the user search list, even with --keychain.
-          sh .github/scripts/signing-keychain.sh add "$KEYCHAIN"
+          sh .github/scripts/signing-keychain.sh add "$KEYCHAIN" || exit 1
           security import "$P12" -k "$KEYCHAIN" -f pkcs12 -P "$SIGNING_CERT_PASSWORD" -T /usr/bin/codesign > /dev/null
           rm -f "$P12"
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
