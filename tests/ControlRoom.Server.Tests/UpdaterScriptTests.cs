@@ -1283,8 +1283,6 @@ public sealed partial class UpdaterScriptTests
         AssertWaitAndRetryAfterEveryBootout(home, bootouts: 2);
     }
 
-    /// <summary>With one lingering <c>print</c> and one failing bootstrap per bootout: every bootout is followed by
-    /// print, sleep 0.5, print (gone), then bootstrap, sleep 1, bootstrap.</summary>
     [Theory]
     [InlineData("1")]
     [InlineData("60")]
@@ -1559,6 +1557,8 @@ public sealed partial class UpdaterScriptTests
         Assert.False(Directory.Exists(home.Lock));
     }
 
+    /// <summary>With one lingering <c>print</c> and one failing bootstrap per bootout: every bootout is followed by
+    /// print, sleep 0.5, print (gone), then bootstrap, sleep 1, bootstrap.</summary>
     private static void AssertWaitAndRetryAfterEveryBootout(UpdaterHome home, int bootouts)
     {
         string bootout = "launchctl bootout " + home.Service;
