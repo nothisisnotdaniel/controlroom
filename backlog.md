@@ -23,6 +23,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#11](backlog/011-tailscale.md) Tailscale
 - [x] [#98](backlog/098-updater-waits-for-launchd-before-starting.md) Updater waits for launchd before starting the new server → 300-updater-launchd-wait
 - [x] [#100](backlog/100-sign-release-builds-with-a-stable.md) Sign release builds with a stable identity → 301-sign-release-builds
+- [h] [#101](backlog/101-set-up-the-release-signing-certificate.md) Set up the release signing certificate (after: #100)
 - [ ] [#99](backlog/099-updater-checks-soon-after-install-and.md) Updater checks soon after install and retries after a skipped run
 - [?] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone
 - [?] [#13](backlog/013-releases-overview.md) Releases overview
