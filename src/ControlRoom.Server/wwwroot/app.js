@@ -19,6 +19,7 @@ const Texts = {
   waitsFor: "Waits for",
   missing: "No such item",
   pending: "Edits wait for the running job and go into develop after it.",
+  project: "Project",
 };
 
 const Groups = [
@@ -31,6 +32,12 @@ const Groups = [
 const Marks = { " ": "[ ]", "?": "[?]", h: "[h]", x: "[x]" };
 
 const StoryRoute = "#story/";
+
+// The project shown on Backlogs, kept on this device: only a project name, never the token.
+const BacklogProjectKey = "controlroom-backlog-project";
+
+// Readable project names of the last backlogs answer, in response order.
+let readableProjects = [];
 
 // Set when the app itself opened the story view, so Back can go back in history.
 let openedFromList = false;
@@ -273,6 +280,7 @@ function renderProject(project) {
   const name = asText(project && project.name);
   section.dataset.project = name;
   section.dataset.plan = planSignature(project);
+  section.hidden = backlogSectionHidden(name);
   const version = asText(project && project.version);
   const head = element("div", "project-head");
   head.appendChild(element("h2", null, asText(project && project.name)));
@@ -313,6 +321,120 @@ function show(nodes) {
   main.replaceChildren(...nodes);
 }
 
+// The stored choice; a failed read counts as nothing stored.
+function storedBacklogProject() {
+  try {
+    return localStorage.getItem(BacklogProjectKey);
+  } catch {
+    return null;
+  }
+}
+
+function storeBacklogProject(name) {
+  try {
+    localStorage.setItem(BacklogProjectKey, name);
+  } catch {
+    // Private mode or storage off: the picker still works for this page.
+  }
+}
+
+function readableNames(projects) {
+  return projects.filter((project) => project && project.readable === true).map((project) => asText(project.name));
+}
+
+// The stored project when it is readable, else the first readable one (not stored); null when none is readable.
+function chosenBacklogProject() {
+  const stored = storedBacklogProject();
+  if (stored !== null && readableProjects.includes(stored)) {
+    return stored;
+  }
+  return readableProjects.length > 0 ? readableProjects[0] : null;
+}
+
+// Only the chosen project's section is shown; with no readable project every section is.
+function backlogSectionHidden(name) {
+  const chosen = chosenBacklogProject();
+  return chosen !== null && name !== chosen;
+}
+
+function fillBacklogPicker(select) {
+  const options = readableProjects.map((name) => {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = name;
+    return option;
+  });
+  select.replaceChildren(...options);
+  select.value = chosenBacklogProject();
+}
+
+function renderBacklogPicker() {
+  const picker = element("div", "backlog-picker");
+  const label = element("label", null, Texts.project);
+  label.htmlFor = "backlog-project";
+  const select = document.createElement("select");
+  select.id = "backlog-project";
+  fillBacklogPicker(select);
+  select.addEventListener("change", () => {
+    storeBacklogProject(select.value);
+    applyBacklogChoice();
+  });
+  picker.append(label, select);
+  return picker;
+}
+
+// Sets the select and the hidden state of the existing sections from the choice, without a new fetch.
+function applyBacklogChoice() {
+  const chosen = chosenBacklogProject();
+  const select = document.getElementById("backlog-project");
+  if (select !== null && chosen !== null && select.value !== chosen && document.activeElement !== select) {
+    select.value = chosen;
+  }
+  for (const section of document.querySelectorAll("#backlogs > section.project")) {
+    section.hidden = backlogSectionHidden(section.dataset.project);
+  }
+}
+
+// A story link into another readable project makes it the choice (route()); unknown names change nothing.
+function chooseBacklogProject(name) {
+  if (!readableProjects.includes(name)) {
+    return;
+  }
+  storeBacklogProject(name);
+  applyBacklogChoice();
+}
+
+// After a live refresh: the picker follows the readable list. Its options are rebuilt only when the names changed,
+// and never while the select has focus (the next refresh tries again).
+function updateBacklogPicker(main) {
+  const picker = main.querySelector(":scope > div.backlog-picker");
+  if (readableProjects.length === 0) {
+    if (picker !== null) {
+      picker.remove();
+    }
+    return;
+  }
+  if (picker === null) {
+    main.prepend(renderBacklogPicker());
+    return;
+  }
+  const select = picker.querySelector("select");
+  if (document.activeElement === select) {
+    return;
+  }
+  const names = Array.from(select.options, (option) => option.value);
+  if (JSON.stringify(names) !== JSON.stringify(readableProjects)) {
+    fillBacklogPicker(select);
+  }
+}
+
+// The picker (when a project is readable) and every section; renderProject hides all but the chosen one.
+function showProjects(projects) {
+  readableProjects = readableNames(projects);
+  const sections = projects.map(renderProject);
+  show(readableProjects.length > 0 ? [renderBacklogPicker(), ...sections] : sections);
+}
+
 // The backlogs response; throws on a network error or an error status.
 async function fetchBacklogs() {
   const response = await authFetch("/api/backlogs", { cache: "no-store" });
@@ -335,7 +457,7 @@ async function load() {
     show([element("p", "empty", Texts.noProjects)]);
     return;
   }
-  show(projects.map(renderProject));
+  showProjects(projects);
 }
 
 // Live refresh (live.js): only the sections of the named projects, and those whose plan signature changed, are
@@ -351,6 +473,7 @@ async function refreshBacklogs(names) {
   }
   const main = document.getElementById("backlogs");
   const projects = asList(data && data.projects);
+  readableProjects = readableNames(projects);
   const sections = new Map();
   for (const section of main.querySelectorAll(":scope > section.project")) {
     sections.set(section.dataset.project, section);
@@ -358,7 +481,11 @@ async function refreshBacklogs(names) {
   const scroll = window.scrollY;
   if (sections.size === 0) {
     // The list shows a fixed text (loading, error or no projects): show it whole.
-    show(projects.length === 0 ? [element("p", "empty", Texts.noProjects)] : projects.map(renderProject));
+    if (projects.length === 0) {
+      show([element("p", "empty", Texts.noProjects)]);
+    } else {
+      showProjects(projects);
+    }
     restoreListScroll(main, scroll);
     return [];
   }
@@ -384,6 +511,8 @@ async function refreshBacklogs(names) {
       old.replaceWith(next);
     } else if (previous) {
       previous.after(next);
+    } else if (main.querySelector(":scope > div.backlog-picker") !== null) {
+      main.querySelector(":scope > div.backlog-picker").after(next);
     } else {
       main.prepend(next);
     }
@@ -400,6 +529,9 @@ async function refreshBacklogs(names) {
   }
   if (main.querySelector(":scope > section.project") === null) {
     show([element("p", "empty", Texts.noProjects)]);
+  } else {
+    updateBacklogPicker(main);
+    applyBacklogChoice();
   }
   restoreListScroll(main, scroll);
   return left;
@@ -722,7 +854,11 @@ function route() {
   liveRouteChanged();
   if (next === "story") {
     window.scrollTo(0, 0);
-    loadStory(parseStoryHash(location.hash));
+    const target = parseStoryHash(location.hash);
+    if (target !== null) {
+      chooseBacklogProject(target.project);
+    }
+    loadStory(target);
     return;
   }
   if (next === "job") {

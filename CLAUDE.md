@@ -251,7 +251,9 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `controlroom-token`, `authFetch` for every `/api/` call, the token view), `app.js` (routing, backlogs (each readable project's `div.plan` between the head and the groups: `Next:` item
     with a `Spike` badge, `Nothing ready to run.` or the fixed stopped text, and a `Waiting (k)` group with `Waits for`
     links, a missing one as text plus `No such item`; the plan's signature in `data-plan`, and a live refresh also
-    replaces a section whose signature changed), story), `edit.js` (per-project edit mode, the Add form, Edit story and Add note (`add-note-button` in the story bar; only
+    replaces a section whose signature changed; a `Project` select (`div.backlog-picker`, `select#backlog-project`, readable
+    projects only, no All) shows one section at a time, the choice in `controlroom-backlog-project` (falls back to the first
+    readable project without storing it), kept on a live refresh and set by a story link into a readable project), story), `edit.js` (per-project edit mode, the Add form, Edit story and Add note (`add-note-button` in the story bar; only
     one of the two forms open at a time), Approve and Drop in the story bar of a `[?]` item only (`story-approve-button`,
     `story-drop-button`, group `approval` from `/api/backlogs`; version and line looked up again at the tap, through
     `sendChange`, Drop after a confirm; Approve reloads the story, Drop goes `history.back()` or to `#inbox` keeping the
