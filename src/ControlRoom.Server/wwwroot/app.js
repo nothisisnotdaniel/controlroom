@@ -560,6 +560,7 @@ async function loadStory(target) {
   ]);
   // Move focus into the story so keyboard and screen-reader users don't stay on the hidden list.
   title.focus({ preventScroll: true });
+  showStoryDecision(target, data);
 }
 
 function renderStoryArticle(data) {
@@ -629,6 +630,7 @@ async function refreshStory() {
   if (focusedTitle) {
     article.querySelector(".story-title").focus({ preventScroll: true });
   }
+  showStoryDecision(target, data);
   window.scrollTo(0, scroll);
   return true;
 }
@@ -707,7 +709,7 @@ function route() {
     rememberSearchScroll();
   }
   currentView = next;
-  hideEditNotice();
+  routeEditNotice();
   if (next !== "story") {
     storyRequest += 1;
     openedFromList = false;

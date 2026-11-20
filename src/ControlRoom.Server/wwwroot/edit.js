@@ -260,7 +260,7 @@ function addForm(projectName, version) {
   return details;
 }
 
-// Finds the line and the backlog version of a numbered item, as the server sees it now.
+// Finds the line, the backlog version and the group (open, approval or user) of a numbered item, as the server sees it now.
 async function findStoryLine(project, number) {
   const response = await authFetch("/api/backlogs", { cache: "no-store" });
   if (!response.ok) {
@@ -274,7 +274,7 @@ async function findStoryLine(project, number) {
   for (const group of ["open", "approval", "user"]) {
     for (const entry of asList(match[group])) {
       if (asNumber(entry && entry.number) === number && asNumber(entry.line) !== null) {
-        return { version: match.version, line: entry.line };
+        return { version: match.version, line: entry.line, group: group };
       }
     }
   }
@@ -353,9 +353,11 @@ function storyFormOpen() {
   return document.querySelector("#story .edit-story-form, #story .add-note-form") !== null;
 }
 
-// Shows or hides both story bar buttons, so Edit story and Add note are never open at once.
+// Shows or hides the story bar buttons, so Edit story and Add note are never open at once and Approve and Drop are
+// never tapped while one of them is open.
 function showStoryButtons(visible) {
-  for (const button of document.querySelectorAll("#story .edit-story-button, #story .add-note-button")) {
+  for (const button of document.querySelectorAll(
+    "#story .edit-story-button, #story .add-note-button, #story .story-approve-button, #story .story-drop-button")) {
     button.hidden = !visible;
   }
 }
@@ -439,6 +441,125 @@ function storyNoteButton(target, data, reload) {
     button.hidden = true;
   }
   return button;
+}
+
+let storyDecisionRequest = 0;
+
+// Approve and Drop in the story bar, only while the item's backlog line is a [?] line. Called after the story is
+// shown and after a live refresh: buttons that should stay are kept as they are (focus stays on them).
+async function showStoryDecision(target, data) {
+  const number = asNumber(data && data.number);
+  storyDecisionRequest += 1;
+  const request = storyDecisionRequest;
+  const story = storyRequest;
+  let found = null;
+  if (number !== null) {
+    try {
+      found = await findStoryLine(target.project, number);
+    } catch {
+      found = null;
+    }
+  }
+  if (request !== storyDecisionRequest || story !== storyRequest || currentView !== "story") {
+    return;
+  }
+  const bar = document.querySelector("#story .story-bar");
+  if (bar === null) {
+    return;
+  }
+  const shown = bar.querySelectorAll(".story-approve-button, .story-drop-button");
+  if (found === null || found.group !== "approval") {
+    for (const button of shown) {
+      button.remove();
+    }
+    return;
+  }
+  if (shown.length === 0) {
+    bar.append(...storyDecisionButtons(target, number));
+  }
+}
+
+// The two buttons, named for screen readers by number; hidden while Edit story or Add note is open.
+function storyDecisionButtons(target, number) {
+  const subject = "#" + number;
+  const approve = editButton(EditTexts.approve, "edit-primary story-approve-button", () => {
+    decideStory(target, number, "approve");
+  });
+  approve.setAttribute("aria-label", EditTexts.approve + " " + subject);
+  const drop = editButton(EditTexts.drop, "edit-danger story-drop-button", () => {
+    if (confirm(EditTexts.confirmDrop)) {
+      decideStory(target, number, "drop");
+    }
+  });
+  drop.setAttribute("aria-label", EditTexts.drop + " " + subject);
+  const hidden = storyFormOpen();
+  approve.hidden = hidden;
+  drop.hidden = hidden;
+  return [approve, drop];
+}
+
+// Sends approve or drop with the version and line of the item as the server sees it at the tap, through sendChange.
+// Approve stays on the story (now open, so without the buttons); Drop leaves it, as its story file is gone.
+async function decideStory(target, number, action) {
+  if (changeBusy || storyFormOpen()) {
+    return;
+  }
+  let found;
+  try {
+    found = await findStoryLine(target.project, number);
+  } catch {
+    if (!tokenViewShown()) {
+      showEditNotice(ChangeErrors.unreachable, true);
+    }
+    return;
+  }
+  if (found === null || found.group !== "approval") {
+    showEditNotice(ChangeErrors.changed, true);
+    loadStory(target);
+    return;
+  }
+  const ok = await sendChange({ project: target.project, version: found.version, line: found.line, action: action });
+  if (!ok) {
+    return;
+  }
+  loadInbox();
+  if (action === "approve") {
+    loadStory(target);
+    return;
+  }
+  leaveDroppedStory();
+}
+
+// Back to where the story was opened from, else to the inbox; the outcome notice stays for that one route.
+function leaveDroppedStory() {
+  keepEditNotice();
+  if (openedFromList) {
+    history.back();
+    return;
+  }
+  history.replaceState(null, "", InboxRoute);
+  route();
+}
+
+// A notice kept across the next route (route() calls routeEditNotice instead of hiding it).
+let keptEditNotice = null;
+
+function keepEditNotice() {
+  const notice = document.getElementById("edit-notice");
+  keptEditNotice = notice.hidden ? null : {
+    text: document.getElementById("edit-notice-text").textContent,
+    isError: notice.classList.contains("edit-notice-error"),
+  };
+}
+
+function routeEditNotice() {
+  const kept = keptEditNotice;
+  keptEditNotice = null;
+  if (kept !== null) {
+    showEditNotice(kept.text, kept.isError);
+  } else {
+    hideEditNotice();
+  }
 }
 
 document.getElementById("edit-notice-close").addEventListener("click", hideEditNotice);
