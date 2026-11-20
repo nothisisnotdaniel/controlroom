@@ -4,7 +4,7 @@ namespace ControlRoom.Server.Tests;
 
 /// <summary>Helpers shared by the shell-script tests: the fake <c>codesign</c>, a temp copy of the scripts that
 /// <c>install --release</c> runs from (so no test reads the real repo's <c>signing-cert.sha1</c>), and a
-/// <c>PATH</c> folder without <c>codesign</c>.</summary>
+/// <c>PATH</c> folder that leaves chosen programs out.</summary>
 [UnsupportedOSPlatform("windows")]
 internal static class ScriptFixtures
 {
@@ -50,9 +50,9 @@ internal static class ScriptFixtures
     }
 
     /// <summary>Makes <paramref name="folder"/> hold a symlink to every program in <c>/usr/bin</c>, <c>/bin</c>,
-    /// <c>/usr/sbin</c> and <c>/sbin</c> apart from <c>codesign</c>, so it can stand in for those on
-    /// <c>PATH</c>.</summary>
-    public static void LinkSystemProgramsWithoutCodesign(string folder)
+    /// <c>/usr/sbin</c> and <c>/sbin</c> apart from those named in <paramref name="leaveOut"/>, so it can stand in
+    /// for those on <c>PATH</c>.</summary>
+    public static void LinkSystemPrograms(string folder, params string[] leaveOut)
     {
         Directory.CreateDirectory(folder);
         foreach (string source in new[] { "/usr/bin", "/bin", "/usr/sbin", "/sbin" })
@@ -66,7 +66,7 @@ internal static class ScriptFixtures
             {
                 string name = Path.GetFileName(program);
                 string link = Path.Combine(folder, name);
-                if (name == "codesign" || File.Exists(link))
+                if (leaveOut.Contains(name, StringComparer.Ordinal) || File.Exists(link))
                 {
                     continue;
                 }

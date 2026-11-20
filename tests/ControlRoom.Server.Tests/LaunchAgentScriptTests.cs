@@ -1136,10 +1136,10 @@ public sealed class LaunchAgentScriptTests
             UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead,
             File.GetUnixFileMode(home.UpdaterPlist));
         Assert.Equal(
-            ["/bin/sh", home.UpdaterScript, "--factory-root", home.TreeRoot],
+            ["/bin/sh", home.UpdaterScript, "--factory-root", home.TreeRoot, "--start-delay", "60"],
             ProgramArguments(home.UpdaterPlist));
         string plist = File.ReadAllText(home.UpdaterPlist);
-        Assert.DoesNotContain("RunAtLoad", plist, StringComparison.Ordinal);
+        Assert.Contains("<key>RunAtLoad</key>\n    <true/>\n", plist, StringComparison.Ordinal);
         Assert.DoesNotContain("KeepAlive", plist, StringComparison.Ordinal);
         Assert.Empty(Directory.GetFiles(home.Support, ".controlroom.*"));
         Assert.Empty(Directory.GetFiles(System.IO.Path.GetDirectoryName(home.UpdaterPlist)!, ".controlroom.*"));
@@ -1148,10 +1148,11 @@ public sealed class LaunchAgentScriptTests
             Assert.Equal(0, Plutil("-lint", home.UpdaterPlist).ExitCode);
             Assert.Equal(UpdaterLabel, Extract(home.UpdaterPlist, "Label"));
             Assert.Equal("21600", Extract(home.UpdaterPlist, "StartInterval"));
+            Assert.Equal("true", Extract(home.UpdaterPlist, "RunAtLoad"));
             Assert.Equal(FixedPath, Extract(home.UpdaterPlist, "EnvironmentVariables.PATH"));
             Assert.Equal(home.UpdaterLog, Extract(home.UpdaterPlist, "StandardOutPath"));
             Assert.Equal(home.UpdaterLog, Extract(home.UpdaterPlist, "StandardErrorPath"));
-            Assert.Equal("4", Extract(home.UpdaterPlist, "ProgramArguments"));
+            Assert.Equal("6", Extract(home.UpdaterPlist, "ProgramArguments"));
         }
     }
 
@@ -1798,7 +1799,7 @@ public sealed class LaunchAgentScriptTests
         {
             // Outside HOME, so it never shows up in Snapshot(); removed on dispose.
             string system = Path + "-system-bin";
-            ScriptFixtures.LinkSystemProgramsWithoutCodesign(system);
+            ScriptFixtures.LinkSystemPrograms(system, "codesign");
             return RunWithPath(System.IO.Path.Combine(Path, "bin") + ":" + system, script, arguments);
         }
 
