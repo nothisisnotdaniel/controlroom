@@ -122,8 +122,9 @@ public sealed class BacklogPickerWebAppTests
 
         Assert.Contains("readableProjects = readableNames(projects);", refresh, StringComparison.Ordinal);
         Assert.Contains("updateBacklogPicker(main);\n    applyBacklogChoice();", refresh, StringComparison.Ordinal);
-        Assert.Contains("main.querySelector(\":scope > div.backlog-picker\").after(next);", refresh,
+        Assert.Contains("const picker = main.querySelector(\":scope > div.backlog-picker\");", refresh,
             StringComparison.Ordinal);
+        Assert.Contains("} else if (picker !== null) {\n      picker.after(next);", refresh, StringComparison.Ordinal);
         int focus = update.IndexOf("if (document.activeElement === select) {\n    return;", StringComparison.Ordinal);
         int compare = update.IndexOf("if (JSON.stringify(names) !== JSON.stringify(readableProjects)) {",
             StringComparison.Ordinal);

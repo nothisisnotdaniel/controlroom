@@ -489,6 +489,7 @@ async function refreshBacklogs(names) {
     restoreListScroll(main, scroll);
     return [];
   }
+  const picker = main.querySelector(":scope > div.backlog-picker");
   const wanted = new Set(names);
   const left = [];
   const listed = new Set();
@@ -511,8 +512,8 @@ async function refreshBacklogs(names) {
       old.replaceWith(next);
     } else if (previous) {
       previous.after(next);
-    } else if (main.querySelector(":scope > div.backlog-picker") !== null) {
-      main.querySelector(":scope > div.backlog-picker").after(next);
+    } else if (picker !== null) {
+      picker.after(next);
     } else {
       main.prepend(next);
     }
