@@ -126,6 +126,9 @@ updater refuse any build whose native files (the `ControlRoom.Server` executable
 the whole build, because the managed `*.dll` files are not covered by any signature (the checksum and the
 build-provenance attestation are what vouch for the tarball). A `signing-cert.sha1` that is present but not
 exactly 40 hex characters (plus at most one line break) always fails; it never turns signing off.
+If the `Sign` step fails with "The SIGNING_CERT_P12 secret holds no code-signing identity with the fingerprint in
+signing-cert.sha1", the p12 secret is a different certificate or was exported without its private key: export it
+again (step 2) or fix `signing-cert.sha1` (step 3).
 
 One-time setup:
 

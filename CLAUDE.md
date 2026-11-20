@@ -150,6 +150,9 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   runner it re-checks the PR, runs `dotnet test -c Release`, publishes `-r osx-arm64 --self-contained
   -p:Version=X.Y.Z`, signs and verifies it when `signing-cert.sha1` is committed (steps `Sign`, `Verify signature`,
   `Remove signing keychain` with `if: always()`; README "Signing"; `.github/scripts/signing-cert.sh` reads the file,
+  `.github/scripts/signing-keychain.sh` puts the temp keychain on the user search list after `unlock-keychain` (`add`),
+  checks the pinned identity before the first `codesign` (`check`, fails with its own error) and takes it off again in
+  `Remove signing keychain` (`remove`, only a `::warning::` on failure, then `delete-keychain`),
   `.github/signing/entitlements.plist` holds the three hardened-runtime entitlements; the secrets reach only `Sign`
   through its `env:`; missing file is a `::warning::` and an ad-hoc build), smoke-checks `ControlRoom.Server version`, packs `controlroom-X.Y.Z-osx-arm64.tar.gz` (one top
   folder), writes `SHA256SUMS`, attests build provenance and runs `gh release create vX.Y.Z` on the merge commit or pushed commit
@@ -324,13 +327,17 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     existing tags on stdin), `.github/scripts/develop-version.sh` (run number to the next `-develop.<run>`
     version; tags on stdin), `.github/scripts/old-prereleases.sh` (version to the `-develop` tags at or below
     it; tags on stdin) and `.github/scripts/signing-cert.sh` (prints the fingerprint from `signing-cert.sha1`,
-    nothing when it is missing, exit 1 when invalid); `.github/signing/entitlements.plist`.
+    nothing when it is missing, exit 1 when invalid), `.github/scripts/signing-keychain.sh` (`add|remove <keychain>`
+    on the `security list-keychains -d user` search list, keeping the others in order; `check <keychain> <sha1>`
+    through `find-identity -p codesigning` without `-v`; never prints `security`'s output, no password argument; exit 1
+    on a `security` failure, 2 on wrong usage); `.github/signing/entitlements.plist`.
   - `tests/ControlRoom.Server.Tests/`: one test class per unit or concern (`LaunchAgentScriptTests` runs the script with fake
     `launchctl`/`dotnet`/`curl`/`codesign` in a temp `HOME`, runs every `install --release` from its own copy of the
     scripts (`ScriptFixtures.BuildReleaseTree`, so the real `signing-cert.sha1` is never read) and builds release
     tarballs with `/usr/bin/tar`; `UpdaterScriptTests` runs `updater.sh` with fake
     `launchctl`/`curl`/`sleep`/`mv`/`codesign`; `ScriptFixtures` holds the fake `codesign` and a `PATH` folder without it;
-    `ReleaseWorkflowTests` reads `release.yml` as text and runs `.github/scripts/signing-cert.sh`); `TempFactoryRoot` (`InitGit`, `AddBareRemote`
+    `ReleaseWorkflowTests` reads `release.yml` as text and runs `.github/scripts/signing-cert.sh`;
+    `SigningKeychainScriptTests` runs `signing-keychain.sh` with a fake `security` first on `PATH`); `TempFactoryRoot` (`InitGit`, `AddBareRemote`
     and `Git` for a real local repo), `TempTokenFolder` and `ServerFactory` (own temp token file; clients send `Host: 127.0.0.1:8100`; optional tailnet name;
     `CreateTokenClient()` for API calls; `Push` fake push service, `Update` fake GitHub (`FakeUpdateHandler`), `CurrentVersion` (default `dev`),
     `Time` fixed clock whose timers never fire (it records their due time and period; `Zone` sets its

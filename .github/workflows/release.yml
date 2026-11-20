@@ -12,7 +12,8 @@
 #   attestation for the tarball (check it with: gh attestation verify <tarball> --repo nothisisnotdaniel/controlroom).
 #   scripts/launch-agent.sh install --release [vX.Y.Z] installs it.
 # - Once signing-cert.sha1 is committed, every build is signed with that self-signed certificate (steps Sign and
-#   Verify signature; README "Signing"), and install --release and the updater refuse any build that is not.
+#   Verify signature; README "Signing"), and install --release and the updater refuse any build that is not. The
+#   temporary signing keychain goes on the user keychain search list for the run (.github/scripts/signing-keychain.sh).
 # Refs, PR fields and the run number reach the shell only through environment variables (GITHUB_REF,
 # GITHUB_SHA, GITHUB_RUN_NUMBER and the job's env:), never through ${{ }} inside a run: script.
 # Actions are pinned to full commit SHAs (the tag each one had is in the trailing comment), so a moved tag
@@ -163,7 +164,9 @@ jobs:
       # must be set and the build must sign and verify. Missing means ad-hoc signed as before (only a warning);
       # an invalid file fails (.github/scripts/signing-cert.sh). The secrets reach only this step, through env:.
       # The p12 is decoded into $RUNNER_TEMP (0600) and deleted within the step; the key lives in a temporary
-      # keychain with a random password, which "Remove signing keychain" deletes even when a step fails.
+      # keychain with a random password. .github/scripts/signing-keychain.sh puts that keychain on the user search
+      # list (codesign looks only there) and checks that it holds the pinned identity, so a wrong or key-less p12
+      # fails with its own error; "Remove signing keychain" takes it off the list and deletes it even when a step fails.
       - name: Sign
         env:
           SIGNING_CERT_P12: ${{ secrets.SIGNING_CERT_P12 }}
@@ -192,9 +195,15 @@ jobs:
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
           security set-keychain-settings -lut 3600 "$KEYCHAIN"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          # codesign finds an identity only in a keychain on the user search list, even with --keychain.
+          sh .github/scripts/signing-keychain.sh add "$KEYCHAIN" || exit 1
           security import "$P12" -k "$KEYCHAIN" -f pkcs12 -P "$SIGNING_CERT_PASSWORD" -T /usr/bin/codesign > /dev/null
           rm -f "$P12"
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          if ! sh .github/scripts/signing-keychain.sh check "$KEYCHAIN" "$SHA1"; then
+            echo "The SIGNING_CERT_P12 secret holds no code-signing identity with the fingerprint in signing-cert.sha1 ($SHA1)" >&2
+            exit 1
+          fi
           # The native libraries and createdump first, the server executable last (it seals the folder around it).
           for file in "$PUBLISH"/*.dylib "$PUBLISH/createdump"; do
             if [ ! -e "$file" ]; then
@@ -260,6 +269,7 @@ jobs:
         run: |
           rm -f "$RUNNER_TEMP/signing.p12"
           if [ -e "$RUNNER_TEMP/signing.keychain-db" ]; then
+            sh .github/scripts/signing-keychain.sh remove "$RUNNER_TEMP/signing.keychain-db" || echo "::warning::Could not take the signing keychain off the keychain search list"
             security delete-keychain "$RUNNER_TEMP/signing.keychain-db"
           fi
 

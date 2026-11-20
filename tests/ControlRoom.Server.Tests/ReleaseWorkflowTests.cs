@@ -291,6 +291,66 @@ public sealed partial class ReleaseWorkflowTests
     }
 
     [Fact]
+    public void Sign_PutsTheKeychainOnTheSearchListAndChecksTheIdentityBeforeTheFirstCodesign()
+    {
+        string sign = Step(Workflow(), "Sign");
+        string[] order =
+        [
+            "security unlock-keychain -p \"$KEYCHAIN_PASSWORD\" \"$KEYCHAIN\"",
+            "sh .github/scripts/signing-keychain.sh add \"$KEYCHAIN\" || exit 1\n",
+            "security import \"$P12\"",
+            "security set-key-partition-list ",
+            "if ! sh .github/scripts/signing-keychain.sh check \"$KEYCHAIN\" \"$SHA1\"; then\n",
+            "echo \"The SIGNING_CERT_P12 secret holds no code-signing identity with the fingerprint in signing-cert.sha1 "
+                + "($SHA1)\" >&2\n",
+            "exit 1\n",
+            "fi\n",
+            "codesign --force",
+        ];
+        AssertInOrder(sign, order);
+        Assert.Single(Regex.Matches(sign, Regex.Escape("signing-keychain.sh add")));
+        Assert.Single(Regex.Matches(sign, Regex.Escape("signing-keychain.sh check")));
+        Assert.DoesNotContain("signing-keychain.sh remove", sign, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RemoveSigningKeychain_TakesItOffTheSearchListBeforeDeletingItAndOnlyWarnsOnFailure()
+    {
+        string remove = Step(Workflow(), "Remove signing keychain");
+        Assert.StartsWith("        if: always()\n        run: |\n", remove, StringComparison.Ordinal);
+        string[] order =
+        [
+            "if [ -e \"$RUNNER_TEMP/signing.keychain-db\" ]; then\n",
+            "sh .github/scripts/signing-keychain.sh remove \"$RUNNER_TEMP/signing.keychain-db\" || echo \"::warning::",
+            "security delete-keychain \"$RUNNER_TEMP/signing.keychain-db\"\n",
+            "fi\n",
+        ];
+        AssertInOrder(remove, order);
+        Assert.Single(Regex.Matches(remove, Regex.Escape("signing-keychain.sh")));
+    }
+
+    [Fact]
+    public void SigningKeychainScript_NeverSeesASecretOrPassword()
+    {
+        string yaml = Workflow();
+        string script = File.ReadAllText(Path.Combine(RepoFolder(), ".github", "scripts", "signing-keychain.sh"));
+
+        Assert.DoesNotContain("SIGNING_CERT", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("KEYCHAIN_PASSWORD", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("set -x", script, StringComparison.Ordinal);
+        Assert.DoesNotContain(" -p \"", script, StringComparison.Ordinal);
+        string[] calls = [.. yaml.Split('\n').Where(line => line.Contains("sh .github/scripts/signing-keychain.sh ", StringComparison.Ordinal)
+                && !line.TrimStart().StartsWith('#'))];
+        Assert.Equal(3, calls.Length);
+        Assert.All(calls, line =>
+        {
+            Assert.DoesNotContain("PASSWORD", line, StringComparison.Ordinal);
+            Assert.DoesNotContain("SIGNING_CERT_P12\"", line, StringComparison.Ordinal);
+            Assert.DoesNotContain("$P12", line, StringComparison.Ordinal);
+        });
+    }
+
+    [Fact]
     public void VerifySignature_PinsTheCertificateChecksTheRequirementAndRuntimeAndRefusesUnsignedMachO()
     {
         string verify = Step(Workflow(), "Verify signature");
