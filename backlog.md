@@ -118,3 +118,5 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#108](backlog/108-position-numbers-in-backlog-groups.md) Position numbers in backlog groups
 - [ ] [#109](backlog/109-drag-and-drop-to-reorder-backlog.md) Drag and drop to reorder backlog items
 - [ ] [#110](backlog/110-category-chip-on-backlog-items-and.md) Category chip on backlog items and stories (after: factory#20)
+- [?] [#111](backlog/111-decide-what-the-updater-does-when.md) Decide what the updater does when rmdir of its lock fails
+- [?] [#112](backlog/112-decide-what-the-updater-does-when.md) Decide what the updater does when kill in cleanup fails
