@@ -2,6 +2,8 @@
 
 As the ControlRoom maintainer, I want the web app's JavaScript tested by running it, not by matching its source text, so that a refactor that keeps the strings but breaks the behaviour is caught.
 
+Category: test
+
 ## What
 
 WebAppTests checks board.js and the other scripts with text assertions that pin source strings. Find a way to run the page scripts in tests (for example a small DOM test harness with no new package, or a reasoned package choice in the spec) and move the job page and board tests onto it.

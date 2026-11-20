@@ -2,6 +2,8 @@
 
 As the ControlRoom user, I want to find the Notifications settings without scrolling past every job, so that I can turn notifications on or test them quickly on the phone.
 
+Category: ui
+
 ## What
 
 Move the Notifications section from the end of the board view to a place that does not depend on the board length, for example just below the top bar or behind a small Settings link, keeping its controls and texts as they are. Check it at 375 px and in light and dark mode.

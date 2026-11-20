@@ -2,6 +2,8 @@
 
 As the operator, I want the Capture view and the six-link nav checked on an iPhone-width screen, so that I know they work in light and dark mode.
 
+Category: test
+
 ## What
 
 Open ControlRoom at 375 px and 360 px wide in light and dark mode; check the nav wraps to two rows of three, Capture is easy to reach, a capture saves as a draft with the next number, and the disabled Save state is readable.

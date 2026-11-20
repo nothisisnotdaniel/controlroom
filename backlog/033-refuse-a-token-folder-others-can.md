@@ -2,6 +2,8 @@
 
 As the ControlRoom owner, I want the server to refuse a token folder that group or others can write to, so that another local user can't swap or read my access token.
 
+Category: security
+
 ## What
 
 When the token folder already exists, check its mode on start: refuse to start with a fixed error if group or others can write to it (or tighten it to 0700 when it is the default private path). Add tests for a loose default folder and a loose `--TokenFile` folder.

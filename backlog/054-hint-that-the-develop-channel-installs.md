@@ -2,6 +2,8 @@
 
 As a ControlRoom user choosing an update channel, I want the develop option to say it installs unreleased builds, so that I don't pick it by accident.
 
+Category: ux
+
 ## What
 
 Add a short hint to the develop channel label or note in the update box saying it installs unreleased (prerelease) builds from develop. The current texts are fixed by job 234's spec AC-12, so this changes those texts.

@@ -2,6 +2,8 @@
 
 As the operator, I want every mode in the History chart to have its own colour, so that I can tell modes apart without reading the legend.
 
+Category: ui
+
 ## What
 
 history.js historyColour cycles six colours, so a seventh mode repeats the first. Add enough colours (readable in light and dark mode) or another cue such as a pattern for modes past six.

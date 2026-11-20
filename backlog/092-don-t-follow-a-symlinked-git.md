@@ -2,6 +2,8 @@
 
 As the operator, I want ControlRoom's git helpers to refuse a .git that is a symlink, so that they match the lstat checks used elsewhere and can't be pointed at another repo.
 
+Category: security
+
 ## What
 
 ProjectGit.CurrentBranch and ProjectGit.AheadOfMain use Directory.Exists/File.Exists on <project>/.git, which follow symlinks. Switch both to an lstat-style check (FileSystemInfo.LinkTarget is null), treat a symlinked .git as no repo, and add tests for both helpers.

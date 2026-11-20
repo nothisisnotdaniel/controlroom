@@ -2,6 +2,8 @@
 
 As the operator, I want the version and update notices to refresh while the board stays open, so that a new release shows up without reloading the page.
 
+Category: feature
+
 ## What
 
 loadVersion and loadUpdate in board.js now run only when the board is fetched again, and each is asked only once per page load. Decide whether they should also run on a slower timer or on a live change, and make them do so.

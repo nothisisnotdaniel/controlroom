@@ -2,6 +2,8 @@
 
 As the user, I want a per-project releases overview, so that I can see what's waiting to be released and what version it would get.
 
+Category: feature
+
 ## What
 
 Per project, the last release tag, the commits on `develop` since then and the version `/factory release` would suggest.

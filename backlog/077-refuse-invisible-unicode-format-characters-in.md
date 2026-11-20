@@ -2,6 +2,8 @@
 
 As the operator, I want notes, titles and stories to refuse invisible format characters, so that nothing hidden can change how a backlog line or story reads.
 
+Category: security
+
 ## What
 
 BacklogEditor.CleanNote only rejects char.IsControl; Unicode category Cf (U+202E bidi override, U+200B zero-width space and similar) passes. Refuse or strip them in notes, and check title and story input the same way, with tests.

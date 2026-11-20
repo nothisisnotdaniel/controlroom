@@ -2,6 +2,8 @@
 
 As the user, I want the muted grey text in ControlRoom to be easy to read in light and dark mode, so that notes and hints are not hard to see on the phone.
 
+Category: ui
+
 ## What
 
 Change the theme's `--muted` colour in `wwwroot/app.css` for light and dark mode so that muted text on the page background reaches at least 4.5:1 contrast, check every place that uses it still looks right, and bump the service worker cache version.

@@ -2,6 +2,8 @@
 
 As the operator, I want Capture to make me choose the project, so that a quick idea never lands in the wrong backlog.
 
+Category: ux
+
 ## What
 
 capture.js fillCaptureProjects silently preselects the first project when none is stored (AC-7 of job 261). Add a "Choose a project" placeholder and keep Save disabled until a project is picked, and update the AC-7 test.

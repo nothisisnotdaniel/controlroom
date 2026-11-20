@@ -2,6 +2,8 @@
 
 As the operator, I want the Done confirmation in My tasks to name the task, so that I know which one I am about to mark done.
 
+Category: ux
+
 ## What
 
 tasks.js asks confirm(TasksTexts.confirmDone) with one fixed text ("Mark this task done?"). Make it name the item, for example "Mark #12 Title done?", and update the AC-9 test that pins the fixed text.

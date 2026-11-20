@@ -2,6 +2,8 @@
 
 As the operator, I want a Retry button when the inbox can't load, so that I can try again at once instead of waiting.
 
+Category: ux
+
 ## What
 
 A failed inbox load replaces the list with "Can't load …" and keeps no count. Add a Retry button to that message.

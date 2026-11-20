@@ -2,6 +2,8 @@
 
 As a ControlRoom maintainer, I want the test for a settings POST that keeps the channel to prove no update check started, so that a regression that starts a needless GitHub call is caught.
 
+Category: test
+
 ## What
 
 UpdateApiTests.PostThatKeepsTheChannel_StartsNoCheck asserts 'no request' right after the POST, so a wrongly started background check could slip past it. Find a way to observe that no check started (for example a check counter or hook on the checker) without a time-based wait and without racing a wrongly started check.

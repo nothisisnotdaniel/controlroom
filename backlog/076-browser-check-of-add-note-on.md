@@ -2,6 +2,8 @@
 
 As the operator, I want the Add note flow checked in a real browser on an iPhone-width screen, so that I know a note can be written and shows up on the story.
 
+Category: test
+
 ## What
 
 Open a story at 375 px wide in light and dark mode, add a note, check Save stays disabled while blank, the note appears under ## Notes with the date, and the develop commit holds only the story file.

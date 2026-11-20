@@ -2,6 +2,8 @@
 
 As the user, I want to know whether ControlRoom can show my remaining weekly Claude usage, so that I can decide on the phone whether to start a run.
 
+Category: feature
+
 ## What
 
 Find out where this Mac has reliable usage data for my Claude plan (local Claude Code files, a documented command or API, or nothing), what it contains (used share, reset time, per model), how fresh it is and whether reading it is allowed and safe. Write `findings.md` with what works and one suggested backlog item for a Usage view, or why it can't be done.

@@ -2,6 +2,8 @@
 
 As the ControlRoom owner, I want the token file's mode and owner checked on the file the server actually opened, so that a file swapped in after the check can't be used as the token.
 
+Category: security
+
 ## What
 
 Let SafeFileReader (or a token-specific reader) return the opened handle, and check mode 0600 and the current user as owner with `fstat` on that handle instead of on the path. Keep the current error texts and add tests for a wrong mode and a wrong owner where the OS allows it.

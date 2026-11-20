@@ -2,6 +2,8 @@
 
 As the user, I want a clear error when the signing keychain check gets a malformed fingerprint, so that a broken call is told apart from a missing identity.
 
+Category: ci
+
 ## What
 
 signing-keychain.sh check reports a malformed SHA-1 argument the same way as an identity that is not in the keychain. Validate the argument (40 hex characters) and fail with its own message, with a test.

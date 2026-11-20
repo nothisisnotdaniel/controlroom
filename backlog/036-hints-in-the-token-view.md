@@ -2,6 +2,8 @@
 
 As the ControlRoom user, I want the token view to tell me when the field is empty or the token looks wrong, so that I know what to fix.
 
+Category: ux
+
 ## What
 
 In wwwroot/token.js, show a short fixed hint when Save is pressed with an empty field, and after a refused token mention that a token is 43 characters (shown by `token show`). Fixed texts only; add WebApp tests.

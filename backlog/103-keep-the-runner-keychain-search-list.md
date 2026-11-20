@@ -2,6 +2,8 @@
 
 As the user, I want the release cleanup to leave the runner keychain search list in a sane state, so that a later step on the same runner never finds an empty search list.
 
+Category: ci
+
 ## What
 
 In .github/scripts/signing-keychain.sh, remove calls security list-keychains -d user -s with the keychains that are left, even when none are left, which empties the search list. Skip that call (or restore the default login keychain) when the remaining list is empty, and add a test with the fake security.

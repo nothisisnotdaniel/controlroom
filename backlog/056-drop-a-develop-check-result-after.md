@@ -2,6 +2,8 @@
 
 As a ControlRoom user who switches from develop back to stable, I want a develop check that is still running to be discarded, so that I don't get an update push for a develop build.
 
+Category: bug
+
 ## What
 
 UpdateCheck.CheckHeld reads the channel once when a check starts. Re-check the channel before storing the result or sending the 'update' push, and drop the result if the channel changed.
