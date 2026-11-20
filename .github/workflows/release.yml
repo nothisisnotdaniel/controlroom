@@ -11,6 +11,8 @@
 #   with the self-contained publish output, wwwroot/ included) and SHA256SUMS, plus a build-provenance
 #   attestation for the tarball (check it with: gh attestation verify <tarball> --repo nothisisnotdaniel/controlroom).
 #   scripts/launch-agent.sh install --release [vX.Y.Z] installs it.
+# - Once signing-cert.sha1 is committed, every build is signed with that self-signed certificate (steps Sign and
+#   Verify signature; README "Signing"), and install --release and the updater refuse any build that is not.
 # Refs, PR fields and the run number reach the shell only through environment variables (GITHUB_REF,
 # GITHUB_SHA, GITHUB_RUN_NUMBER and the job's env:), never through ${{ }} inside a run: script.
 # Actions are pinned to full commit SHAs (the tag each one had is in the trailing comment), so a moved tag
@@ -154,6 +156,112 @@ jobs:
 
       - name: Publish
         run: dotnet publish src/ControlRoom.Server -c Release -r osx-arm64 --self-contained -p:Version="$RELEASE_VERSION" -o "$RUNNER_TEMP/publish"
+
+      # Signing with the one self-signed certificate (no Developer ID, no notarization), so every build has the same
+      # designated requirement and macOS keeps the permission the user granted once. It is off until
+      # signing-cert.sha1 (the certificate's SHA-1 fingerprint) is committed at the repo root: then both secrets
+      # must be set and the build must sign and verify. Missing means ad-hoc signed as before (only a warning);
+      # an invalid file fails (.github/scripts/signing-cert.sh). The secrets reach only this step, through env:.
+      # The p12 is decoded into $RUNNER_TEMP (0600) and deleted within the step; the key lives in a temporary
+      # keychain with a random password, which "Remove signing keychain" deletes even when a step fails.
+      - name: Sign
+        env:
+          SIGNING_CERT_P12: ${{ secrets.SIGNING_CERT_P12 }}
+          SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
+        run: |
+          if ! SHA1="$(sh .github/scripts/signing-cert.sh signing-cert.sha1)"; then
+            echo "signing-cert.sha1 is invalid; signing can't be turned off by a broken file" >&2
+            exit 1
+          fi
+          if [ -z "$SHA1" ]; then
+            echo "::warning::signing-cert.sha1 is missing, so this build is only ad-hoc signed"
+            exit 0
+          fi
+          if [ -z "$SIGNING_CERT_P12" ] || [ -z "$SIGNING_CERT_PASSWORD" ]; then
+            echo "signing-cert.sha1 is committed, but the SIGNING_CERT_P12 or SIGNING_CERT_PASSWORD secret is empty" >&2
+            exit 1
+          fi
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          P12="$RUNNER_TEMP/signing.p12"
+          PUBLISH="$RUNNER_TEMP/publish"
+          trap 'rm -f "$P12"' EXIT
+          umask 077
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
+          printf '%s' "$SIGNING_CERT_P12" | base64 --decode > "$P12"
+          chmod 600 "$P12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$P12" -k "$KEYCHAIN" -f pkcs12 -P "$SIGNING_CERT_PASSWORD" -T /usr/bin/codesign > /dev/null
+          rm -f "$P12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          # The native libraries and createdump first, the server executable last (it seals the folder around it).
+          for file in "$PUBLISH"/*.dylib "$PUBLISH/createdump"; do
+            if [ ! -e "$file" ]; then
+              continue
+            fi
+            codesign --force --options runtime --timestamp=none --keychain "$KEYCHAIN" --sign "$SHA1" "$file"
+          done
+          codesign --force --options runtime --timestamp=none --keychain "$KEYCHAIN" --sign "$SHA1" --identifier ControlRoom.Server --entitlements .github/signing/entitlements.plist -r='designated => identifier "ControlRoom.Server" and certificate leaf = H"'"$SHA1"'"' "$PUBLISH/ControlRoom.Server"
+
+      - name: Verify signature
+        run: |
+          if ! SHA1="$(sh .github/scripts/signing-cert.sh signing-cert.sha1)"; then
+            echo "signing-cert.sha1 is invalid" >&2
+            exit 1
+          fi
+          if [ -z "$SHA1" ]; then
+            echo "signing-cert.sha1 is missing; nothing to verify"
+            exit 0
+          fi
+          PUBLISH="$RUNNER_TEMP/publish"
+          REQUIREMENT="designated => identifier \"ControlRoom.Server\" and certificate leaf = H\"$SHA1\""
+          # Each signed file: a strict verify pinned to the certificate, and the hardened runtime flag.
+          for file in "$PUBLISH"/*.dylib "$PUBLISH/createdump" "$PUBLISH/ControlRoom.Server"; do
+            if [ ! -e "$file" ]; then
+              continue
+            fi
+            if [ "$file" = "$PUBLISH/ControlRoom.Server" ]; then
+              codesign --verify --strict -R="identifier \"ControlRoom.Server\" and certificate leaf = H\"$SHA1\"" "$file"
+            else
+              codesign --verify --strict -R="certificate leaf = H\"$SHA1\"" "$file"
+            fi
+            INFO="$(codesign -dv "$file" 2>&1)"
+            if ! printf '%s\n' "$INFO" | grep -Eq '^CodeDirectory .*flags=0x[0-9a-f]+\([^)]*runtime[^)]*\)'; then
+              echo "$file is not signed with the hardened runtime" >&2
+              exit 1
+            fi
+          done
+          DESIGNATED="$(codesign -d -r- "$PUBLISH/ControlRoom.Server" 2>&1)"
+          if ! printf '%s\n' "$DESIGNATED" | grep -Fxiq "$REQUIREMENT"; then
+            echo "ControlRoom.Server does not have the pinned designated requirement" >&2
+            exit 1
+          fi
+          # No Mach-O file may be left outside the signed set (top-level *.dylib, createdump, ControlRoom.Server).
+          find "$PUBLISH" -type f > "$RUNNER_TEMP/publish-files"
+          while IFS= read -r file; do
+            NAME="${file#"$PUBLISH/"}"
+            case "$NAME" in
+              */*) ;;
+              ControlRoom.Server | createdump | *.dylib) continue ;;
+            esac
+            case "$(file -b "$file")" in
+              *Mach-O*)
+                echo "$NAME is a Mach-O file that was not signed" >&2
+                exit 1
+                ;;
+            esac
+          done < "$RUNNER_TEMP/publish-files"
+          rm -f "$RUNNER_TEMP/publish-files"
+
+      # Runs even when an earlier step failed, so the private key never outlives the run's temporary keychain.
+      - name: Remove signing keychain
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/signing.p12"
+          if [ -e "$RUNNER_TEMP/signing.keychain-db" ]; then
+            security delete-keychain "$RUNNER_TEMP/signing.keychain-db"
+          fi
 
       - name: Smoke check the published server
         run: |

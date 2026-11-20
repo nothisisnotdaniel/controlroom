@@ -30,7 +30,8 @@ public sealed partial class UpdaterScriptTests
     {
         string agent = File.ReadAllText(Path.Combine(UpdaterHome.RepoFolder(), "scripts", "launch-agent.sh"));
         string updater = File.ReadAllText(UpdaterHome.ScriptPath());
-        foreach (string name in new[] { "valid_tag", "latest_tag", "download", "check_and_extract" })
+        foreach (string name in new[]
+                 { "valid_tag", "latest_tag", "download", "check_and_extract", "fingerprint_file", "verify_signature" })
         {
             string expected = Function(agent, name);
             Assert.Equal(expected, Function(updater, name));
@@ -617,6 +618,179 @@ public sealed partial class UpdaterScriptTests
         home.SetRedirect(Releases + "/tag/v1.3.0");
 
         AssertNothingDone(home, "download_failed", " v1.2.0 v1.3.0", curlCalls: 2);
+    }
+
+    [Fact]
+    public void SigningOff_RunsNoCodesignAndUpdates()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+
+        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
+
+        Assert.Empty(home.CodesignCalls());
+        Assert.Equal("v1.3.0\n", File.ReadAllText(home.Marker));
+    }
+
+    [Theory]
+    [InlineData(ScriptFixtures.Fingerprint + "\n")]
+    [InlineData("0123456789ABCDEF0123456789abcdefABCDEF01")]
+    public void ValidSigningCopy_VerifiesEveryTopLevelNativeFileThenUpdates(string content)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.SetSigningCopy(content);
+        string fingerprint = content.TrimEnd('\n');
+
+        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
+
+        IReadOnlyList<string[]> calls = home.CodesignCalls();
+        string[] expected = ["ControlRoom.Server", "libSystem.Native.dylib", "createdump"];
+        Assert.Equal(expected.Length, calls.Count);
+        for (int index = 0; index < expected.Length; index++)
+        {
+            string requirement = index == 0
+                ? ScriptFixtures.ServerRequirement(fingerprint)
+                : ScriptFixtures.LibraryRequirement(fingerprint);
+            Assert.Equal(4, calls[index].Length);
+            Assert.Equal(["--verify", "--strict", requirement], calls[index][..3]);
+            Assert.StartsWith(System.IO.Path.Combine(home.Support, ".release."), calls[index][3], StringComparison.Ordinal);
+            Assert.EndsWith("/out/controlroom-1.3.0-osx-arm64/" + expected[index], calls[index][3], StringComparison.Ordinal);
+        }
+
+        AssertResult(home, "\"result\":\"updated\",\"version\":\"1.3.0\",\"previous\":\"1.2.0\"");
+        Assert.Empty(home.Leftovers());
+    }
+
+    [Theory]
+    [InlineData("short")]
+    [InlineData("long")]
+    [InlineData("junk")]
+    [InlineData("two-breaks")]
+    [InlineData("empty")]
+    [InlineData("symlink")]
+    [InlineData("mode-644")]
+    [InlineData("mode-400")]
+    [InlineData("folder")]
+    public void InvalidSigningCopy_IsCheckFailedLikeAFailingCheck(string fault)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        switch (fault)
+        {
+            case "short":
+                home.SetSigningCopy(ScriptFixtures.Fingerprint[1..] + "\n");
+                break;
+            case "long":
+                home.SetSigningCopy(ScriptFixtures.Fingerprint + "0");
+                break;
+            case "junk":
+                home.SetSigningCopy(ScriptFixtures.Fingerprint[..39] + "z\n");
+                break;
+            case "two-breaks":
+                home.SetSigningCopy(ScriptFixtures.Fingerprint + "\n\n");
+                break;
+            case "empty":
+                home.SetSigningCopy("");
+                break;
+            case "symlink":
+                string target = System.IO.Path.Combine(home.Path, "real-fingerprint");
+                File.WriteAllText(target, ScriptFixtures.Fingerprint + "\n");
+                File.SetUnixFileMode(target, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                File.CreateSymbolicLink(home.SigningCopy, target);
+                break;
+            case "mode-644":
+                home.SetSigningCopy(ScriptFixtures.Fingerprint + "\n");
+                File.SetUnixFileMode(home.SigningCopy,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
+                break;
+            case "mode-400":
+                home.SetSigningCopy(ScriptFixtures.Fingerprint + "\n");
+                File.SetUnixFileMode(home.SigningCopy, UnixFileMode.UserRead);
+                break;
+            default:
+                Directory.CreateDirectory(home.SigningCopy);
+                break;
+        }
+
+        IReadOnlyList<string> before = home.Snapshot("server");
+
+        Assert.Matches(LinePattern("check_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+        Assert.Empty(home.CodesignCalls());
+        Assert.Empty(home.LaunchctlCalls());
+        Assert.Equal(before, home.Snapshot("server"));
+        Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"check\"");
+        Assert.Empty(home.Leftovers());
+    }
+
+    [Fact]
+    public void FailingSignatureCheck_IsCheckFailedNeverBootsOutAndIsSkippedNextRun()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.SetSigningCopy(ScriptFixtures.Fingerprint + "\n");
+        home.SetCodesignExit(1);
+        IReadOnlyList<string> before = home.Snapshot("server");
+
+        Assert.Matches(LinePattern("check_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+        Assert.Single(home.CodesignCalls());
+        Assert.Empty(home.LaunchctlCalls());
+        Assert.Equal(before, home.Snapshot("server"));
+        Assert.False(Directory.Exists(home.Previous));
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"check\"");
+        Assert.Empty(home.Leftovers());
+
+        Assert.Matches(LinePattern("skipped_failed v1.2.0 v1.3.0"), home.RunOnce());
+        Assert.Single(home.CodesignCalls());
+        Assert.Empty(home.LaunchctlCalls());
+    }
+
+    [Fact]
+    public void SigningOnAndNoCodesignOnPath_IsCheckFailed()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.SetSigningCopy(ScriptFixtures.Fingerprint + "\n");
+
+        Assert.Matches(LinePattern("check_failed v1.2.0 v1.3.0"), home.RunOnceWithoutCodesign());
+
+        Assert.Empty(home.CodesignCalls());
+        Assert.Empty(home.LaunchctlCalls());
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"check\"");
+        Assert.Empty(home.Leftovers());
     }
 
     [Theory]
@@ -1288,7 +1462,7 @@ public sealed partial class UpdaterScriptTests
         private static readonly string[] HarnessFiles =
             ["calls.log", "curl.log", "curl-stdin.log", "sleep.log", "lsof.log", "loaded", "redirect", "mv-fail",
                 "mv-fail-to", "lsof-out", "not-running", "list", "order.log", "linger", "linger-left", "bootstrap-fails",
-                "bootstrap-fails-per-bootout"];
+                "bootstrap-fails-per-bootout", "codesign.log", "codesign-exit", "codesign-fail-for"];
 
         public UpdaterHome()
             : this("v1.2.0")
@@ -1306,6 +1480,7 @@ public sealed partial class UpdaterScriptTests
             WriteExecutable(System.IO.Path.Combine(bin, "sleep"), FakeSleep);
             WriteExecutable(System.IO.Path.Combine(bin, "mv"), FakeMv);
             WriteExecutable(System.IO.Path.Combine(bin, "lsof"), FakeLsof);
+            WriteExecutable(System.IO.Path.Combine(bin, "codesign"), ScriptFixtures.FakeCodesign);
             Directory.CreateDirectory(System.IO.Path.Combine(Root, "factory", "jobs"));
 
             Directory.CreateDirectory(Support);
@@ -1341,6 +1516,8 @@ public sealed partial class UpdaterScriptTests
 
         public string TokenFile => System.IO.Path.Combine(Support, "access-token");
 
+        public string SigningCopy => System.IO.Path.Combine(Support, "signing-cert.sha1");
+
         public string ServerPlist =>
             System.IO.Path.Combine(Path, "Library", "LaunchAgents", "local.controlroom.server.plist");
 
@@ -1369,10 +1546,27 @@ public sealed partial class UpdaterScriptTests
         /// returned.</summary>
         public string RunOnce()
         {
+            return RunOnceWithPath(System.IO.Path.Combine(Path, "bin") + ":/usr/bin:/bin:/usr/sbin:/sbin");
+        }
+
+        /// <summary>Like <see cref="RunOnce()"/>, with the fake <c>codesign</c> removed and the system programs only
+        /// through a folder of links that leaves <c>codesign</c> out (outside HOME).</summary>
+        public string RunOnceWithoutCodesign()
+        {
+            File.Delete(System.IO.Path.Combine(Path, "bin", "codesign"));
+            string system = Path + "-system-bin";
+            ScriptFixtures.LinkSystemProgramsWithoutCodesign(system);
+            return RunOnceWithPath(System.IO.Path.Combine(Path, "bin") + ":" + system);
+        }
+
+        private string RunOnceWithPath(string path)
+        {
             Dictionary<string, string> environment = new()
             {
                 ["HOME"] = Path,
-                ["PATH"] = System.IO.Path.Combine(Path, "bin") + ":/usr/bin:/bin:/usr/sbin:/sbin",
+                ["PATH"] = path,
+                // Must never turn the check on or off: only the support copy of signing-cert.sha1 does.
+                ["SIGNING_CERT_SHA1"] = "ffffffffffffffffffffffffffffffffffffffff",
             };
             ScriptRun run = RunProcess("/bin/sh", [ScriptPath(), "--factory-root", Root], environment);
             Assert.Equal(0, run.ExitCode);
@@ -1401,6 +1595,31 @@ public sealed partial class UpdaterScriptTests
             }
 
             WritePrivate(Marker, content);
+        }
+
+        /// <summary>Writes the support copy of the fingerprint (<c>0600</c>), or removes it for <c>null</c>.</summary>
+        public void SetSigningCopy(string? content)
+        {
+            if (content is null)
+            {
+                File.Delete(SigningCopy);
+                return;
+            }
+
+            WritePrivate(SigningCopy, content);
+        }
+
+        /// <summary>Every fake <c>codesign</c> call, its arguments split at tabs.</summary>
+        public IReadOnlyList<string[]> CodesignCalls()
+        {
+            return [.. ReadLines("codesign.log").Select(line => line.Split('\t'))];
+        }
+
+        /// <summary>The fake <c>codesign</c> exits with <paramref name="code"/>.</summary>
+        public void SetCodesignExit(int code)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "codesign-exit"),
+                code.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n");
         }
 
         public void SetResult(string content)
@@ -1493,6 +1712,10 @@ public sealed partial class UpdaterScriptTests
             Directory.CreateDirectory(System.IO.Path.Combine(folder, "wwwroot"));
             WriteExecutable(System.IO.Path.Combine(folder, "ControlRoom.Server"), "#!/bin/sh\nexit 0\n");
             File.WriteAllText(System.IO.Path.Combine(folder, "wwwroot", "index.html"), "<!doctype html>");
+            // Native files like a real publish: verify_signature checks the top-level ones, not wwwroot/nested.dylib.
+            File.WriteAllText(System.IO.Path.Combine(folder, "libSystem.Native.dylib"), "dylib");
+            File.WriteAllText(System.IO.Path.Combine(folder, "createdump"), "createdump");
+            File.WriteAllText(System.IO.Path.Combine(folder, "wwwroot", "nested.dylib"), "not checked");
             if (health is not null)
             {
                 File.WriteAllText(System.IO.Path.Combine(folder, "health"), "{\"version\":\"" + health + "\"}");
@@ -1593,6 +1816,10 @@ public sealed partial class UpdaterScriptTests
             }
 
             Directory.Delete(Path, recursive: true);
+            if (Directory.Exists(Path + "-system-bin"))
+            {
+                Directory.Delete(Path + "-system-bin", recursive: true);
+            }
         }
 
         private static ScriptRun RunProcess(

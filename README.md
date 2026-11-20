@@ -113,3 +113,46 @@ tail -f ~/Library/Logs/ControlRoom/server.log
 ```
 
 `uninstall` keeps the log and the access token.
+
+## Signing
+
+Release builds can be signed with one self-signed code-signing certificate, so every build has the same identity
+and macOS keeps the permission you grant once: automatic updates then finish without anyone clicking Allow. There is
+no Apple Developer ID and no notarization. Signing is off until `signing-cert.sha1` is committed at the repo root;
+until then builds are only ad-hoc signed (the workflow warns) and nothing checks signatures. Once it is committed,
+the release workflow must sign every build (steps `Sign` and `Verify signature`), and `install --release` and the
+updater refuse any build whose native files (the `ControlRoom.Server` executable, the `*.dylib` libraries and
+`createdump`) are not signed with that certificate. This pins the app's identity; it is not tamper protection for
+the whole build, because the managed `*.dll` files are not covered by any signature (the checksum and the
+build-provenance attestation are what vouch for the tarball). A `signing-cert.sha1` that is present but not
+exactly 40 hex characters (plus at most one line break) always fails; it never turns signing off.
+
+One-time setup:
+
+1. Create the certificate in Keychain Access: **Keychain Access > Certificate Assistant > Create a Certificate…**,
+   name `ControlRoom Release`, Identity Type **Self-Signed Root**, Certificate Type **Code Signing**, and tick
+   "Let me override defaults" to set the validity to about 10 years (3650 days).
+2. Export it with its private key as a p12 (select the certificate under **My Certificates**, **File > Export
+   Items…**, format Personal Information Exchange, with a strong password), then store both as repository secrets:
+
+   ```sh
+   base64 -i ControlRoom-Release.p12 | gh secret set SIGNING_CERT_P12 --repo nothisisnotdaniel/controlroom
+   gh secret set SIGNING_CERT_PASSWORD --repo nothisisnotdaniel/controlroom   # paste the export password
+   ```
+
+3. Read the certificate's SHA-1 fingerprint and commit it as `signing-cert.sha1` on `develop`:
+
+   ```sh
+   security find-certificate -c "ControlRoom Release" -Z | awk '/SHA-1 hash:/ { print $3 }' > signing-cert.sha1
+   git add signing-cert.sha1 && git commit -m "Sign release builds" && git push
+   ```
+
+   Then delete the exported p12 (`rm ControlRoom-Release.p12`); the key stays only in your keychain and the secret.
+4. Once the first signed release is out, run `scripts/launch-agent.sh install --release` once, so the updater gets the
+   fingerprint (it reads its copy `~/Library/Application Support/ControlRoom/signing-cert.sha1`).
+5. Grant the permission once: in **System Settings > Privacy & Security > Files and Folders**, or click **Allow** on the
+   first signed start. Later signed builds keep it.
+
+A new certificate changes the identity, so it needs one more Allow. Releases made before signing was turned on are
+refused by `install --release` once it is on.
+
