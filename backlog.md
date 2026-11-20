@@ -114,7 +114,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#104](backlog/104-give-signing-keychain-sh-check-its.md) Give signing-keychain.sh check its own message for a malformed fingerprint
 - [x] [#105](backlog/105-approve-and-drop-buttons-in-the.md) Approve and Drop buttons in the story view of a [?] item → 335-story-approve-drop
 - [x] [#106](backlog/106-project-picker-on-backlogs.md) Project picker on Backlogs → 340-backlog-project-picker
-- [ ] [#107](backlog/107-collapsible-backlog-groups.md) Collapsible backlog groups
+- [x] [#107](backlog/107-collapsible-backlog-groups.md) Collapsible backlog groups → 342-collapsible-groups
 - [ ] [#108](backlog/108-position-numbers-in-backlog-groups.md) Position numbers in backlog groups
 - [ ] [#109](backlog/109-drag-and-drop-to-reorder-backlog.md) Drag and drop to reorder backlog items
 - [ ] [#110](backlog/110-category-chip-on-backlog-items-and.md) Category chip on backlog items and stories (after: factory#20)
