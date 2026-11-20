@@ -1,7 +1,9 @@
 #!/bin/sh
-# The ControlRoom updater: run by the LaunchAgent local.controlroom.updater (every 6 h, never at load) as
-#   /bin/sh <support>/updater.sh --factory-root <root>
-# where <support> is ~/Library/Application Support/ControlRoom. When the user turned on "Install updates
+# The ControlRoom updater: run by the LaunchAgent local.controlroom.updater (at load, so about a minute after
+# install or login, and then every 6 h) as
+#   /bin/sh <support>/updater.sh --factory-root <root> [--start-delay <s>]
+# where <support> is ~/Library/Application Support/ControlRoom and <s> (1-600) is how many seconds it first waits
+# (sleep, before it reads anything; without sleep on PATH it goes on at once). When the user turned on "Install updates
 # automatically" (settings.json is exactly {"autoUpdate":true} or {"autoUpdate":true,"channel":"stable"|"develop"}),
 # the install is a release (installed-release holds its tag) and no factory job is running, it installs a newer
 # GitHub release (on the develop channel also a -develop prerelease) with the same download and checks as
@@ -9,10 +11,14 @@
 # while launchd runs the server and its pid is the one listening on the port) and rolls back when it doesn't
 # answer or the marker can't be updated. After every bootout it waits until launchd has removed the service, and a
 # failed bootstrap is tried again a few times (one that never succeeds is bootstrap_failed). It writes
-# update-result.json for the server's push and prints exactly one line,
-# "<UTC ISO-8601> <word>[ <tags>]", which launchd appends to ~/Library/Logs/ControlRoom/updater.log. The words:
+# update-result.json for the server's push and prints one final line, "<UTC ISO-8601> <word>[ <tags>]", which
+# launchd appends to ~/Library/Logs/ControlRoom/updater.log. The words:
 # off, not_release, busy, job_running, current, latest_failed, download_failed, check_failed, skipped_failed,
 # updated, rolled_back, bootstrap_failed, swap_failed, rollback_failed.
+# While a factory job runs, the run logs "<UTC> waiting <installed>", lets go of its lock, waits 15 min and checks
+# again (setting, release, lock, jobs), at most RETRY_WAITS times (5 h 45 min, so it ends before the next 6-hour
+# tick); then it ends job_running. A waiting run holds no lock, so launch-agent.sh install|uninstall never wait for
+# it, and their bootout ends it.
 # POSIX sh. Runs only launchctl, curl, lsof, tar, shasum and (once <support>/signing-cert.sha1 pins the signing
 # certificate) codesign --verify (plus standard tools), all with fixed arguments.
 # Never reads, copies or sends the access token. Nothing from the download runs here.
@@ -54,11 +60,16 @@ TAB=$(printf '\t')
 MAX_STATE_BYTES=65536
 # The fingerprint copy is 40 hex characters plus one line break.
 MAX_FINGERPRINT_BYTES=41
+# While a job runs: wait this many seconds, at most RETRY_WAITS times (23 x 15 min = 5 h 45 min).
+RETRY_SECONDS=900
+RETRY_WAITS=23
 
 INSTALLED=""
 TAG=""
 WORK=""
 LOCKED=no
+# The pid of a running wait (sleep), killed when the run ends.
+SLEEP_PID=""
 # The pinned signing certificate; empty means the signature check is off. Set only from the support folder's
 # signing-cert.sha1 (written by launch-agent.sh install --release), never from the environment.
 SIGNING_CERT_SHA1=""
@@ -91,6 +102,9 @@ fail() {
 }
 
 cleanup() {
+    if [ -n "$SLEEP_PID" ]; then
+        kill "$SLEEP_PID"
+    fi
     if [ -n "$WORK" ]; then
         rm -rf "$WORK"
     fi
@@ -288,6 +302,15 @@ jobs_idle() {
         esac
     done
     return 0
+}
+
+# Waits $1 seconds with the sleep found on PATH. It runs in the background so a TERM (launchctl bootout) ends the
+# run at once through its trap instead of after the sleep.
+pause() {
+    "$SLEEP" "$1" &
+    SLEEP_PID=$!
+    wait "$SLEEP_PID"
+    SLEEP_PID=""
 }
 
 # Prints the version of the last update_failed result with reason check or no_answer, if any.
@@ -577,11 +600,33 @@ verify_signature() {
 
 # --- Main -----------------------------------------------------------------------------------------------------
 
+# Exactly --factory-root <absolute root> [--start-delay <1-600>]; any other argument list leaves ROOT empty, which
+# ends the run job_running without a delay or a retry.
 ROOT=""
+START_DELAY=""
 if [ $# -eq 2 ] && [ "$1" = --factory-root ]; then
     case $2 in
         /*) ROOT=$2 ;;
     esac
+elif [ $# -eq 4 ] && [ "$1" = --factory-root ] && [ "$3" = --start-delay ]; then
+    case $4 in
+        [1-9] | [1-9][0-9] | [1-5][0-9][0-9] | 600)
+            case $2 in
+                /*)
+                    ROOT=$2
+                    START_DELAY=$4
+                    ;;
+            esac
+            ;;
+    esac
+fi
+# A signal ends the run through cleanup (which also stops a running wait).
+trap cleanup EXIT
+trap 'exit 1' HUP INT TERM
+# No sleep on PATH: no start delay and no retry.
+SLEEP=$(find_program sleep) || SLEEP=""
+if [ -n "$START_DELAY" ] && [ -n "$SLEEP" ]; then
+    pause "$START_DELAY"
 fi
 
 case ${HOME:-} in
@@ -600,52 +645,65 @@ PREVIOUS="$SUPPORT/server.previous"
 AGENTS="$HOME/Library/LaunchAgents"
 PLIST="$AGENTS/$LABEL.plist"
 
-# 1. The setting: exactly {"autoUpdate":true} (stable), {"autoUpdate":true,"channel":"stable"} or
-# {"autoUpdate":true,"channel":"develop"}, with or without one line break, in the private support folder.
-if ! private_folder "$SUPPORT" || ! private_file "$SETTINGS" "$MAX_SETTINGS_BYTES"; then
-    finish off
-fi
-settings=$(cat "$SETTINGS") || finish off
-case $settings in
-    '{"autoUpdate":true}' | '{"autoUpdate":true,"channel":"stable"}') CHANNEL=stable ;;
-    '{"autoUpdate":true,"channel":"develop"}') CHANNEL=develop ;;
-    *) finish off ;;
-esac
-# $(cat) drops every trailing line break: the size allows the text plus at most one.
-settings_size=$(wc -c <"$SETTINGS") || finish off
-[ $((settings_size + 0)) -le $((${#settings} + 1)) ] || finish off
+waits=0
+while :; do
+    # Every try starts with nothing known (a retry may end off or not_release).
+    INSTALLED=""
+    # 1. The setting: exactly {"autoUpdate":true} (stable), {"autoUpdate":true,"channel":"stable"} or
+    # {"autoUpdate":true,"channel":"develop"}, with or without one line break, in the private support folder.
+    if ! private_folder "$SUPPORT" || ! private_file "$SETTINGS" "$MAX_SETTINGS_BYTES"; then
+        finish off
+    fi
+    settings=$(cat "$SETTINGS") || finish off
+    case $settings in
+        '{"autoUpdate":true}' | '{"autoUpdate":true,"channel":"stable"}') CHANNEL=stable ;;
+        '{"autoUpdate":true,"channel":"develop"}') CHANNEL=develop ;;
+        *) finish off ;;
+    esac
+    # $(cat) drops every trailing line break: the size allows the text plus at most one.
+    settings_size=$(wc -c <"$SETTINGS") || finish off
+    [ $((settings_size + 0)) -le $((${#settings} + 1)) ] || finish off
 
-# 2. A release install: the marker holds a valid tag, and the server folder and plist are in place.
-private_file "$MARKER" 200 || finish not_release
-installed=$(cat "$MARKER") || finish not_release
-valid_tag "$installed" || finish not_release
-INSTALLED=$installed
-if [ ! -d "$SERVER" ] || [ -L "$SERVER" ] || [ -L "$PREVIOUS" ] || [ -L "$AGENTS" ] \
-    || [ ! -f "$PLIST" ] || [ -L "$PLIST" ]; then
-    finish not_release
-fi
-LAUNCHCTL=$(find_program launchctl) || finish not_release
-LSOF=$(find_program lsof) || finish not_release
-DOMAIN="gui/$USER_ID"
-SERVICE="$DOMAIN/$LABEL"
+    # 2. A release install: the marker holds a valid tag, and the server folder and plist are in place.
+    private_file "$MARKER" 200 || finish not_release
+    installed=$(cat "$MARKER") || finish not_release
+    valid_tag "$installed" || finish not_release
+    INSTALLED=$installed
+    if [ ! -d "$SERVER" ] || [ -L "$SERVER" ] || [ -L "$PREVIOUS" ] || [ -L "$AGENTS" ] \
+        || [ ! -f "$PLIST" ] || [ -L "$PLIST" ]; then
+        finish not_release
+    fi
+    LAUNCHCTL=$(find_program launchctl) || finish not_release
+    LSOF=$(find_program lsof) || finish not_release
+    DOMAIN="gui/$USER_ID"
+    SERVICE="$DOMAIN/$LABEL"
 
-# 3. One run at a time (launch-agent.sh install/uninstall wait for the lock too).
-trap cleanup EXIT
-trap 'exit 1' HUP INT TERM
-if mkdir "$LOCK"; then
-    LOCKED=yes
-elif [ -d "$LOCK" ] && [ ! -L "$LOCK" ] && [ -n "$(find "$LOCK" -prune -mmin +"$LOCK_MINUTES")" ]; then
-    rm -rf "$LOCK"
-    mkdir "$LOCK" || finish busy
-    LOCKED=yes
-else
-    finish busy
-fi
+    # 3. One run at a time (launch-agent.sh install/uninstall wait for the lock too).
+    if mkdir "$LOCK"; then
+        LOCKED=yes
+    elif [ -d "$LOCK" ] && [ ! -L "$LOCK" ] && [ -n "$(find "$LOCK" -prune -mmin +"$LOCK_MINUTES")" ]; then
+        rm -rf "$LOCK"
+        mkdir "$LOCK" || finish busy
+        LOCKED=yes
+    else
+        finish busy
+    fi
 
-# 4. Never while a factory job is running.
-if [ -z "$ROOT" ] || ! jobs_idle; then
-    finish job_running
-fi
+    # 4. Never while a factory job is running: wait (without the lock) and check again from step 1, at most
+    # RETRY_WAITS times. An invalid argument list never waits.
+    if [ -z "$ROOT" ]; then
+        finish job_running
+    fi
+    jobs_idle && break
+    if [ "$waits" -ge "$RETRY_WAITS" ] || [ -z "$SLEEP" ]; then
+        finish job_running
+    fi
+    log_line waiting
+    rmdir "$LOCK"
+    LOCKED=no
+    waits=$((waits + 1))
+    pause "$RETRY_SECONDS"
+done
 
 # 5. Only a newer release that has not just failed its check or start: on stable the latest final release, on
 # develop the newest vX.Y.Z or vX.Y.Z-develop.N.

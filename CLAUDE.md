@@ -134,7 +134,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   published server in `~/Library/Application Support/ControlRoom/server/`, log `~/Library/Logs/ControlRoom/server.log`).
   `scripts/launch-agent.sh install --release [vX.Y.Z] [--tailnet-host <name>]` installs a GitHub release instead (latest
   when no tag; no .NET SDK needed; launchd runs `server/ControlRoom.Server` directly). It also installs the
-  updater (`local.controlroom.updater`, every 6 h, `<support>/updater.sh`, marker `<support>/installed-release`, log
+  updater (`local.controlroom.updater`, `RunAtLoad` with `--start-delay 60` so the first check is about a minute
+  after install or login, then every 6 h, and every 15 min (up to 5 h 45 min) while a factory job runs; `<support>/updater.sh`, marker `<support>/installed-release`, log
   `~/Library/Logs/ControlRoom/updater.log`), which installs newer releases (by SemVer; on `stable` prereleases are
   ignored, on `develop` the newest `vX.Y.Z` or `vX.Y.Z-develop.N`) only while `settings.json` says on and
   no job is in `spike|spec|build|review`; a plain `install` and `uninstall` remove it.
@@ -312,7 +313,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `controlroom-<ver>-osx-arm64/`, at most 10000 entries and 512 MiB of unpacked content (counted through a pipe
     before extraction), checked again after extraction, then `verify_signature` when `signing-cert.sha1` pins the
     signing certificate. Not part of the server.
-  - `scripts/updater.sh`: POSIX `sh` updater run by launchd (`--factory-root <root>`); prints exactly one log line
+  - `scripts/updater.sh`: POSIX `sh` updater run by launchd (`--factory-root <root> [--start-delay <1-600>]`; any
+    other argument list ends `job_running`; the delay is one `sleep` before anything is read, skipped without `sleep`
+    on `PATH`). While a job runs it logs `<UTC> waiting <installed>`, removes its lock, waits `sleep 900` (in the
+    background with `wait`, so `bootout`'s TERM ends it at once) and repeats steps 1-4, at most 23 times, then ends
+    `job_running` (no wait without `sleep` on `PATH`). It prints one final log line
     `<UTC> <word>[ <tags>]` (`off`, `not_release`, `busy`, `job_running`, `current`, `latest_failed`,
     `download_failed`, `check_failed`, `skipped_failed`, `updated`, `rolled_back`, `bootstrap_failed`, `swap_failed`,
     `rollback_failed`). Lock `<support>/.update.lock` (stale after 1 h); every bootout is followed by `wait_gone`

@@ -76,6 +76,11 @@ from https://github.com/nothisisnotdaniel/controlroom/releases over HTTPS, check
 and its size (at most 200 MiB to download and 512 MiB unpacked), and only then replaces the server and restarts it. If anything doesn't check out, nothing is changed.
 Run it again to update. A later plain `install` goes back to publishing from the sources.
 
+It also installs the updater. When "Install updates automatically" is on (at the foot of the Jobs page), it checks
+for a newer release about a minute after install or login, then every 6 h. While a factory job runs it never swaps
+the server: it checks again every 15 min (up to 5 h 45 min) and installs the update once the job is done. Each check
+adds a line to `~/Library/Logs/ControlRoom/updater.log`.
+
 Every release also has a build-provenance attestation. To check a downloaded tarball by hand:
 
 ```sh

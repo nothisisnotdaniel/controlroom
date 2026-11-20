@@ -25,6 +25,12 @@ public sealed partial class UpdaterScriptTests
 
     private const string Develop = "{\"autoUpdate\":true,\"channel\":\"develop\"}\n";
 
+    /// <summary>How often a run waits 15 min while a job runs before it ends <c>job_running</c>.</summary>
+    private const int RetryWaits = 23;
+
+    /// <summary>What the fake <c>sleep</c> records when neither the lock nor a result file exists.</summary>
+    private const string NothingHeld = "lock=no result=no";
+
     [Fact]
     public void SharedFunctions_AreTheSameAsInLaunchAgent()
     {
@@ -356,7 +362,7 @@ public sealed partial class UpdaterScriptTests
 
         if (running)
         {
-            AssertNothingDone(home, "job_running", " v1.2.0");
+            AssertNothingDone(home, "job_running", " v1.2.0", waits: RetryWaits);
         }
         else
         {
@@ -377,7 +383,7 @@ public sealed partial class UpdaterScriptTests
         string state = Path.Combine(home.Root, "factory", "jobs", "1-done", "state.json");
         File.SetUnixFileMode(state, UnixFileMode.None);
 
-        AssertNothingDone(home, "job_running", " v1.2.0");
+        AssertNothingDone(home, "job_running", " v1.2.0", waits: RetryWaits);
         File.SetUnixFileMode(state, UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }
 
@@ -511,7 +517,7 @@ public sealed partial class UpdaterScriptTests
         home.AddJob("1-done", "done");
         home.AddJob("2-active", stage);
 
-        AssertNothingDone(home, "job_running", " v1.2.0");
+        AssertNothingDone(home, "job_running", " v1.2.0", waits: RetryWaits);
         Assert.False(Directory.Exists(home.Lock));
     }
 
@@ -1277,6 +1283,280 @@ public sealed partial class UpdaterScriptTests
         AssertWaitAndRetryAfterEveryBootout(home, bootouts: 2);
     }
 
+    [Theory]
+    [InlineData("1")]
+    [InlineData("60")]
+    [InlineData("600")]
+    public void StartDelay_SleepsFirstThenRunsAsBefore(string delay)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.SetRedirect(Releases + "/tag/v1.2.0");
+
+        Assert.Matches(LinePattern("current v1.2.0 v1.2.0"), home.RunOnce("--start-delay", delay));
+        Assert.Equal([delay], home.SleepCalls());
+        Assert.Equal([NothingHeld], home.SleepStates());
+        Assert.Single(home.CurlCalls());
+    }
+
+    [Fact]
+    public void StartDelay_ComesBeforeEveryLaunchctlAndCurlCall()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+
+        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce("--start-delay", "60"));
+        IReadOnlyList<string> events = home.Events();
+        Assert.Equal("sleep 60", events[0]);
+        Assert.DoesNotContain("sleep 60", events.Skip(1));
+        Assert.Contains("launchctl bootout " + home.Service, events);
+        Assert.Equal(["60"], home.SleepCalls());
+        Assert.Equal([NothingHeld], home.SleepStates());
+    }
+
+    [Fact]
+    public void StartDelay_ReadsTheSettingOnlyAfterTheDelay()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.SetRedirect(Releases + "/tag/v1.2.0");
+        home.OnSleepWrite(1, home.Settings, "{\"autoUpdate\":false}\n");
+
+        Assert.Matches(LinePattern("off"), home.RunOnce("--start-delay", "60"));
+        Assert.Equal(["60"], home.SleepCalls());
+        Assert.Empty(home.CurlCalls());
+        Assert.Empty(home.AllLaunchctlCalls());
+    }
+
+    [Fact]
+    public void WithoutStartDelay_DoesNotSleepFirst()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.SetRedirect(Releases + "/tag/v1.2.0");
+
+        Assert.Matches(LinePattern("current v1.2.0 v1.2.0"), home.RunOnce());
+        Assert.Empty(home.SleepCalls());
+    }
+
+    [Theory]
+    [InlineData("--factory-root|ROOT|--start-delay|0")]
+    [InlineData("--factory-root|ROOT|--start-delay|601")]
+    [InlineData("--factory-root|ROOT|--start-delay|060")]
+    [InlineData("--factory-root|ROOT|--start-delay|6x")]
+    [InlineData("--factory-root|ROOT|--start-delay|-1")]
+    [InlineData("--factory-root|ROOT|--start-delay|")]
+    [InlineData("--factory-root|ROOT|--start-delay| 60")]
+    [InlineData("--factory-root|ROOT|--start-delay|1000")]
+    [InlineData("--factory-root|ROOT|--start-delay")]
+    [InlineData("--factory-root|ROOT|--start-delay|60|x")]
+    [InlineData("--factory-root|ROOT|--delay|60")]
+    [InlineData("--start-delay|60|--factory-root|ROOT")]
+    [InlineData("--factory-root|root|--start-delay|60")]
+    public void BadArgumentList_NeverSleepsAndIsJobRunning(string arguments)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddJob("1-active", "build");
+        home.SetRedirect(Releases + "/tag/v1.2.0");
+
+        AssertNothingDone(home, "job_running", " v1.2.0", arguments: arguments.Split('|'));
+        Assert.False(Directory.Exists(home.Lock));
+    }
+
+    [Fact]
+    public void StartDelayWithoutSleepOnPath_GoesOnAtOnce()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.SetRedirect(Releases + "/tag/v1.2.0");
+
+        Assert.Matches(LinePattern("current v1.2.0 v1.2.0"), home.RunOnceWithoutSleep("--start-delay", "60"));
+        Assert.Single(home.CurlCalls());
+    }
+
+    [Fact]
+    public void JobThatEndsDuringTheSecondWait_RunGoesOnAfterTwoWaitingLines()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddJob("1-active", "build");
+        home.SetRedirect(Releases + "/tag/v1.2.0");
+        home.OnSleepFinishJob(2, "1-active");
+
+        IReadOnlyList<string> lines = home.RunAll();
+
+        Assert.Equal(3, lines.Count);
+        Assert.Matches(LinePattern("waiting v1.2.0"), lines[0]);
+        Assert.Matches(LinePattern("waiting v1.2.0"), lines[1]);
+        Assert.Matches(LinePattern("current v1.2.0 v1.2.0"), lines[2]);
+        Assert.Equal(["900", "900"], home.SleepCalls());
+        Assert.Equal([NothingHeld, NothingHeld], home.SleepStates());
+        Assert.Single(home.CurlCalls());
+        Assert.False(File.Exists(home.Result));
+        Assert.False(Directory.Exists(home.Lock));
+    }
+
+    [Fact]
+    public void JobThatEndsDuringTheFirstWait_UpdatesAfterTheStartDelayAndOneWait()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddJob("1-active", "review");
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.OnSleepFinishJob(2, "1-active");
+
+        IReadOnlyList<string> lines = home.RunAll("--start-delay", "60");
+
+        Assert.Equal(2, lines.Count);
+        Assert.Matches(LinePattern("waiting v1.2.0"), lines[0]);
+        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), lines[1]);
+        Assert.Equal(["60", "900"], home.SleepCalls());
+        Assert.Equal([NothingHeld, NothingHeld], home.SleepStates());
+        AssertResult(home, "\"result\":\"updated\",\"version\":\"1.3.0\",\"previous\":\"1.2.0\"");
+        Assert.Empty(home.Leftovers());
+    }
+
+    [Fact]
+    public void JobThatNeverEnds_WaitsTwentyThreeTimesThenIsJobRunning()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddJob("1-active", "build");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+
+        AssertNothingDone(home, "job_running", " v1.2.0", waits: RetryWaits);
+        Assert.Empty(home.CurlCalls());
+        Assert.Equal(Enumerable.Repeat(NothingHeld, RetryWaits), home.SleepStates());
+        Assert.False(File.Exists(home.Result));
+        Assert.False(Directory.Exists(home.Lock));
+    }
+
+    [Fact]
+    public void LockTakenDuringAWait_IsBusyAndKeepsTheOtherRunsLock()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddJob("1-active", "build");
+        home.SetRedirect(Releases + "/tag/v1.2.0");
+        home.OnSleep(1, "mkdir " + UpdaterHome.Quote(home.Lock));
+
+        IReadOnlyList<string> lines = home.RunAll();
+
+        Assert.Equal(2, lines.Count);
+        Assert.Matches(LinePattern("waiting v1.2.0"), lines[0]);
+        Assert.Matches(LinePattern("busy v1.2.0"), lines[1]);
+        Assert.Equal(["900"], home.SleepCalls());
+        Assert.Equal([NothingHeld], home.SleepStates());
+        Assert.True(Directory.Exists(home.Lock));
+        Assert.Empty(home.CurlCalls());
+        Assert.Empty(home.AllLaunchctlCalls());
+    }
+
+    [Fact]
+    public void SettingTurnedOffDuringAWait_IsOffWithoutFurtherWaits()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddJob("1-active", "build");
+        home.OnSleepWrite(1, home.Settings, "{\"autoUpdate\":false}\n");
+
+        IReadOnlyList<string> lines = home.RunAll();
+
+        Assert.Equal(2, lines.Count);
+        Assert.Matches(LinePattern("waiting v1.2.0"), lines[0]);
+        Assert.Matches(LinePattern("off"), lines[1]);
+        Assert.Equal(["900"], home.SleepCalls());
+        Assert.Empty(home.CurlCalls());
+        Assert.False(Directory.Exists(home.Lock));
+    }
+
+    [Fact]
+    public void ReleaseMarkerGoneDuringAWait_IsNotReleaseWithoutFurtherWaits()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddJob("1-active", "build");
+        home.OnSleep(1, "rm -f " + UpdaterHome.Quote(home.Marker));
+
+        IReadOnlyList<string> lines = home.RunAll();
+
+        Assert.Equal(2, lines.Count);
+        Assert.Matches(LinePattern("waiting v1.2.0"), lines[0]);
+        Assert.Matches(LinePattern("not_release"), lines[1]);
+        Assert.Equal(["900"], home.SleepCalls());
+        Assert.Empty(home.CurlCalls());
+    }
+
+    [Fact]
+    public void RunningJobWithoutSleepOnPath_IsJobRunningWithoutWaiting()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddJob("1-active", "build");
+        home.SetRedirect(Releases + "/tag/v1.2.0");
+
+        Assert.Matches(LinePattern("job_running v1.2.0"), home.RunOnceWithoutSleep());
+        Assert.Empty(home.CurlCalls());
+        Assert.Empty(home.AllLaunchctlCalls());
+        Assert.False(Directory.Exists(home.Lock));
+    }
+
     /// <summary>With one lingering <c>print</c> and one failing bootstrap per bootout: every bootout is followed by
     /// print, sleep 0.5, print (gone), then bootstrap, sleep 1, bootstrap.</summary>
     private static void AssertWaitAndRetryAfterEveryBootout(UpdaterHome home, int bootouts)
@@ -1296,17 +1576,22 @@ public sealed partial class UpdaterScriptTests
     }
 
     /// <summary>One run that must log <paramref name="word"/> (plus <paramref name="details"/>) and change nothing:
-    /// no launchctl call, the given number of curl calls, no result, HOME as before apart from the fakes' logs.</summary>
-    private static void AssertNothingDone(UpdaterHome home, string word, string details, int curlCalls = 0)
+    /// no launchctl call, the given number of curl calls, no result, HOME as before apart from the fakes' logs. Before
+    /// that last line it logs <paramref name="waits"/> <c>waiting</c> lines and makes as many <c>sleep 900</c> calls
+    /// (and no other). <paramref name="arguments"/> replaces the default <c>--factory-root &lt;root&gt;</c>.</summary>
+    private static void AssertNothingDone(
+        UpdaterHome home, string word, string details, int curlCalls = 0, int waits = 0, string[]? arguments = null)
     {
         IReadOnlyList<string> before = home.Snapshot("");
 
-        string line = home.RunOnce();
+        IReadOnlyList<string> lines = arguments is null ? home.RunAll() : home.RunAllWithArguments(arguments);
 
-        Assert.Matches(LinePattern(word + details), line);
+        Assert.Equal(waits + 1, lines.Count);
+        Assert.All(lines.Take(waits), line => Assert.Matches(LinePattern("waiting v1.2.0"), line));
+        Assert.Matches(LinePattern(word + details), lines[^1]);
         Assert.Empty(home.LaunchctlCalls());
         Assert.Equal(curlCalls, home.CurlCalls().Count);
-        Assert.Empty(home.SleepCalls());
+        Assert.Equal(Enumerable.Repeat("900", waits), home.SleepCalls());
         Assert.Equal(before, home.Snapshot(""));
     }
 
@@ -1400,10 +1685,20 @@ public sealed partial class UpdaterScriptTests
             + "if [ -f \"$HOME/loaded\" ]; then echo 4242; exit 0; fi\n"
             + "exit 1\n";
 
+        /// <summary>The fake clock: logs its arguments (also to <c>order.log</c>), records in <c>sleep-state.log</c>
+        /// whether the lock and the result file exist at that moment, runs the hook <c>sleep-hooks/&lt;n&gt;</c> for
+        /// its n-th call (counting from 1) when there is one, and returns at once.</summary>
         private const string FakeSleep =
             "#!/bin/sh\n"
             + "printf '%s\\n' \"$*\" >> \"$HOME/sleep.log\"\n"
             + "printf 'sleep %s\\n' \"$*\" >> \"$HOME/order.log\"\n"
+            + "support=\"$HOME/Library/Application Support/ControlRoom\"\n"
+            + "lock=no; if [ -e \"$support/.update.lock\" ]; then lock=yes; fi\n"
+            + "result=no; if [ -e \"$support/update-result.json\" ]; then result=yes; fi\n"
+            + "printf 'lock=%s result=%s\\n' \"$lock\" \"$result\" >> \"$HOME/sleep-state.log\"\n"
+            + "n=$(wc -l < \"$HOME/sleep.log\")\n"
+            + "hook=\"$HOME/sleep-hooks/$((n + 0))\"\n"
+            + "if [ -f \"$hook\" ]; then /bin/sh \"$hook\"; fi\n"
             + "exit 0\n";
 
         /// <summary>Fails (exit 1) when the source ends with the text in <c>$HOME/mv-fail</c> or the target with the
@@ -1462,7 +1757,9 @@ public sealed partial class UpdaterScriptTests
         private static readonly string[] HarnessFiles =
             ["calls.log", "curl.log", "curl-stdin.log", "sleep.log", "lsof.log", "loaded", "redirect", "mv-fail",
                 "mv-fail-to", "lsof-out", "not-running", "list", "order.log", "linger", "linger-left", "bootstrap-fails",
-                "bootstrap-fails-per-bootout", "codesign.log", "codesign-exit", "codesign-fail-for"];
+                "bootstrap-fails-per-bootout", "codesign.log", "codesign-exit", "codesign-fail-for", "sleep-state.log"];
+
+        private const string HooksFolder = "sleep-hooks";
 
         public UpdaterHome()
             : this("v1.2.0")
@@ -1542,24 +1839,102 @@ public sealed partial class UpdaterScriptTests
             return System.IO.Path.Combine(RepoFolder(), "scripts", "updater.sh");
         }
 
-        /// <summary>Runs the updater once; it must exit 0, write nothing to stderr and print one line, which is
-        /// returned.</summary>
-        public string RunOnce()
+        private string DefaultPath => System.IO.Path.Combine(Path, "bin") + ":/usr/bin:/bin:/usr/sbin:/sbin";
+
+        /// <summary>Runs the updater once with <c>--factory-root &lt;root&gt;</c> and then <paramref name="extra"/>; it
+        /// must exit 0, write nothing to stderr and print one line, which is returned.</summary>
+        public string RunOnce(params string[] extra)
         {
-            return RunOnceWithPath(System.IO.Path.Combine(Path, "bin") + ":/usr/bin:/bin:/usr/sbin:/sbin");
+            return Single(Run(DefaultPath, [.. DefaultArguments(), .. extra]));
         }
 
-        /// <summary>Like <see cref="RunOnce()"/>, with the fake <c>codesign</c> removed and the system programs only
+        /// <summary>Like <see cref="RunOnce"/>, but returns every line it printed (each with its line break).</summary>
+        public IReadOnlyList<string> RunAll(params string[] extra)
+        {
+            return Run(DefaultPath, [.. DefaultArguments(), .. extra]);
+        }
+
+        /// <summary>Runs the updater with exactly <paramref name="arguments"/> (<c>ROOT</c> stands for the factory
+        /// root) and returns every line it printed.</summary>
+        public IReadOnlyList<string> RunAllWithArguments(string[] arguments)
+        {
+            return Run(DefaultPath, [.. arguments.Select(argument => argument == "ROOT" ? Root : argument)]);
+        }
+
+        /// <summary>Like <see cref="RunOnce"/>, with the fake <c>codesign</c> removed and the system programs only
         /// through a folder of links that leaves <c>codesign</c> out (outside HOME).</summary>
         public string RunOnceWithoutCodesign()
         {
             File.Delete(System.IO.Path.Combine(Path, "bin", "codesign"));
-            string system = Path + "-system-bin";
-            ScriptFixtures.LinkSystemProgramsWithoutCodesign(system);
-            return RunOnceWithPath(System.IO.Path.Combine(Path, "bin") + ":" + system);
+            return Single(Run(LinkedPath("codesign"), DefaultArguments()));
         }
 
-        private string RunOnceWithPath(string path)
+        /// <summary>Like <see cref="RunOnce"/>, with the fake <c>sleep</c> removed and the system programs only
+        /// through a folder of links that leaves <c>sleep</c> out, so no <c>sleep</c> is found.</summary>
+        public string RunOnceWithoutSleep(params string[] extra)
+        {
+            File.Delete(System.IO.Path.Combine(Path, "bin", "sleep"));
+            return Single(Run(LinkedPath("sleep"), [.. DefaultArguments(), .. extra]));
+        }
+
+        /// <summary>Runs <paramref name="command"/> (sh) inside the fake <c>sleep</c>'s <paramref name="call"/>-th
+        /// call (counting from 1), before it returns.</summary>
+        public void OnSleep(int call, string command)
+        {
+            string folder = System.IO.Path.Combine(Path, HooksFolder);
+            Directory.CreateDirectory(folder);
+            string hook = System.IO.Path.Combine(folder, call.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            File.AppendAllText(hook, command + "\n");
+        }
+
+        /// <summary>In the <paramref name="call"/>-th sleep, replaces the content of <paramref name="file"/> (keeping
+        /// its mode) with <paramref name="content"/>.</summary>
+        public void OnSleepWrite(int call, string file, string content)
+        {
+            string folder = System.IO.Path.Combine(Path, HooksFolder);
+            Directory.CreateDirectory(folder);
+            string source = System.IO.Path.Combine(folder, "content-" + Guid.NewGuid().ToString("N"));
+            File.WriteAllText(source, content);
+            OnSleep(call, "cat " + Quote(source) + " > " + Quote(file));
+        }
+
+        /// <summary>In the <paramref name="call"/>-th sleep, marks job <paramref name="id"/> <c>done</c>.</summary>
+        public void OnSleepFinishJob(int call, string id)
+        {
+            OnSleepWrite(call, System.IO.Path.Combine(Root, "factory", "jobs", id, "state.json"),
+                "{\n  \"id\": \"" + id + "\",\n  \"stage\": \"done\",\n  \"round\": 1\n}\n");
+        }
+
+        /// <summary>What the fake <c>sleep</c> saw at each call: <c>lock=yes|no result=yes|no</c>.</summary>
+        public IReadOnlyList<string> SleepStates()
+        {
+            return ReadLines("sleep-state.log");
+        }
+
+        public static string Quote(string path)
+        {
+            Assert.DoesNotContain("'", path, StringComparison.Ordinal);
+            return "'" + path + "'";
+        }
+
+        private string[] DefaultArguments()
+        {
+            return ["--factory-root", Root];
+        }
+
+        private string LinkedPath(string leaveOut)
+        {
+            string system = Path + "-system-bin";
+            ScriptFixtures.LinkSystemPrograms(system, leaveOut);
+            return System.IO.Path.Combine(Path, "bin") + ":" + system;
+        }
+
+        private static string Single(IReadOnlyList<string> lines)
+        {
+            return Assert.Single(lines);
+        }
+
+        private List<string> Run(string path, string[] arguments)
         {
             Dictionary<string, string> environment = new()
             {
@@ -1568,11 +1943,11 @@ public sealed partial class UpdaterScriptTests
                 // Must never turn the check on or off: only the support copy of signing-cert.sha1 does.
                 ["SIGNING_CERT_SHA1"] = "ffffffffffffffffffffffffffffffffffffffff",
             };
-            ScriptRun run = RunProcess("/bin/sh", [ScriptPath(), "--factory-root", Root], environment);
+            ScriptRun run = RunProcess("/bin/sh", [ScriptPath(), .. arguments], environment);
             Assert.Equal(0, run.ExitCode);
             Assert.Equal("", run.Error);
-            Assert.Single(run.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries));
-            return run.Output;
+            Assert.EndsWith("\n", run.Output, StringComparison.Ordinal);
+            return [.. run.Output[..^1].Split('\n').Select(line => line + "\n")];
         }
 
         public void SetSettings(string? content)
@@ -1787,7 +2162,8 @@ public sealed partial class UpdaterScriptTests
             foreach (string entry in Directory.EnumerateFileSystemEntries(start, "*", SearchOption.AllDirectories))
             {
                 string relative = System.IO.Path.GetRelativePath(Path, entry);
-                if (HarnessFiles.Contains(relative))
+                if (HarnessFiles.Contains(relative) || relative == HooksFolder
+                    || relative.StartsWith(HooksFolder + System.IO.Path.DirectorySeparatorChar, StringComparison.Ordinal))
                 {
                     continue;
                 }

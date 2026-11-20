@@ -4,7 +4,8 @@
 #        scripts/launch-agent.sh install --tailnet-host <mac>.<tailnet>.ts.net  (adds --TailnetHost <name>)
 #        scripts/launch-agent.sh install --release [vX.Y.Z] [--tailnet-host <name>]
 #          (installs the ready-built release from GitHub instead of publishing: the latest one, or vX.Y.Z,
-#          plus the updater LaunchAgent local.controlroom.updater that runs <support>/updater.sh every 6 h)
+#          plus the updater LaunchAgent local.controlroom.updater that runs <support>/updater.sh about a minute
+#          after install or login and then every 6 h)
 # POSIX sh. Runs only dotnet (publish), launchctl, sleep and, with --release, curl, tar, shasum and (once
 # signing-cert.sha1 is committed next to ControlRoom.slnx) codesign --verify, all with fixed arguments. Never reads
 # the access token file. After every bootout it waits until launchd has removed the service, and a failed bootstrap
@@ -14,8 +15,9 @@ set -u
 
 LABEL="local.controlroom.server"
 UPDATER_LABEL="local.controlroom.updater"
-# Every 6 h; launchd never starts it at load.
+# Every 6 h, and at load (install or login): that run first waits UPDATER_START_DELAY seconds.
 UPDATER_INTERVAL=21600
+UPDATER_START_DELAY=60
 UPDATE_RUNNING="An update is running. Try again in a few minutes."
 USAGE="usage: scripts/launch-agent.sh install [--release [vX.Y.Z]] [--tailnet-host <name>]|uninstall|status"
 # The one repository releases come from (renaming it breaks --release).
@@ -618,7 +620,8 @@ do_install() {
 
 # Copies updater.sh (0700) and writes the release marker (the tag, 0600), the fingerprint copy (0600, or removes
 # it when signing is off) and the updater plist (0644), then bootstraps it. The updater runs only when "Install
-# updates automatically" is on in the app.
+# updates automatically" is on in the app. launchd starts it at load (it first waits a minute, so the new server is
+# up) and every 6 h; while a factory job runs, the run itself checks again every 15 min.
 install_updater() {
     put_file "$UPDATER_SCRIPT" 700 <"$UPDATER_SOURCE" || fail "Can't write $UPDATER_SCRIPT"
     printf '%s\n' "$TAG" | put_file "$MARKER" 600 || fail "Can't write $MARKER"
@@ -640,12 +643,16 @@ install_updater() {
         printf '        <string>%s</string>\n' "$(xml_escape "$UPDATER_SCRIPT")"
         printf '        <string>--factory-root</string>\n'
         printf '        <string>%s</string>\n' "$(xml_escape "$ROOT")"
+        printf '        <string>--start-delay</string>\n'
+        printf '        <string>%s</string>\n' "$UPDATER_START_DELAY"
         printf '    </array>\n'
         printf '    <key>EnvironmentVariables</key>\n'
         printf '    <dict>\n'
         printf '        <key>PATH</key>\n'
         printf '        <string>%s</string>\n' "$FIXED_PATH"
         printf '    </dict>\n'
+        printf '    <key>RunAtLoad</key>\n'
+        printf '    <true/>\n'
         printf '    <key>StartInterval</key>\n'
         printf '    <integer>%s</integer>\n' "$UPDATER_INTERVAL"
         printf '    <key>StandardOutPath</key>\n'
