@@ -306,34 +306,34 @@ public sealed class UpdateSettingsTests
     [InlineData("{\"autoUpdate\":true,\"updateInterval\":45}")]
     public async Task Post_BadInterval_Is400AndLeavesTheFileUnchanged(string body)
     {
-        const string file = "{\"autoUpdate\":true,\"channel\":\"develop\"}\n";
+        const string Saved = "{\"autoUpdate\":true,\"channel\":\"develop\"}\n";
         using TempFactoryRoot root = new();
         using ServerFactory factory = new(root.Path);
         using HttpClient client = factory.CreateTokenClient();
-        WriteSettings(factory, file);
+        WriteSettings(factory, Saved);
 
         using HttpResponseMessage response = await Post(client, body);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal("{\"error\":\"invalid\"}", await response.Content.ReadAsStringAsync());
-        Assert.Equal(file, File.ReadAllText(SettingsPath(factory)));
+        Assert.Equal(Saved, File.ReadAllText(SettingsPath(factory)));
         Assert.Empty(factory.Update.Requests);
     }
 
     [Fact]
     public async Task Post_IntervalWithARefusedFile_Is500AndDoesNotOverwriteIt()
     {
-        const string file = "{\"autoUpdate\":true,\"channel\":\"stable\",\"updateInterval\":060}\n";
+        const string Saved = "{\"autoUpdate\":true,\"channel\":\"stable\",\"updateInterval\":060}\n";
         using TempFactoryRoot root = new();
         using ServerFactory factory = new(root.Path);
         using HttpClient client = factory.CreateTokenClient();
-        WriteSettings(factory, file);
+        WriteSettings(factory, Saved);
 
         using HttpResponseMessage response = await Post(client, "{\"updateInterval\":60}");
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         Assert.Equal("{\"error\":\"settings_store\"}", await response.Content.ReadAsStringAsync());
-        Assert.Equal(file, File.ReadAllText(SettingsPath(factory)));
+        Assert.Equal(Saved, File.ReadAllText(SettingsPath(factory)));
         Assert.EndsWith(",\"autoUpdate\":null,\"channel\":null,\"updateInterval\":null}",
             await client.GetStringAsync(UpdateEndpoint.Route), StringComparison.Ordinal);
         Assert.Empty(factory.Update.Requests);

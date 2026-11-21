@@ -197,7 +197,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     Kestrel, headers, the `HostCheck`, GET/HEAD only (POST only on `/api/backlog/change`, `/api/job/act`, `/api/update/settings` and the four `/api/push/*` POST routes), the `/api/` token gate, static files, endpoints, push services), `AccessToken` (token file
     path, create, safe read, atomic replace, constant-time check), `TokenCommand` (`token`, `token --new`), `HostCheck` (allowed `Host` values, `TailnetHost` rule, fixed
     `421` body), `ServerEndpoint` (the one listen address), `FactoryRootLocator`,
-    `ProjectFinder` (project discovery), `SafeFileReader` (no-follow, regular-file, size-capped text or bytes read, SHA-256 version),
+    `ProjectFinder` (project discovery), `SafeFileReader` (no-follow, regular-file, size-capped text or bytes read, SHA-256 version; `OpenFolder` + `ReadBytesAt` read one name relative to a folder opened with `O_NOFOLLOW | O_DIRECTORY`, through `openat(..., O_NOFOLLOW)`, managed check-then-open on Windows),
     `SafeFileWriter` (temp file in the same folder, then rename; refuses a symlinked target or folder),
     `BacklogReader` (safe `backlog.md` read), `BacklogParser` (lines to entries, old and numbered `[#N](…)`
     format; `StopLineText`, `IsStopLine` and `Backlog.StopLine`, the first exact stop line's index, never an entry), `BacklogWaiting` (the Ready/Waiting rule: a dependency is met only by a done line of the named, or the
@@ -216,7 +216,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     checkout is not on `develop` and `Pending`, else the project; used by `GET /api/backlogs`, `/api/story`,
     `/api/inbox`, `/api/tasks` (both no longer used by the web app since #135) and `/api/search`), `BacklogChangeEndpoint` (`POST /api/backlog/change`: request
     checks, `not_develop` (no repo)/`worktree_failed`/`dirty`/`changed`, write, commit, push (develop only); `done` commits `backlog: done #N`, `note` commits `backlog: note on #N`, `capture` commits `backlog: capture #N`, `stop_*` commit `backlog: stop line`), `StoryReader` (fenced read of
-    `<project>/backlog/NNN-slug.md`), `StoryCategory` (the story's `Category: <name>` line like `job.py with_category`:
+    `<project>/backlog/NNN-slug.md` through `SafeFileReader.ReadBytesAt`, so no symlink swap can redirect it; `ResolvePath` is for writes only; every story read in `BacklogChangeEndpoint` goes through `StoryReader.ReadBytes`), `StoryCategory` (the story's `Category: <name>` line like `job.py with_category`:
     the nine names in `job.py` order, `Parse` (first `Category:` line before the first `## `, else `null`) and `Set`), `StoryMarkdown` (Markdown to a JSON block tree, no HTML),
     `StoryEndpoint` (`GET /api/story?project=&number=`, with `markdown`,
     `storyVersion` and `category`), `InboxEndpoint` (`GET /api/inbox`: every `[?]` line as `{project, version, line, number, title,
