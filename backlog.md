@@ -126,3 +126,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#116](backlog/116-correct-the-project-picker-when-the.md) Correct the project picker when the chosen project disappears while focused
 - [?] [#117](backlog/117-drop-the-dead-group-h3-selector.md) Drop the dead .group h3 selector
 - [?] [#118](backlog/118-browser-check-of-collapsible-backlog-groups.md) Browser check of collapsible backlog groups at phone width
+- [?] [#119](backlog/119-one-position-per-item-in-open.md) One position per item in Open and Waiting
