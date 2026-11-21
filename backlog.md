@@ -28,6 +28,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#99](backlog/099-updater-checks-soon-after-install-and.md) Updater checks soon after install and retries after a skipped run → 337-updater-early-checks
 - [x] [#136](backlog/136-start-end-and-time-per-agent.md) Start, end and time per agent on job cards (after: factory#22) → 372-job-card-times
 - [x] [#138](backlog/138-number-of-active-and-blocked-jobs.md) Active and blocked job counts on the Jobs tab → 373-jobs-tab-badges
+- [ ] [#142](backlog/142-update-interval-setting-30-minutes-by.md) Update interval setting, 30 minutes by default
 - [ ] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone (after: #139)
 - [ ] [#139](backlog/139-phone-start-spike.md) Phone start spike
 - [x] [#13](backlog/013-releases-overview.md) Releases overview → 375-releases-overview
