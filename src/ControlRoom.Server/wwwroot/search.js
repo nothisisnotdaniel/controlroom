@@ -1,12 +1,12 @@
 "use strict";
 
-// Search at the top of the Backlogs view (#133): finds any backlog item across all projects through /api/search by number (#12, Times#12), by words in
-// the title or rest, or by words in its story (searched on the server; story text never comes to the page), with a
-// mark, a project and a category filter. One request per field or filter change, no timer; an answer for an older request is
-// dropped. The form is built once into #backlog-search and kept, so Back from a story finds the same text, filters
-// and results. While a query (field text or a filter) is entered, #backlogs gets the class "searching" and only the
-// search box shows, so the results stand in place of the backlog; with an empty field and no filter the backlog
-// shows again as it was.
+// Search at the top of the Backlogs view (#133): finds any backlog item across all projects through /api/search by
+// number (#12, Times#12), by words in the title or rest, or by words in its story (searched on the server; story
+// text never comes to the page), with a mark, a project and a category filter. One request per field or filter
+// change, no timer; an answer for an older request is dropped. The form is built once into #backlog-search and
+// kept, so Back from a story finds the same text, filters and results. While a query (field text or a filter) is
+// entered, #backlogs gets the class "searching" and only the search box shows, so the results stand in place of
+// the backlog; with an empty field and no filter the backlog shows again as it was.
 // Loaded after tasks.js and before live.js and app.js; their functions (element, titleText, storyHash, openStory,
 // asText, asNumber, asList, categoryChip, Categories) are only called at run time. Read-only: no edit buttons. Only fixed texts and file text
 // through textContent are shown, never server error text.

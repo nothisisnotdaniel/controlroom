@@ -1751,11 +1751,8 @@ body:has(#edit-notice:not([hidden])) {
 }
 
 /* Search: at the top of the Backlogs (#133), a labelled field and three filters above one card list of results; long
-   titles wrap. While a query is entered the results stand in place of the backlog. */
-.backlog-search {
-  margin: 0 0 12px;
-}
-
+   titles wrap. While a query is entered the results stand in place of the backlog. The form's own margin is the
+   gap above the backlog. */
 #backlogs.searching > :not(#backlog-search) {
   display: none;
 }

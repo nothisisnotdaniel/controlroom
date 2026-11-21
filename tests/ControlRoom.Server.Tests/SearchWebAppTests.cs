@@ -126,7 +126,8 @@ public sealed partial class SearchWebAppTests
         string css = (await Fetch("/app.css")).ReplaceLineEndings("\n");
 
         Assert.Contains("#backlogs.searching > :not(#backlog-search) {\n  display: none;\n}", css, StringComparison.Ordinal);
-        Assert.Contains(".backlog-search {\n  margin: 0 0 12px;\n}", css, StringComparison.Ordinal);
+        Assert.DoesNotContain(".backlog-search {", css, StringComparison.Ordinal);
+        Assert.Contains(".search-form {\n  margin: 0 0 12px;\n}", css, StringComparison.Ordinal);
     }
 
     [Fact]
