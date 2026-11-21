@@ -5,7 +5,8 @@
 #        scripts/launch-agent.sh install --release [vX.Y.Z] [--tailnet-host <name>]
 #          (installs the ready-built release from GitHub instead of publishing: vX.Y.Z, or without a tag the
 #          latest one, or the newest develop build when settings.json picks the develop channel, plus the updater LaunchAgent local.controlroom.updater that runs <support>/updater.sh about a minute
-#          after install or login and then every 6 h)
+#          after install or login and then every 15 min; each run checks only when the interval chosen in the app,
+#          30 min by default, has passed)
 # POSIX sh. Runs only dotnet (publish), launchctl, sleep and, with --release, curl, tar, shasum and (once
 # signing-cert.sha1 is committed next to ControlRoom.slnx) codesign --verify, all with fixed arguments. Never reads
 # the access token file. After every bootout it waits until launchd has removed the service, and a failed bootstrap
@@ -15,8 +16,9 @@ set -u
 
 LABEL="local.controlroom.server"
 UPDATER_LABEL="local.controlroom.updater"
-# Every 6 h, and at load (install or login): that run first waits UPDATER_START_DELAY seconds.
-UPDATER_INTERVAL=21600
+# Every 15 min, and at load (install or login): each run first waits UPDATER_START_DELAY seconds, then checks only
+# when it is due (the interval from settings.json, see updater.sh).
+UPDATER_INTERVAL=900
 UPDATER_START_DELAY=60
 UPDATE_RUNNING="An update is running. Try again in a few minutes."
 USAGE="usage: scripts/launch-agent.sh install [--release [vX.Y.Z]] [--tailnet-host <name>]|uninstall|status"
@@ -182,6 +184,8 @@ UPDATER_LOG="$LOG_DIR/updater.log"
 UPDATER_SCRIPT_PREVIOUS="$SUPPORT/updater.sh.previous"
 UPDATER_PLIST_PREVIOUS="$SUPPORT/updater.plist.previous"
 MARKER="$SUPPORT/installed-release"
+# The updater's stamp of its last real check (epoch seconds); removed with the updater so the next run checks.
+LAST_CHECK="$SUPPORT/last-check"
 SIGNING_COPY="$SUPPORT/signing-cert.sha1"
 UPDATE_LOCK="$SUPPORT/.update.lock"
 
@@ -256,12 +260,12 @@ put_file() {
     return 1
 }
 
-# Boots out the updater and removes its plist, the copied script, their .previous copies, the release marker and
-# the fingerprint copy.
+# Boots out the updater and removes its plist, the copied script, their .previous copies, the release marker, the
+# fingerprint copy and the last-check stamp.
 remove_updater() {
     bootout_service "$UPDATER_SERVICE"
     rm -f "$UPDATER_PLIST" "$UPDATER_SCRIPT" "$UPDATER_SCRIPT_PREVIOUS" "$UPDATER_PLIST_PREVIOUS" "$MARKER" \
-        "$SIGNING_COPY" || fail "Can't remove the updater."
+        "$SIGNING_COPY" "$LAST_CHECK" || fail "Can't remove the updater."
 }
 
 do_status() {
@@ -587,8 +591,9 @@ NAMES
 }
 
 # True when <support>/settings.json picks the develop channel: a regular file (not a symlink) of at most
-# MAX_SETTINGS_BYTES holding {"autoUpdate":true|false,"channel":"develop"} and at most one line break. Anything else
-# (missing, other content, a symlink) is the stable channel.
+# MAX_SETTINGS_BYTES holding {"autoUpdate":true|false,"channel":"develop"} or
+# {"autoUpdate":true|false,"channel":"develop","updateInterval":N} (N 1-6 digits, 0 or no leading zero) and at most one line
+# break. Anything else (missing, other content, a symlink) is the stable channel.
 develop_channel() {
     settings_file="$SUPPORT/settings.json"
     if [ ! -f "$settings_file" ] || [ -L "$settings_file" ]; then
@@ -599,6 +604,16 @@ develop_channel() {
     settings=$(cat "$settings_file") || return 1
     case $settings in
         '{"autoUpdate":true,"channel":"develop"}' | '{"autoUpdate":false,"channel":"develop"}') ;;
+        '{"autoUpdate":true,"channel":"develop","updateInterval":'*'}' \
+            | '{"autoUpdate":false,"channel":"develop","updateInterval":'*'}')
+            settings_number=${settings#*'"updateInterval":'}
+            settings_number=${settings_number%'}'}
+            case $settings_number in
+                0 | [1-9] | [1-9][0-9] | [1-9][0-9][0-9] | [1-9][0-9][0-9][0-9] | [1-9][0-9][0-9][0-9][0-9] \
+                    | [1-9][0-9][0-9][0-9][0-9][0-9]) ;;
+                *) return 1 ;;
+            esac
+            ;;
         *) return 1 ;;
     esac
     # $(cat) drops every trailing line break: the size allows the text plus at most one.
@@ -810,7 +825,8 @@ do_install() {
 # Copies updater.sh (0700) and writes the release marker (the tag, 0600), the fingerprint copy (0600, or removes
 # it when signing is off) and the updater plist (0644), then bootstraps it. The updater runs only when "Install
 # updates automatically" is on in the app. launchd starts it at load (it first waits a minute, so the new server is
-# up) and every 6 h; while a factory job runs, the run itself checks again every 15 min.
+# up) and every 15 min, and a run checks only when the chosen interval has passed; while a factory job runs, the run
+# itself checks again every 15 min.
 install_updater() {
     put_file "$UPDATER_SCRIPT" 700 <"$UPDATER_SOURCE" || fail "Can't write $UPDATER_SCRIPT"
     printf '%s\n' "$TAG" | put_file "$MARKER" 600 || fail "Can't write $MARKER"

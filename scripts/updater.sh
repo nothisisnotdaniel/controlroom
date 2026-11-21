@@ -1,10 +1,16 @@
 #!/bin/sh
 # The ControlRoom updater: run by the LaunchAgent local.controlroom.updater (at load, so about a minute after
-# install or login, and then every 6 h) as
+# install or login, and then every 15 min) as
 #   /bin/sh <support>/updater.sh --factory-root <root> [--start-delay <s>]
 # where <support> is ~/Library/Application Support/ControlRoom and <s> (1-600) is how many seconds it first waits
-# (sleep, before it reads anything; without sleep on PATH it goes on at once). When the user turned on "Install updates
-# automatically" (settings.json is exactly {"autoUpdate":true} or {"autoUpdate":true,"channel":"stable"|"develop"}),
+# (sleep, before it reads anything; without sleep on PATH it goes on at once). Then it decides whether the run is due:
+# the first run since the agent loaded (launchctl print shows "runs = 1"; a failed print counts as due), a missing or
+# broken <support>/last-check stamp (not a private 0600 file of this user holding epoch seconds plus one line
+# break, or in the future), or at least the interval chosen in the app (settings.json "updateInterval" in minutes,
+# 30 when missing, refused or not one of 30, 60, 120, 360, 720) minus 60 s since the stamp. A run that is not due
+# ends at once, with no log line, lock or network call. A due run writes the current time to last-check and goes on.
+# When the user turned on "Install updates automatically" (settings.json is exactly {"autoUpdate":true},
+# {"autoUpdate":true,"channel":"stable"|"develop"} or {"autoUpdate":true,"channel":"stable"|"develop","updateInterval":N}),
 # the install is a release (installed-release holds its tag) and no factory job is running, it installs a newer
 # GitHub release (on the develop channel also a -develop prerelease) with the same download and checks as
 # `launch-agent.sh install --release`, swaps it in, confirms it through the public GET /health route (counted only
@@ -20,8 +26,8 @@
 # off, not_release, busy, job_running, current, latest_failed, download_failed, check_failed, skipped_failed,
 # updated, rolled_back, bootstrap_failed, swap_failed, rollback_failed.
 # While a factory job runs, the run logs "<UTC> waiting <installed>", lets go of its lock, waits 15 min and checks
-# again (setting, release, lock, jobs), at most RETRY_WAITS times (5 h 45 min, so it ends before the next 6-hour
-# tick); then it ends job_running. A waiting run holds no lock, so launch-agent.sh install|uninstall never wait for
+# again (setting, release, lock, jobs), at most RETRY_WAITS times (5 h 45 min); then it ends job_running. Ticks
+# while it waits are not due (or find the lock) and end at once or busy. A waiting run holds no lock, so launch-agent.sh install|uninstall never wait for
 # it, and their bootout ends it.
 # POSIX sh. Runs only launchctl, curl, lsof, tar, shasum and (once <support>/signing-cert.sha1 pins the signing
 # certificate) codesign --verify (plus standard tools), all with fixed arguments.
@@ -35,7 +41,7 @@ exec 3>&1 1>/dev/null 2>/dev/null
 LABEL="local.controlroom.server"
 # The updater's own LaunchAgent, with the same values as launch-agent.sh (updater_plist prints it).
 UPDATER_LABEL="local.controlroom.updater"
-UPDATER_INTERVAL=21600
+UPDATER_INTERVAL=900
 UPDATER_START_DELAY=60
 FIXED_PATH="/usr/local/share/dotnet:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 # A release's updater.sh is installed only when it is at most this long (the script is about 40 KiB).
@@ -45,8 +51,15 @@ RELEASES="https://github.com/nothisisnotdaniel/controlroom/releases"
 # The develop channel's one release list (newest first; the API never shows drafts without a token).
 LIST_URL="https://api.github.com/repos/nothisisnotdaniel/controlroom/releases?per_page=100"
 MAX_LIST_BYTES=1048576
-# settings.json is at most this long: the longest form with its line break is 41 bytes.
+# settings.json is at most this long: the longest form the server writes, with its line break, is 62 bytes.
 MAX_SETTINGS_BYTES=64
+# The update interval (minutes) when settings.json has none, is refused or holds another value.
+DEFAULT_INTERVAL_MINUTES=30
+# A run counts as due this many seconds before the interval has fully passed (launchd ticks drift a little).
+DUE_SLACK_SECONDS=60
+# last-check is at most this long: 15 digits (far beyond any real epoch, and safe in sh arithmetic) plus its line
+# break.
+MAX_STAMP_BYTES=16
 # The texts the shared functions below fail with are the log words here.
 LATEST_FAILED=latest_failed
 DOWNLOAD_FAILED=download_failed
@@ -225,6 +238,103 @@ pause() {
     SLEEP_PID=$!
     wait "$SLEEP_PID"
     SLEEP_PID=""
+}
+
+# Reads the settings.json text $1 (without its trailing line break) by the server's rules and sets AUTO_UPDATE
+# (true|false), CHANNEL (stable|develop) and INTERVAL_MINUTES (one of the five choices, else the default); fails for
+# any other text.
+parse_settings() {
+    rest=$1
+    case $rest in
+        '{"autoUpdate":true'*)
+            AUTO_UPDATE=true
+            rest=${rest#'{"autoUpdate":true'}
+            ;;
+        '{"autoUpdate":false'*)
+            AUTO_UPDATE=false
+            rest=${rest#'{"autoUpdate":false'}
+            ;;
+        *) return 1 ;;
+    esac
+    CHANNEL=stable
+    INTERVAL_MINUTES=$DEFAULT_INTERVAL_MINUTES
+    case $rest in
+        '}') return 0 ;;
+        ',"channel":"stable"'*) rest=${rest#',"channel":"stable"'} ;;
+        ',"channel":"develop"'*)
+            CHANNEL=develop
+            rest=${rest#',"channel":"develop"'}
+            ;;
+        *) return 1 ;;
+    esac
+    case $rest in
+        '}') return 0 ;;
+        ',"updateInterval":'*'}')
+            number=${rest#',"updateInterval":'}
+            number=${number%'}'}
+            ;;
+        *) return 1 ;;
+    esac
+    case $number in
+        0 | [1-9] | [1-9][0-9] | [1-9][0-9][0-9] | [1-9][0-9][0-9][0-9] | [1-9][0-9][0-9][0-9][0-9] \
+            | [1-9][0-9][0-9][0-9][0-9][0-9]) ;;
+        *) return 1 ;;
+    esac
+    case $number in
+        30 | 60 | 120 | 360 | 720) INTERVAL_MINUTES=$number ;;
+    esac
+    return 0
+}
+
+# Prints the update interval in minutes from settings.json; the default when the folder or file is refused, the
+# file can't be read or its text is not one of the allowed forms.
+settings_interval() {
+    if ! private_folder "$SUPPORT" || ! private_file "$SETTINGS" "$MAX_SETTINGS_BYTES"; then
+        printf '%s' "$DEFAULT_INTERVAL_MINUTES"
+        return 0
+    fi
+    text=$(cat "$SETTINGS") || text=""
+    size=$(wc -c <"$SETTINGS") || size=$((MAX_SETTINGS_BYTES + 1))
+    if [ $((size + 0)) -le $((${#text} + 1)) ] && parse_settings "$text"; then
+        printf '%s' "$INTERVAL_MINUTES"
+    else
+        printf '%s' "$DEFAULT_INTERVAL_MINUTES"
+    fi
+}
+
+# True when this is the first run since launchd loaded the updater: launchctl print shows "runs = 1" at one tab. A
+# missing launchctl, a failed print or no runs line counts as the first run.
+first_run() {
+    tool=$(find_program launchctl) || return 0
+    printed=$("$tool" print "gui/$USER_ID/$UPDATER_LABEL") || return 0
+    runs=$(printf '%s\n' "$printed" | LC_ALL=C sed -n "s/^${TAB}runs = \([0-9][0-9]*\)\$/\1/p")
+    case $runs in
+        "" | *[!0-9]*) return 0 ;;
+    esac
+    [ "$runs" = 1 ]
+}
+
+# Prints the epoch seconds in last-check: a private 0600 regular file of this user holding only digits and one line
+# break. Fails for anything else.
+stamp_seconds() {
+    private_file "$STAMP" "$MAX_STAMP_BYTES" || return 1
+    stamp=$(cat "$STAMP") || return 1
+    case $stamp in
+        "" | *[!0-9]*) return 1 ;;
+    esac
+    stamp_size=$(wc -c <"$STAMP") || return 1
+    [ $((stamp_size + 0)) -eq $((${#stamp} + 1)) ] || return 1
+    printf '%s' "$stamp"
+}
+
+# True when this run should check: the first run since load, no valid stamp, a stamp in the future, or at least the
+# chosen interval minus DUE_SLACK_SECONDS since the stamp. $1 is the current epoch seconds.
+run_due() {
+    first_run && return 0
+    last=$(stamp_seconds) || return 0
+    [ "$last" -le "$1" ] || return 0
+    interval=$(settings_interval)
+    [ $(($1 - last)) -ge $((interval * 60 - DUE_SLACK_SECONDS)) ]
 }
 
 # Prints the version of the last update_failed result with reason check or no_answer, if any.
@@ -824,22 +934,34 @@ UPDATER_PLIST="$AGENTS/$UPDATER_LABEL.plist"
 UPDATER_LOG="$HOME/Library/Logs/ControlRoom/updater.log"
 UPDATER_SCRIPT_PREVIOUS="$SUPPORT/updater.sh.previous"
 UPDATER_PLIST_PREVIOUS="$SUPPORT/updater.plist.previous"
+STAMP="$SUPPORT/last-check"
+
+# 0. Only a due run goes on, and it first records the time; a run that is not due ends at once and leaves no trace.
+# A clock that can't be read counts as due and writes no stamp; a stamp that can't be written does not stop the run.
+NOW=$(date +%s) || NOW=""
+case $NOW in
+    "" | *[!0-9]*) NOW="" ;;
+esac
+if [ -n "$NOW" ]; then
+    run_due "$NOW" || exit 0
+    if private_folder "$SUPPORT"; then
+        write_private "$STAMP" "$NOW"
+    fi
+fi
 
 waits=0
 while :; do
     # Every try starts with nothing known (a retry may end off or not_release).
     INSTALLED=""
-    # 1. The setting: exactly {"autoUpdate":true} (stable), {"autoUpdate":true,"channel":"stable"} or
-    # {"autoUpdate":true,"channel":"develop"}, with or without one line break, in the private support folder.
+    # 1. The setting: exactly {"autoUpdate":true} (stable), {"autoUpdate":true,"channel":"stable"|"develop"} or
+    # {"autoUpdate":true,"channel":"stable"|"develop","updateInterval":N}, with or without one line break, in the
+    # private support folder.
     if ! private_folder "$SUPPORT" || ! private_file "$SETTINGS" "$MAX_SETTINGS_BYTES"; then
         finish off
     fi
     settings=$(cat "$SETTINGS") || finish off
-    case $settings in
-        '{"autoUpdate":true}' | '{"autoUpdate":true,"channel":"stable"}') CHANNEL=stable ;;
-        '{"autoUpdate":true,"channel":"develop"}') CHANNEL=develop ;;
-        *) finish off ;;
-    esac
+    parse_settings "$settings" || finish off
+    [ "$AUTO_UPDATE" = true ] || finish off
     # $(cat) drops every trailing line break: the size allows the text plus at most one.
     settings_size=$(wc -c <"$SETTINGS") || finish off
     [ $((settings_size + 0)) -le $((${#settings} + 1)) ] || finish off

@@ -849,6 +849,9 @@ public sealed class LaunchAgentScriptTests
     [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\"}\n")]
     [InlineData("{\"autoUpdate\":false,\"channel\":\"develop\"}\n")]
     [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\"}")]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\",\"updateInterval\":30}\n")]
+    [InlineData("{\"autoUpdate\":false,\"channel\":\"develop\",\"updateInterval\":720}\n")]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\",\"updateInterval\":45}")]
     public void InstallRelease_WithoutATagOnTheDevelopChannel_InstallsTheNewestDevelopBuild(string settings)
     {
         if (OperatingSystem.IsWindows())
@@ -888,6 +891,11 @@ public sealed class LaunchAgentScriptTests
     [InlineData("over-cap")]
     [InlineData("symlink")]
     [InlineData("folder")]
+    [InlineData("stable-interval")]
+    [InlineData("interval-leading-zero")]
+    [InlineData("interval-string")]
+    [InlineData("interval-fifth-key")]
+    [InlineData("interval-key-order")]
     public void InstallRelease_WithoutATagAndNoDevelopSetting_UsesTheLatestRedirect(string kind)
     {
         if (OperatingSystem.IsWindows())
@@ -918,6 +926,21 @@ public sealed class LaunchAgentScriptTests
                 break;
             case "over-cap":
                 home.SetSettings(DevelopSetting + new string('\n', 64 - DevelopSetting.Length + 1));
+                break;
+            case "stable-interval":
+                home.SetSettings("{\"autoUpdate\":true,\"channel\":\"stable\",\"updateInterval\":60}\n");
+                break;
+            case "interval-leading-zero":
+                home.SetSettings("{\"autoUpdate\":true,\"channel\":\"develop\",\"updateInterval\":060}\n");
+                break;
+            case "interval-string":
+                home.SetSettings("{\"autoUpdate\":true,\"channel\":\"develop\",\"updateInterval\":\"60\"}\n");
+                break;
+            case "interval-fifth-key":
+                home.SetSettings("{\"autoUpdate\":true,\"channel\":\"develop\",\"updateInterval\":60,\"x\":1}\n");
+                break;
+            case "interval-key-order":
+                home.SetSettings("{\"autoUpdate\":true,\"updateInterval\":60,\"channel\":\"develop\"}\n");
                 break;
             case "symlink":
                 string target = System.IO.Path.Combine(home.Path, "develop.json");
@@ -1302,7 +1325,7 @@ public sealed class LaunchAgentScriptTests
         {
             Assert.Equal(0, Plutil("-lint", home.UpdaterPlist).ExitCode);
             Assert.Equal(UpdaterLabel, Extract(home.UpdaterPlist, "Label"));
-            Assert.Equal("21600", Extract(home.UpdaterPlist, "StartInterval"));
+            Assert.Equal("900", Extract(home.UpdaterPlist, "StartInterval"));
             Assert.Equal("true", Extract(home.UpdaterPlist, "RunAtLoad"));
             Assert.Equal(FixedPath, Extract(home.UpdaterPlist, "EnvironmentVariables.PATH"));
             Assert.Equal(home.UpdaterLog, Extract(home.UpdaterPlist, "StandardOutPath"));
@@ -1355,6 +1378,31 @@ public sealed class LaunchAgentScriptTests
         Assert.False(File.Exists(home.UpdaterPlist));
         Assert.False(File.Exists(home.UpdaterScript));
         Assert.False(File.Exists(home.Marker));
+    }
+
+    [Theory]
+    [InlineData("install")]
+    [InlineData("install --release v1.2.3")]
+    [InlineData("uninstall")]
+    public void InstallOrUninstall_RemovesTheLastCheckStamp(string joined)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.AddRelease("1.2.3", ReleaseFault.None);
+        Assert.Equal(0, home.Run(home.ReleaseScript, "install", "--release", "v1.2.3").ExitCode);
+        string stamp = System.IO.Path.Combine(home.Support, "last-check");
+        File.WriteAllText(stamp, "1800000000\n");
+        File.SetUnixFileMode(stamp, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        string[] arguments = joined.Split(' ');
+
+        ScriptRun run = home.Run(home.ReleaseScript, arguments);
+
+        Assert.Equal(0, run.ExitCode);
+        Assert.False(File.Exists(stamp));
     }
 
     [Fact]

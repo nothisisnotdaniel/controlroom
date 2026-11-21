@@ -77,9 +77,12 @@ and its size (at most 200 MiB to download and 512 MiB unpacked), and only then r
 Run it again to update. A later plain `install` goes back to publishing from the sources.
 
 It also installs the updater. When "Install updates automatically" is on (at the foot of the Jobs page), it checks
-for a newer release about a minute after install or login, then every 6 h. While a factory job runs it never swaps
+for a newer release about a minute after install or login, then every 30 minutes. Under "Check for updates" next to
+the channel you can pick a longer interval (every hour, 2, 6 or 12 hours); it counts from the next check, with no
+reinstall. While a factory job runs it never swaps
 the server: it checks again every 15 min (up to 5 h 45 min) and installs the update once the job is done. Each check
-adds a line to `~/Library/Logs/ControlRoom/updater.log`.
+adds a line to `~/Library/Logs/ControlRoom/updater.log` (launchd starts it every 15 min, but a run that is not due
+yet ends at once and logs nothing).
 
 Every release carries its own `updater.sh`. When the updater installs a release, it also installs that copy of itself
 and rewrites its LaunchAgent plist, so updater fixes arrive without a reinstall. The new script runs from the next

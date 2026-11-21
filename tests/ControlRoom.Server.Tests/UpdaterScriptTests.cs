@@ -1661,9 +1661,20 @@ public sealed partial class UpdaterScriptTests
         /// <c>$HOME/linger</c> to <c>linger-left</c> and pops the first line of <c>bootstrap-fails-per-bootout</c> into
         /// <c>bootstrap-fails</c>. <c>bootstrap</c> fails (stderr, exit 5) while the <c>bootstrap-fails</c> counter is
         /// above 0 (counting it down), else loads the server. <c>print</c> shows the loaded server; after a bootout it
-        /// still shows it while the <c>linger-left</c> counter is above 0 (counting it down), else exits 113.</summary>
+        /// still shows it while the <c>linger-left</c> counter is above 0 (counting it down), else exits 113.
+        /// <c>print</c> of the updater's own label is logged only to <c>updater-print.log</c>: it shows
+        /// <c>runs = &lt;n&gt;</c> (one tab) from <c>$HOME/updater-runs</c>, prints <c>$HOME/updater-print</c> as it is
+        /// when that is set, and else exits 113 (like an agent launchd doesn't know).</summary>
         private const string FakeLaunchctl =
             "#!/bin/sh\n"
+            + "if [ \"$1\" = print ] && [ \"${2##*/}\" = local.controlroom.updater ]; then\n"
+            + "  printf '%s\\n' \"$*\" >> \"$HOME/updater-print.log\"\n"
+            + "  if [ -f \"$HOME/updater-print\" ]; then cat \"$HOME/updater-print\"; exit 0; fi\n"
+            + "  if [ -f \"$HOME/updater-runs\" ]; then\n"
+            + "    printf '\\tstate = running\\n\\truns = %s\\n\\tlast exit code = 0\\n' \"$(cat \"$HOME/updater-runs\")\"; exit 0\n"
+            + "  fi\n"
+            + "  exit 113\n"
+            + "fi\n"
             + "printf '%s\\n' \"$*\" >> \"$HOME/calls.log\"\n"
             + "printf 'launchctl %s\\n' \"$*\" >> \"$HOME/order.log\"\n"
             + "support=\"$HOME/Library/Application Support/ControlRoom\"\n"
@@ -1778,8 +1789,21 @@ public sealed partial class UpdaterScriptTests
             + "fi\n"
             + "exit 22\n";
 
+        /// <summary>The fake clock for <c>date +%s</c>: prints <c>$HOME/now</c> (every other call goes to the real
+        /// <c>/bin/date</c>, so the log lines keep their real UTC time) and logs each such call.</summary>
+        private const string FakeDate =
+            "#!/bin/sh\n"
+            + "if [ \"$#\" -eq 1 ] && [ \"$1\" = +%s ]; then\n"
+            + "  echo now >> \"$HOME/date.log\"\n"
+            + "  cat \"$HOME/now\"; exit 0\n"
+            + "fi\n"
+            + "exec /bin/date \"$@\"\n";
+
+        /// <summary>The fixed epoch the fake clock starts at.</summary>
+        public const long StartEpoch = 1800000000;
+
         private static readonly string[] HarnessFiles =
-            ["calls.log", "curl.log", "curl-stdin.log", "sleep.log", "lsof.log", "loaded", "redirect", "mv-fail",
+            ["updater-print.log", "updater-print", "updater-runs", "now", "date.log", "calls.log", "curl.log", "curl-stdin.log", "sleep.log", "lsof.log", "loaded", "redirect", "mv-fail",
                 "mv-fail-to", "lsof-out", "not-running", "list", "order.log", "linger", "linger-left", "bootstrap-fails",
                 "bootstrap-fails-per-bootout", "codesign.log", "codesign-exit", "codesign-fail-for", "sleep-state.log",
                 "bootstrap-updater.log", "bootout-staged.log"];
@@ -1802,6 +1826,8 @@ public sealed partial class UpdaterScriptTests
             WriteExecutable(System.IO.Path.Combine(bin, "sleep"), FakeSleep);
             WriteExecutable(System.IO.Path.Combine(bin, "mv"), FakeMv);
             WriteExecutable(System.IO.Path.Combine(bin, "lsof"), FakeLsof);
+            WriteExecutable(System.IO.Path.Combine(bin, "date"), FakeDate);
+            SetNow(StartEpoch);
             WriteExecutable(System.IO.Path.Combine(bin, "codesign"), ScriptFixtures.FakeCodesign);
             Directory.CreateDirectory(System.IO.Path.Combine(Root, "factory", "jobs"));
 
@@ -1834,6 +1860,9 @@ public sealed partial class UpdaterScriptTests
         public string Marker => System.IO.Path.Combine(Support, "installed-release");
 
         public string Settings => System.IO.Path.Combine(Support, "settings.json");
+
+        /// <summary>The updater's stamp of its last real check.</summary>
+        public string Stamp => System.IO.Path.Combine(Support, "last-check");
 
         public string Result => System.IO.Path.Combine(Support, "update-result.json");
 
@@ -1885,6 +1914,19 @@ public sealed partial class UpdaterScriptTests
         public string RunOnce(params string[] extra)
         {
             return Single(Run(DefaultPath, [.. DefaultArguments(), .. extra]));
+        }
+
+        /// <summary>Runs the updater with <c>--factory-root &lt;root&gt;</c> and then <paramref name="extra"/> and
+        /// returns the whole run (exit code, output, errors) without checking it.</summary>
+        public ScriptRun RunRaw(params string[] extra)
+        {
+            Dictionary<string, string> environment = new()
+            {
+                ["HOME"] = Path,
+                ["PATH"] = DefaultPath,
+                ["SIGNING_CERT_SHA1"] = "ffffffffffffffffffffffffffffffffffffffff",
+            };
+            return RunProcess("/bin/sh", [ScriptPath(), .. DefaultArguments(), .. extra], environment);
         }
 
         /// <summary>Like <see cref="RunOnce"/>, but returns every line it printed (each with its line break).</summary>
@@ -2034,6 +2076,54 @@ public sealed partial class UpdaterScriptTests
         {
             File.WriteAllText(System.IO.Path.Combine(Path, "codesign-exit"),
                 code.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n");
+        }
+
+        /// <summary>Forgets the calls the fakes logged so far (launchctl, curl, sleep, clock, updater prints).</summary>
+        public void ResetLogs()
+        {
+            foreach (string name in new[] { "calls.log", "order.log", "curl.log", "sleep.log", "sleep-state.log", "date.log", "updater-print.log" })
+            {
+                File.Delete(System.IO.Path.Combine(Path, name));
+            }
+        }
+
+        /// <summary>The fake clock's <c>date +%s</c> answer.</summary>
+        public void SetNow(long epoch)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "now"),
+                epoch.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n");
+        }
+
+        /// <summary>The fake <c>launchctl print</c> of the updater shows <c>runs = <paramref name="runs"/></c>.</summary>
+        public void SetUpdaterRuns(int runs)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "updater-runs"),
+                runs.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        /// <summary>The fake <c>launchctl print</c> of the updater prints exactly <paramref name="text"/>.</summary>
+        public void SetUpdaterPrint(string text)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "updater-print"), text);
+        }
+
+        /// <summary>Writes the stamp with <paramref name="content"/> (<c>0600</c> unless <paramref name="mode"/>).</summary>
+        public void SetStamp(string content, UnixFileMode mode = UnixFileMode.UserRead | UnixFileMode.UserWrite)
+        {
+            File.WriteAllText(Stamp, content);
+            File.SetUnixFileMode(Stamp, mode);
+        }
+
+        /// <summary>The updater prints of the fake <c>launchctl</c>.</summary>
+        public IReadOnlyList<string> UpdaterPrints()
+        {
+            return ReadLines("updater-print.log");
+        }
+
+        /// <summary>How many times the updater asked the fake clock for <c>date +%s</c>.</summary>
+        public int ClockReads()
+        {
+            return ReadLines("date.log").Count;
         }
 
         public void SetResult(string content)
@@ -2224,15 +2314,21 @@ public sealed partial class UpdaterScriptTests
                 .. Directory.Exists(Lock) ? [Lock] : Array.Empty<string>()];
         }
 
-        /// <summary>Every file and folder under HOME (or the one support sub folder), apart from the fakes' files,
-        /// with its mode and content hash, sorted ordinally.</summary>
-        public IReadOnlyList<string> Snapshot(string supportFolder)
+        /// <summary>Every file and folder under HOME (or the one support sub folder), apart from the fakes' files
+        /// and (unless <paramref name="withStamp"/>) the <c>last-check</c> stamp every due run writes, with its mode
+        /// and content hash, sorted ordinally.</summary>
+        public IReadOnlyList<string> Snapshot(string supportFolder, bool withStamp = false)
         {
             string start = supportFolder.Length == 0 ? Path : System.IO.Path.Combine(Support, supportFolder);
             List<string> entries = [];
             foreach (string entry in Directory.EnumerateFileSystemEntries(start, "*", SearchOption.AllDirectories))
             {
                 string relative = System.IO.Path.GetRelativePath(Path, entry);
+                if (!withStamp && entry == Stamp)
+                {
+                    continue;
+                }
+
                 if (HarnessFiles.Contains(relative) || relative == HooksFolder
                     || relative.StartsWith(HooksFolder + System.IO.Path.DirectorySeparatorChar, StringComparison.Ordinal))
                 {

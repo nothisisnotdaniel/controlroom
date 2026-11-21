@@ -3,24 +3,25 @@ using System.Text.Json;
 namespace ControlRoom.Server;
 
 /// <summary>The <c>GET /api/update</c> response; <c>latest</c>, <c>url</c> and <c>command</c> are <c>null</c> unless
-/// <c>available</c>; <c>autoUpdate</c> and <c>channel</c> are <c>null</c> when <c>settings.json</c> is
-/// refused.</summary>
+/// <c>available</c>; <c>autoUpdate</c>, <c>channel</c> and <c>updateInterval</c> are <c>null</c> when
+/// <c>settings.json</c> is refused.</summary>
 internal sealed record UpdateResponse(
     string Current, bool Available, string? Latest, string? Url, string? Command, bool? AutoUpdate = false,
-    string? Channel = UpdateChannel.Stable);
+    string? Channel = UpdateChannel.Stable, int? UpdateInterval = ControlRoom.Server.UpdateInterval.Default);
 
 /// <summary>The wanted change of a <c>POST /api/update/settings</c> body; a <c>null</c> value keeps the stored
 /// one.</summary>
-internal sealed record UpdateSettingsChange(bool? AutoUpdate, string? Channel);
+internal sealed record UpdateSettingsChange(bool? AutoUpdate, string? Channel, int? UpdateInterval);
 
 /// <summary>The update routes, behind the token gate. <c>GET /api/update</c>: the running version and, when the last
 /// check found a newer release on the current channel, its version, release page and the command that installs it
-/// (with <c>--tailnet-host</c> when <c>TailnetHost</c> is set), plus the <c>autoUpdate</c> and <c>channel</c>
-/// settings. <c>POST /api/update/settings</c> with an object of one or both of <c>autoUpdate</c> (boolean) and
-/// <c>channel</c> (<c>"stable"</c> or <c>"develop"</c>) stores them (else <c>400 {"error":"invalid"}</c>, checked
-/// before the store) and answers both values; a refused <c>settings.json</c> gives <c>500
+/// (with <c>--tailnet-host</c> when <c>TailnetHost</c> is set), plus the <c>autoUpdate</c>, <c>channel</c> and
+/// <c>updateInterval</c> settings. <c>POST /api/update/settings</c> with an object of one or more of
+/// <c>autoUpdate</c> (boolean), <c>channel</c> (<c>"stable"</c> or <c>"develop"</c>) and <c>updateInterval</c> (an
+/// integer among the <see cref="UpdateInterval"/> choices) stores them (else <c>400 {"error":"invalid"}</c>, checked
+/// before the store) and answers the three values; a refused <c>settings.json</c> gives <c>500
 /// {"error":"settings_store"}</c>. A changed channel starts one update check without waiting for it (skipped while
-/// one runs). Both <c>no-store</c>.</summary>
+/// one runs); an interval change starts none. Both <c>no-store</c>.</summary>
 internal static class UpdateEndpoint
 {
     public const string Route = "/api/update";
@@ -50,7 +51,7 @@ internal static class UpdateEndpoint
             // A refused file checks on stable (UpdateChecker.Channel), so only a stable result is shown then.
             string channel = stored?.Channel ?? UpdateChannel.Stable;
             return Results.Json(Describe(state.Latest, running.Value, tailnetHost, channel)
-                with { AutoUpdate = stored?.AutoUpdate, Channel = stored?.Channel });
+                with { AutoUpdate = stored?.AutoUpdate, Channel = stored?.Channel, UpdateInterval = stored?.UpdateInterval });
         });
 
         app.MapPost(SettingsRoute, async (UpdateSettingsStore settings, UpdateChecker checker, HttpContext context) =>
@@ -67,7 +68,7 @@ internal static class UpdateEndpoint
             bool channelChanged;
             try
             {
-                stored = settings.Set(wanted.AutoUpdate, wanted.Channel, out channelChanged);
+                stored = settings.Set(wanted.AutoUpdate, wanted.Channel, wanted.UpdateInterval, out channelChanged);
             }
             catch (PrivateFileException)
             {
@@ -81,7 +82,10 @@ internal static class UpdateEndpoint
                 _ = Task.Run(checker.CheckSafely);
             }
 
-            return Results.Json(new { autoUpdate = stored.AutoUpdate, channel = stored.Channel });
+            return Results.Json(new
+            {
+                autoUpdate = stored.AutoUpdate, channel = stored.Channel, updateInterval = stored.UpdateInterval,
+            });
         });
     }
 
@@ -100,9 +104,9 @@ internal static class UpdateEndpoint
         return new UpdateResponse(current, true, latest.Version.ToString(), latest.Url, command);
     }
 
-    /// <summary>The change when the body is an object with one or both of <c>autoUpdate</c> (a boolean) and
-    /// <c>channel</c> (<c>"stable"</c> or <c>"develop"</c>), each at most once and nothing else; else
-    /// <c>null</c>.</summary>
+    /// <summary>The change when the body is an object with one or more of <c>autoUpdate</c> (a boolean),
+    /// <c>channel</c> (<c>"stable"</c> or <c>"develop"</c>) and <c>updateInterval</c> (an integer among the
+    /// <see cref="UpdateInterval"/> choices), each at most once and nothing else; else <c>null</c>.</summary>
     private static UpdateSettingsChange? ParseSettings(byte[] body)
     {
         try
@@ -117,6 +121,7 @@ internal static class UpdateEndpoint
             string? channel = null;
             bool seenAutoUpdate = false;
             bool seenChannel = false;
+            int? updateInterval = null;
             foreach (JsonProperty property in document.RootElement.EnumerateObject())
             {
                 if (property.NameEquals("autoUpdate") && !seenAutoUpdate
@@ -131,13 +136,21 @@ internal static class UpdateEndpoint
                     seenChannel = true;
                     channel = known;
                 }
+                else if (property.NameEquals("updateInterval") && updateInterval is null
+                         && property.Value.ValueKind == JsonValueKind.Number
+                         && property.Value.TryGetInt32(out int minutes) && UpdateInterval.IsChoice(minutes))
+                {
+                    updateInterval = minutes;
+                }
                 else
                 {
                     return null;
                 }
             }
 
-            return seenAutoUpdate || seenChannel ? new UpdateSettingsChange(autoUpdate, channel) : null;
+            return seenAutoUpdate || seenChannel || updateInterval is not null
+                ? new UpdateSettingsChange(autoUpdate, channel, updateInterval)
+                : null;
         }
         catch (JsonException)
         {

@@ -110,10 +110,12 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     created `0700` when missing) and a symlinked `worktrees/<project>` is refused.
   - Update files live in the same folder, with the same rules (`PrivateFolder`): `settings.json` is exactly
     `{"autoUpdate":B}` (channel `stable`), `{"autoUpdate":B,"channel":"stable"}` or
-    `{"autoUpdate":B,"channel":"develop"}` with `B` `true` or `false` (one optional trailing line break; missing is
-    off and `stable`), written only by `POST /api/update/settings` as the three-key form plus a line break (body: one
-    or both of `autoUpdate` and `channel`, a missing one keeps its value; a channel change starts one update check
-    without waiting; a refused or invalid file gives `500 {"error":"settings_store"}` and is never overwritten). `update-result.json` is written only by `scripts/updater.sh`; the server reads it (no-follow,
+    `{"autoUpdate":B,"channel":"develop"}` (each interval 30) or `{"autoUpdate":B,"channel":"stable|develop","updateInterval":N}`
+    with `B` `true` or `false` and `N` 1-6 ASCII digits, `0` or no leading zero (a value not among the choices 30,
+    60, 120, 360, 720 minutes reads as 30) (one optional trailing line break; missing is
+    off, `stable` and 30), written only by `POST /api/update/settings` as the four-key form plus a line break (body: one
+    or more of `autoUpdate`, `channel` and `updateInterval` (an integer among the choices), a missing one keeps its
+    value; a channel change starts one update check without waiting, an interval change none; a refused or invalid file gives `500 {"error":"settings_store"}` and is never overwritten). `update-result.json` is written only by `scripts/updater.sh`; the server reads it (no-follow,
     `0600`, owned by the user, at most 4 KiB, exact schema) and never writes or deletes it.
   - The only outbound calls are Web Push POSTs to subscription endpoints, allowed only as `https`, port 443, no
     userinfo, on `*.push.apple.com`, `fcm.googleapis.com` or `updates.push.services.mozilla.com`, and the update
@@ -155,14 +157,15 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   `scripts/launch-agent.sh install --release [vX.Y.Z] [--tailnet-host <name>]` installs a GitHub release instead (latest
   when no tag, or the newest `develop_tag` build when `settings.json` holds the develop channel; no .NET SDK needed; launchd runs `server/ControlRoom.Server` directly). It also installs the
   updater (`local.controlroom.updater`, `RunAtLoad` with `--start-delay 60` so the first check is about a minute
-  after install or login, then every 6 h, and every 15 min (up to 5 h 45 min) while a factory job runs; `<support>/updater.sh`, marker `<support>/installed-release`, log
+  after install or login; `StartInterval` 900, so launchd starts it every 15 min and each run goes on only when due
+  (see `scripts/updater.sh`: by default every 30 min, or the interval chosen in the app), and every 15 min (up to 5 h 45 min) while a factory job runs; `<support>/updater.sh`, marker `<support>/installed-release`, log
   `~/Library/Logs/ControlRoom/updater.log`), which installs newer releases (by SemVer; on `stable` prereleases are
   ignored, on `develop` the newest `vX.Y.Z` or `vX.Y.Z-develop.N`) only while `settings.json` says on and
   no job is in `spike|spec|build|review`, and with each one also its own `updater.sh` and plist; a plain `install` and
   `uninstall` remove it (with `updater.sh.previous` and `updater.plist.previous`).
   `dotnet run --project src/ControlRoom.Server -- version` prints `ControlRoom <version>` (`dev` without `-p:Version`);
   `GET /api/version` returns `{"version":"…"}`; `GET /api/update` returns `{current, available, latest, url,
-  command, autoUpdate, channel}` from the last update check (`dev` never checks) and `settings.json` (`null` when refused).
+  command, autoUpdate, channel, updateInterval}` from the last update check (`dev` never checks) and `settings.json` (`null` when refused).
 - **Releases:** `.github/workflows/release.yml` runs for a merged PR from `develop` into `main` titled
   `release vX.Y.Z` (`.github/scripts/release-version.sh` checks the title and existing tags, and refuses
   `-develop`) and for every push to `develop` that changes more than `backlog.md` and `backlog/**` (a prerelease
@@ -316,7 +319,10 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `sendChange`, Drop after a confirm;
     after either succeeds the view goes `history.back()` or to `#backlogs` (#128, #135, `leaveDecidedStory`) keeping the
     notice for that route (`routeEditNotice`); Done in the story bar of a `[h]` item only (#134, `story-done-button`, group `user`, after the Category select, `action:"done"` through `sendChange` with the line looked up again at the tap, then `leaveDecidedStory`, no confirm); every committed `sendChange` refetches the Backlogs counts; hidden while a story form is open), fixed texts per error code), `board.js` (jobs board and job page: the board shows jobs only, never `[h]` tasks (the Tasks tab lists them): `needs-human` jobs go in a `section.stuck` `Stuck (n)` before the stages, left out when there are none, each card with a `Needs you` chip (`chip-human`); job page (a read-only state section between the facts and the record tabs: stage and round, review rows per round with visible values, decision chip, CI and note; a board card of a `needs-human` job with a request shows `Approve sent` or `Rework sent`; #136: every card and the job page have a times line (`card-times`/`job-times`: `Started <t> · running <d>` in `spike|spec|build|review|approve`, else `Started <t> · ended <t> · took <d>`, a missing part left out, no line without times; local time zone, `formatDuration` `< 1 min`/`N min`/`H h M min`; running spans carry `data-running-since` and `updateRunningTimes`, called by `live.js` after each check, recomputes them) and the job page an `Agents` list (name, tokens, time only when `seconds` is known)), `pollBoard` fetched by `live.js`; `fetchBoard` holds the one `/api/board` request (text, throws on error), used by `pollBoard` and `loadJobCounts`; `pollBoard` sets the Jobs tab counts from every answer it reads (`setJobCounts`) and makes them unknown when it fails; a live refresh of the job page is held back while `act.js` says the decision section is in use; the `ControlRoom <version>`
-    line at the foot of Jobs and the update banner under its heading, each asked once per page load), `live.js` (the one `setInterval`: asks `/api/changes` every 5 s while visible, no token view and nothing
+    line at the foot of Jobs and the update banner under its heading, each asked once per page load; under the version line the
+    "Install updates automatically" switch, the `Update channel` select and the `Check for updates` interval select
+    (`renderUpdateInterval`, the five fixed `Every …` options, only where the channel select shows; a change POSTs only
+    `updateInterval` and on any error puts the saved value back with the fixed `intervalFailed` text)), `live.js` (the one `setInterval`: asks `/api/changes` every 5 s while visible, no token view and nothing
     pending, and at once on becoming visible; refetches only the board, the changed backlog sections (kept while a form
     is open or focus is inside) and the open story (in place, never while Edit story or Add note is open); a failed check shows
     the fixed `Connection lost. Reconnecting…` notice under the header, or in the `board-status` line on the board;
@@ -383,13 +389,19 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `controlroom-<ver>-osx-arm64/`, at most 10000 entries and 512 MiB of unpacked content (counted through a pipe
     before extraction), checked again after extraction, then `verify_signature` when `signing-cert.sha1` pins the
     signing certificate. Without a tag it uses `develop_tag` when `<support>/settings.json` is a regular file (not a
-    symlink) of at most 64 bytes holding `{"autoUpdate":true|false,"channel":"develop"}` plus at most one line break,
+    symlink) of at most 64 bytes holding `{"autoUpdate":true|false,"channel":"develop"}` or the same with
+    `,"updateInterval":N` (`N` as in `settings.json`) plus at most one line break,
     else `latest_tag`. `remove_updater` also removes `updater.sh.previous` and `updater.plist.previous` (a symlink at
-    either is refused by `install` and `uninstall`). The updater plist comes from the shared `updater_plist`. Not
+    either is refused by `install` and `uninstall`) and the updater's `last-check` stamp. The updater plist comes from the shared `updater_plist`. Not
     part of the server.
   - `scripts/updater.sh`: POSIX `sh` updater run by launchd (`--factory-root <root> [--start-delay <1-600>]`; any
     other argument list ends `job_running`; the delay is one `sleep` before anything is read, skipped without `sleep`
-    on `PATH`). While a job runs it logs `<UTC> waiting <installed>`, removes its lock, waits `sleep 900` (in the
+    on `PATH`). Then the due check: a run is due when it is the first since the agent loaded (`launchctl print
+    gui/<uid>/local.controlroom.updater` shows `runs = 1` at one tab; a failed print or no `runs` line counts as due),
+    when `<support>/last-check` is missing, not a private `0600` regular file of the user (at most 16 bytes), not digits plus
+    one line break or in the future, or when at least the interval from `settings.json` (the server's rules; refused or
+    invalid is 30 min) minus 60 s has passed; a run that is not due exits 0 at once (no log line, lock, result or network
+    call); a due one writes `date +%s` to `last-check` (`write_private`; an unreadable clock writes none) and goes on. While a job runs it logs `<UTC> waiting <installed>`, removes its lock, waits `sleep 900` (in the
     background with `wait`, so `bootout`'s TERM ends it at once) and repeats steps 1-4, at most 23 times, then ends
     `job_running` (no wait without `sleep` on `PATH`). It prints one final log line
     `<UTC> <word>[ <tags>]` (`off`, `not_release`, `busy`, `job_running`, `current`, `latest_failed`,
@@ -426,8 +438,9 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   - `tests/ControlRoom.Server.Tests/`: one test class per unit or concern (`LaunchAgentScriptTests` runs the script with fake
     `launchctl`/`dotnet`/`curl`/`codesign` in a temp `HOME`, runs every `install --release` from its own copy of the
     scripts (`ScriptFixtures.BuildReleaseTree`, so the real `signing-cert.sha1` is never read) and builds release
-    tarballs with `/usr/bin/tar`; `UpdaterScriptTests` (with its part `UpdaterSelfUpdateTests.cs`) runs `updater.sh` with fake
-    `launchctl`/`curl`/`sleep`/`mv`/`codesign`; `ScriptFixtures.UpdaterPlist` is the expected updater plist for both; `ScriptFixtures` holds the fake `codesign` and a `PATH` folder without it;
+    tarballs with `/usr/bin/tar`; `UpdaterScriptTests` (with its parts `UpdaterSelfUpdateTests.cs` and `UpdaterIntervalTests.cs`) runs `updater.sh` with fake
+    `launchctl` (its `print` of the updater label answers `runs = N` and is logged apart)/`curl`/`sleep`/`mv`/`codesign` and a fake `date` (`+%s`
+    prints a fixed epoch from a test file, every other call goes to `/bin/date`); `ScriptFixtures.UpdaterPlist` is the expected updater plist for both; `ScriptFixtures` holds the fake `codesign` and a `PATH` folder without it;
     `ReleaseWorkflowTests` reads `release.yml` as text and runs `.github/scripts/signing-cert.sh`;
     `SigningKeychainScriptTests` runs `signing-keychain.sh` with a fake `security` first on `PATH`); `TempFactoryRoot` (`InitGit`, `AddBareRemote`
     and `Git` for a real local repo), `TempTokenFolder` and `ServerFactory` (own temp token file; clients send `Host: 127.0.0.1:8100`; optional tailnet name;

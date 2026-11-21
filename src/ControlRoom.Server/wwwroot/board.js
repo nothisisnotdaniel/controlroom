@@ -31,6 +31,13 @@ const BoardTexts = {
   channelStable: "Stable",
   channelDevelop: "Develop (prereleases)",
   channelFailed: "Can't change the update channel. Try again.",
+  updateInterval: "Check for updates",
+  interval30: "Every 30 minutes",
+  interval60: "Every hour",
+  interval120: "Every 2 hours",
+  interval360: "Every 6 hours",
+  interval720: "Every 12 hours",
+  intervalFailed: "Can't change the update interval. Try again.",
   jobState: "Job state",
   jobRound: " · round ",
   specCheck: "spec check",
@@ -638,6 +645,9 @@ async function loadUpdate() {
     renderAutoUpdate(asText(data && data.current), data && typeof data.autoUpdate === "boolean" ? data.autoUpdate : null);
     renderUpdateChannel(asText(data && data.current),
       data && (data.channel === "stable" || data.channel === "develop") ? data.channel : null);
+    renderUpdateInterval(asText(data && data.current),
+      data && (data.channel === "stable" || data.channel === "develop") ? data.channel : null,
+      data && UpdateIntervals.includes(data.updateInterval) ? data.updateInterval : null);
     const latest = asText(data && data.latest);
     const command = asText(data && data.command);
     if (!data || data.available !== true || latest === "" || command === "") {
@@ -789,6 +799,67 @@ async function setUpdateChannel(select, note) {
   } catch {
     select.value = saved;
     note.textContent = BoardTexts.channelFailed;
+    note.hidden = false;
+  } finally {
+    select.disabled = false;
+  }
+}
+
+// The update interval choices in minutes, in the order the select shows them.
+const UpdateIntervals = [30, 60, 120, 360, 720];
+
+// The update interval choice after the channel select, in the same places only: it adds nothing on dev, when the
+// channel is null (a refused settings file) or when the interval is not one of the choices.
+function renderUpdateInterval(current, channel, interval) {
+  const box = document.getElementById("auto-update");
+  if (current === "" || current === "dev" || channel === null || interval === null || box.hidden) {
+    return;
+  }
+  const label = element("label", "update-channel update-interval");
+  const select = document.createElement("select");
+  select.className = "update-channel-select update-interval-select";
+  const texts = [BoardTexts.interval30, BoardTexts.interval60, BoardTexts.interval120, BoardTexts.interval360,
+    BoardTexts.interval720];
+  UpdateIntervals.forEach((minutes, index) => {
+    const option = element("option", null, texts[index]);
+    option.value = String(minutes);
+    select.append(option);
+  });
+  select.value = String(interval);
+  select.dataset.saved = String(interval);
+  const note = element("p", "auto-update-note");
+  note.setAttribute("role", "status");
+  note.setAttribute("aria-live", "polite");
+  note.hidden = true;
+  select.addEventListener("change", () => setUpdateInterval(select, note));
+  label.append(element("span", null, BoardTexts.updateInterval), select);
+  box.append(label, note);
+}
+
+// Sends only the chosen interval; on any error the choice goes back to the stored one and a fixed text is shown.
+async function setUpdateInterval(select, note) {
+  const wanted = Number(select.value);
+  const saved = select.dataset.saved;
+  select.disabled = true;
+  note.hidden = true;
+  try {
+    const response = await authFetch(AutoUpdateRoute, {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updateInterval: wanted }),
+    });
+    if (!response.ok) {
+      throw new Error("status");
+    }
+    const data = await response.json();
+    if (!data || data.updateInterval !== wanted) {
+      throw new Error("data");
+    }
+    select.dataset.saved = String(wanted);
+  } catch {
+    select.value = saved;
+    note.textContent = BoardTexts.intervalFailed;
     note.hidden = false;
   } finally {
     select.disabled = false;
