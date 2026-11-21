@@ -509,6 +509,16 @@ function boardViewsVisible() {
   return !document.getElementById("board").hidden || !document.getElementById("job").hidden;
 }
 
+// The board answer as text; throws on a network error or an error status. The one /api/board request, used by
+// pollBoard and by the job counts on the Jobs tab (counts.js).
+async function fetchBoard() {
+  const response = await authFetch("/api/board", { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error("status");
+  }
+  return response.text();
+}
+
 // Fetches the board (driven by live.js when jobs or a backlog changed, and when the board or a job page is shown).
 // Returns true when the board was fetched, false when it was skipped or failed.
 async function pollBoard() {
@@ -520,16 +530,15 @@ async function pollBoard() {
     let text;
     let data;
     try {
-      const response = await authFetch("/api/board", { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error("status");
-      }
-      text = await response.text();
+      text = await fetchBoard();
       data = JSON.parse(text);
     } catch {
+      setJobCounts(null);
       setBoardStatus(false);
       return false;
     }
+    // The counts on the Jobs tab follow every answer read, over all projects (counts.js).
+    setJobCounts(countJobs(data && data.jobs));
     setBoardStatus(true);
     loadVersion();
     loadUpdate();

@@ -2,7 +2,7 @@
 
 // Live updates: one timer asks /api/changes (metadata fingerprints) every PollInterval while the page is visible,
 // and only what changed is fetched again: the board (pollBoard in board.js), the backlog sections of changed
-// projects, the open story (app.js), the counts on the Backlogs tab (counts.js), the current search (search.js),
+// projects, the open story (app.js), the counts on the Backlogs and Jobs tabs (counts.js), the current search (search.js),
 // the history (history.js), the health view (doctor.js) and the project status lines (status.js) while shown. A
 // failed check shows one fixed connection notice. Loaded after status.js and before app.js; the functions of the
 // other scripts are only called at run time. Fingerprints are compared, never shown; only fixed texts are rendered,
@@ -26,6 +26,8 @@ let boardStale = false;
 let jobStale = false;
 // Any project's backlog changed: the [h] and [?] counts on the Backlogs tab are fetched again.
 let countsStale = false;
+// The jobs changed: the running and blocked counts on the Jobs tab (counts.js) are fetched again, on every view.
+let jobCountsStale = false;
 // The jobs changed: the history (history.js) is fetched again while it is shown; showing it fetches it anyway.
 let historyStale = false;
 // The jobs, a backlog or the story files changed: the health view (doctor.js) is fetched again while it is shown.
@@ -142,6 +144,7 @@ function noteChanges(next, recovered) {
     boardStale = true;
     jobStale = true;
     countsStale = true;
+    jobCountsStale = true;
     for (const name of names) {
       staleBacklogs.add(name);
       staleStories.add(name);
@@ -154,6 +157,7 @@ function noteChanges(next, recovered) {
   }
   if (previous.jobs !== next.jobs) {
     boardStale = true;
+    jobCountsStale = true;
   }
   for (const name of names) {
     const before = previous.projects.get(name);
@@ -204,6 +208,8 @@ async function refreshShownViews() {
     if (boardStale || document.getElementById("board-status").classList.contains("error")) {
       if (await pollBoard()) {
         boardStale = false;
+        // pollBoard has just set the Jobs tab counts from the same answer, so they need no fetch of their own.
+        jobCountsStale = false;
       }
     } else {
       setBoardStatus(true);
@@ -224,6 +230,18 @@ async function refreshShownViews() {
   await refreshStaleDoctor();
   await refreshStaleStatus();
   await refreshStaleCounts();
+  await refreshStaleJobCounts();
+}
+
+// The Jobs tab counts follow the jobs fingerprint on every view; a failed fetch is tried again on the next check.
+async function refreshStaleJobCounts() {
+  if (!jobCountsStale) {
+    return;
+  }
+  jobCountsStale = false;
+  if (!(await loadJobCounts())) {
+    jobCountsStale = true;
+  }
 }
 
 // The counts follow every backlog change; a failed fetch is tried again on the next check.

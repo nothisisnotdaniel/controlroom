@@ -60,6 +60,11 @@
   --count-tasks-fg: #ffffff;
   --count-approval-bg: #c2410c;
   --count-approval-fg: #ffffff;
+  /* The two counts on the Jobs tab: running jobs and jobs blocked on the user (needs-human, red). */
+  --count-running-bg: #0f766e;
+  --count-running-fg: #ffffff;
+  --count-blocked-bg: #991b1b;
+  --count-blocked-fg: #ffffff;
   /* The bottom tab bar without the home indicator inset; at least the 44px tap target. */
   --tab-bar-height: 56px;
 }
@@ -125,6 +130,10 @@
     --count-tasks-fg: #1e1036;
     --count-approval-bg: #fdba74;
     --count-approval-fg: #3b1505;
+    --count-running-bg: #5eead4;
+    --count-running-fg: #042f2e;
+    --count-blocked-bg: #f87171;
+    --count-blocked-fg: #450a0a;
   }
 }
 
@@ -1728,6 +1737,20 @@ body:has(#edit-notice:not([hidden])) {
   left: calc(50% + 6px);
   background: var(--count-approval-bg);
   color: var(--count-approval-fg);
+}
+
+/* The Jobs tab's two counts (#138) in the same places: running jobs on the icon's left in teal, jobs blocked on the
+   user (needs-human) on its right in red. */
+.nav-count-running {
+  right: calc(50% + 6px);
+  background: var(--count-running-bg);
+  color: var(--count-running-fg);
+}
+
+.nav-count-blocked {
+  left: calc(50% + 6px);
+  background: var(--count-blocked-bg);
+  color: var(--count-blocked-fg);
 }
 
 /* Search: at the top of the Backlogs (#133), a labelled field and three filters above one card list of results; long
