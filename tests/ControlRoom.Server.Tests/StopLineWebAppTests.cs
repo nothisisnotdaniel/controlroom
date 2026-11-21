@@ -220,6 +220,9 @@ public sealed class StopLineWebAppTests
         string dark = Between(css, "@media (prefers-color-scheme: dark) {", "\n}\n");
 
         Assert.Contains("border-top: 2px dashed var(--waiting-fg);", divider, StringComparison.Ordinal);
+        // The rule under the divider skips the drop indicator, which keeps its accent line next to a last-row divider.
+        Assert.Contains("\n.lines li.stop-line + li:not(.drop-indicator) {", css, StringComparison.Ordinal);
+        Assert.DoesNotContain("\n.lines li.stop-line + li {", css, StringComparison.Ordinal);
         Assert.Contains("background: var(--waiting-bg);", label, StringComparison.Ordinal);
         Assert.Contains("color: var(--waiting-fg);", label, StringComparison.Ordinal);
         Assert.Contains("background: var(--waiting-bg);", next, StringComparison.Ordinal);

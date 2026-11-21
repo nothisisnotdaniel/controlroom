@@ -554,7 +554,8 @@ main {
   border-top: 2px dashed var(--waiting-fg);
 }
 
-.lines li.stop-line + li {
+/* Not the drop indicator: a drop below a last-row divider must still show the accent drop line. */
+.lines li.stop-line + li:not(.drop-indicator) {
   border-top: 2px dashed var(--waiting-fg);
 }
 
