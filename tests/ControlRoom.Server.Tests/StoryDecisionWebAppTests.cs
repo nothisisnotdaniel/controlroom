@@ -122,7 +122,7 @@ public sealed partial class StoryDecisionWebAppTests
         string decide = Between(edit, "async function decideStory(target, number, action) {", "\n}\n");
 
         Assert.Contains(
-            "\"#story .edit-story-button, #story .add-note-button, #story .story-approve-button, #story .story-drop-button\")",
+            "\"#story .edit-story-button, #story .add-note-button, #story .story-category, #story .story-approve-button, \"\n    + \"#story .story-drop-button\")",
             edit, StringComparison.Ordinal);
         Assert.Contains("const hidden = storyFormOpen();\n  approve.hidden = hidden;\n  drop.hidden = hidden;", buttons,
             StringComparison.Ordinal);

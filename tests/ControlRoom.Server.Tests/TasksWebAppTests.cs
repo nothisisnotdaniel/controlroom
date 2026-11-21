@@ -205,7 +205,7 @@ public sealed partial class TasksWebAppTests
     {
         string js = await Fetch("/sw.js");
 
-        Assert.Contains("const CacheVersion = \"v17\";", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v18\";", js, StringComparison.Ordinal);
         Assert.Contains("  \"/inbox.js\",\n  \"/tasks.js\",\n  \"/search.js\",\n  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/tasks", js, StringComparison.Ordinal);
         Assert.Contains("if (url.pathname.startsWith(\"/api/\") || url.pathname === \"/health\") {\n    return false;", js,

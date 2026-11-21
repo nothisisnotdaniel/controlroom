@@ -5,23 +5,24 @@ namespace ControlRoom.Server;
 
 /// <summary>One item in the <c>GET /api/search</c> response. <c>Mark</c> is <c>open</c>, <c>approval</c>,
 /// <c>task</c> or <c>done</c>; <c>Story</c> says whether the line links a numbered story; <c>Match</c> says how the
-/// item was found: <c>number</c>, <c>title</c>, <c>story</c> or <c>filter</c>. No story text, path or version.</summary>
+/// item was found: <c>number</c>, <c>title</c>, <c>story</c> or <c>filter</c>; <c>Category</c> is the story's
+/// category (<see cref="StoryCategory"/>) or <c>null</c>. No story text, path or version.</summary>
 internal sealed record SearchItem(
-    string Project, int? Number, string Mark, string Title, string Rest, bool Story, string Match);
+    string Project, int? Number, string Mark, string Title, string Rest, bool Story, string Match, string? Category);
 
 /// <summary>The <c>GET /api/search</c> response: at most <see cref="SearchEndpoint.MaxItems"/> items, the full
 /// count, every discovered project name and the names of the projects whose <c>backlog.md</c> can't be read.</summary>
 internal sealed record SearchResponse(
     IReadOnlyList<SearchItem> Items, int Total, IReadOnlyList<string> Projects, IReadOnlyList<string> Unreadable);
 
-/// <summary>The checked request: the trimmed query, and the mark and project filters (<c>null</c> when not
+/// <summary>The checked request: the trimmed query, and the mark, project and category filters (<c>null</c> when not
 /// set).</summary>
-internal sealed record SearchQuery(string Text, string? Mark, string? Project);
+internal sealed record SearchQuery(string Text, string? Mark, string? Project, string? Category = null);
 
-/// <summary><c>GET /api/search?q=&amp;mark=&amp;project=</c>: finds backlog items across every discovered project by
+/// <summary><c>GET /api/search?q=&amp;mark=&amp;project=&amp;category=</c>: finds backlog items across every discovered project by
 /// number (<c>#N</c>, <c>Name#N</c>), by words in the title or rest, or else by words in the story (read only
 /// through <see cref="StoryReader.Read"/>, and only for an item that passes the filters and did not match on its
-/// title). Read-only; <c>q</c> is only compared as text, never used as a path, pattern or log value.</summary>
+/// title, or for its category: at most once per item). Read-only; <c>q</c> is only compared as text, never used as a path, pattern or log value.</summary>
 internal static partial class SearchEndpoint
 {
     public const string Route = "/api/search";
@@ -64,9 +65,9 @@ internal static partial class SearchEndpoint
         });
     }
 
-    /// <summary>The checked query, or <c>null</c> for a repeated parameter, an unknown mark, a project that is not
-    /// a discovered name or a <c>q</c> over <see cref="MaxQueryLength"/> characters. An empty <c>mark</c> or
-    /// <c>project</c> means no filter.</summary>
+    /// <summary>The checked query, or <c>null</c> for a repeated parameter, an unknown mark or category, a project
+    /// that is not a discovered name or a <c>q</c> over <see cref="MaxQueryLength"/> characters. An empty
+    /// <c>mark</c>, <c>project</c> or <c>category</c> means no filter.</summary>
     public static SearchQuery? Check(IQueryCollection query, IReadOnlyList<ProjectFolder> projects)
     {
         foreach (KeyValuePair<string, StringValues> pair in query)
@@ -96,7 +97,13 @@ internal static partial class SearchEndpoint
             return null;
         }
 
-        return new SearchQuery(text.Trim(), mark, project);
+        string? category = Optional(query, "category");
+        if (category is not null && !StoryCategory.IsName(category))
+        {
+            return null;
+        }
+
+        return new SearchQuery(text.Trim(), mark, project, category);
     }
 
     public static SearchResponse Build(IReadOnlyList<ProjectFolder> projects, SearchQuery query)
@@ -107,7 +114,7 @@ internal static partial class SearchEndpoint
         List<SearchItem> stories = [];
         List<SearchItem> filtered = [];
 
-        bool hasFilter = query.Mark is not null || query.Project is not null;
+        bool hasFilter = query.Mark is not null || query.Project is not null || query.Category is not null;
         bool empty = query.Text.Length == 0;
         NumberQuery? number = empty ? null : ParseNumber(query.Text);
         // A repeated word (ignoring case) changes no result, so it is scanned only once.
@@ -142,24 +149,32 @@ internal static partial class SearchEndpoint
                     continue;
                 }
 
+                // The story is read at most once per item: for the category filter, the story match and the item's
+                // category alike.
+                StoryText story = new(project, entry);
+                if (query.Category is not null && !string.Equals(story.Category, query.Category, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
                 if (empty)
                 {
-                    filtered.Add(ToItem(project, entry, mark, MatchFilter));
+                    filtered.Add(ToItem(project, entry, mark, MatchFilter, story.Category));
                 }
                 else if (number is not null)
                 {
                     if (entry.Number == number.Number)
                     {
-                        numbers.Add(ToItem(project, entry, mark, MatchNumber));
+                        numbers.Add(ToItem(project, entry, mark, MatchNumber, story.Category));
                     }
                 }
                 else if (words.All(word => Contains(entry.Title, word) || Contains(entry.Rest, word)))
                 {
-                    titles.Add(ToItem(project, entry, mark, MatchTitle));
+                    titles.Add(ToItem(project, entry, mark, MatchTitle, story.Category));
                 }
-                else if (StoryMatches(project, entry, words))
+                else if (StoryMatches(story, words))
                 {
-                    stories.Add(ToItem(project, entry, mark, MatchStory));
+                    stories.Add(ToItem(project, entry, mark, MatchStory, story.Category));
                 }
             }
         }
@@ -171,14 +186,9 @@ internal static partial class SearchEndpoint
 
     // Only a numbered line with a story link is read, and only through StoryReader (fenced to backlog/, no-follow,
     // 1 MiB cap); a refused story matches nothing.
-    private static bool StoryMatches(ProjectFolder project, BacklogEntry entry, string[] words)
+    private static bool StoryMatches(StoryText story, string[] words)
     {
-        if (entry.Number is null || entry.Story is null)
-        {
-            return false;
-        }
-
-        string? text = StoryReader.Read(project, entry);
+        string? text = story.Text;
         return text is not null && words.All(word => Contains(text, word));
     }
 
@@ -187,7 +197,8 @@ internal static partial class SearchEndpoint
         return text.Contains(word, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static SearchItem ToItem(ProjectFolder project, BacklogEntry entry, string mark, string match)
+    private static SearchItem ToItem(
+        ProjectFolder project, BacklogEntry entry, string mark, string match, string? category)
     {
         return new SearchItem(
             project.Name,
@@ -196,7 +207,8 @@ internal static partial class SearchEndpoint
             entry.Title,
             entry.Rest,
             entry.Number is not null && entry.Story is not null,
-            match);
+            match,
+            category);
     }
 
     private static string? Optional(IQueryCollection query, string name)
@@ -225,6 +237,41 @@ internal static partial class SearchEndpoint
     }
 
     private sealed record NumberQuery(string? Project, int Number);
+
+    /// <summary>One item's story, read on first use only (a numbered line with a story link, through
+    /// <see cref="StoryReader.Read"/>), then kept for the rest of the item's checks.</summary>
+    private sealed class StoryText
+    {
+        private readonly ProjectFolder project;
+
+        private readonly BacklogEntry entry;
+
+        private bool read;
+
+        private string? text;
+
+        public StoryText(ProjectFolder project, BacklogEntry entry)
+        {
+            this.project = project;
+            this.entry = entry;
+        }
+
+        public string? Text
+        {
+            get
+            {
+                if (!read)
+                {
+                    read = true;
+                    text = entry.Number is null || entry.Story is null ? null : StoryReader.Read(project, entry);
+                }
+
+                return text;
+            }
+        }
+
+        public string? Category => StoryCategory.Parse(Text);
+    }
 
     [GeneratedRegex(@"\A[ \t]*(?<name>[^\s#]*)[ \t]*#[ \t]*(?<number>[0-9]{1,9})[ \t]*\z", RegexOptions.CultureInvariant)]
     private static partial Regex NumberPattern();

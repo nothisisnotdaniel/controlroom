@@ -78,7 +78,7 @@ public sealed class SearchApiTests
         foreach (JsonElement item in body.GetProperty("items").EnumerateArray())
         {
             Assert.Equal(
-                ["project", "number", "mark", "title", "rest", "story", "match"],
+                ["project", "number", "mark", "title", "rest", "story", "match", "category"],
                 item.EnumerateObject().Select(p => p.Name).ToArray());
         }
 

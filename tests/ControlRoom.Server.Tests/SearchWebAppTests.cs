@@ -84,7 +84,7 @@ public sealed partial class SearchWebAppTests
         string js = await Fetch("/search.js");
 
         Assert.Contains("const SearchApi = \"/api/search\";", js, StringComparison.Ordinal);
-        Assert.Contains("await authFetch(searchUrl(text, mark, project), { cache: \"no-store\" });", js,
+        Assert.Contains("await authFetch(searchUrl(text, mark, project, category), { cache: \"no-store\" });", js,
             StringComparison.Ordinal);
         Assert.Single(AuthFetchCall().Matches(js));
         Assert.DoesNotContain(" fetch(", js, StringComparison.Ordinal);
@@ -96,9 +96,9 @@ public sealed partial class SearchWebAppTests
             StringComparison.Ordinal);
         Assert.Contains("hint: \"Type a number, title or word.\",", js, StringComparison.Ordinal);
         Assert.Contains(
-            "if (text === \"\" && mark === \"\" && project === \"\") {\n    showSearchStatus(\"\");\n    showSearchResults([element(\"p\", \"empty\", SearchTexts.hint)]);\n    return true;\n  }",
+            "if (text === \"\" && mark === \"\" && project === \"\" && category === \"\") {\n    showSearchStatus(\"\");\n    showSearchResults([element(\"p\", \"empty\", SearchTexts.hint)]);\n    return true;\n  }",
             js, StringComparison.Ordinal);
-        int empty = js.IndexOf("if (text === \"\" && mark === \"\" && project === \"\") {", StringComparison.Ordinal);
+        int empty = js.IndexOf("if (text === \"\" && mark === \"\" && project === \"\" && category === \"\") {", StringComparison.Ordinal);
         int fetch = js.IndexOf("await authFetch(", StringComparison.Ordinal);
         Assert.True(empty >= 0 && empty < fetch);
         Assert.DoesNotContain("setTimeout", js, StringComparison.Ordinal);
@@ -201,7 +201,7 @@ public sealed partial class SearchWebAppTests
     {
         string js = await Fetch("/sw.js");
 
-        Assert.Contains("const CacheVersion = \"v17\";", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v18\";", js, StringComparison.Ordinal);
         Assert.Contains("  \"/tasks.js\",\n  \"/search.js\",\n  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/search", js, StringComparison.Ordinal);
         Assert.Contains("if (url.pathname.startsWith(\"/api/\") || url.pathname === \"/health\") {\n    return false;", js,

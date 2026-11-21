@@ -40,7 +40,7 @@ public sealed class StoryApiTests
         Assert.True(response.Headers.CacheControl?.NoStore);
         using JsonDocument json = JsonDocument.Parse(body);
         Assert.Equal(
-            ["project", "number", "title", "blocks", "markdown", "storyVersion"],
+            ["project", "number", "title", "blocks", "markdown", "storyVersion", "category"],
             json.RootElement.EnumerateObject().Select(property => property.Name));
         Assert.Equal("Alpha", json.RootElement.GetProperty("project").GetString());
         Assert.Equal(4, json.RootElement.GetProperty("number").GetInt32());

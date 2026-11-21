@@ -29,6 +29,24 @@
   --chart-3: #7e22ce;
   --chart-4: #0e7490;
   --chart-5: #a16207;
+  --category-feature-bg: #dbeafe;
+  --category-feature-fg: #1e3a8a;
+  --category-bug-bg: #fde2e2;
+  --category-bug-fg: #8b1a1a;
+  --category-security-bg: #ede3fb;
+  --category-security-fg: #5b2196;
+  --category-ux-bg: #dcf5e6;
+  --category-ux-fg: #14532d;
+  --category-ui-bg: #fce7f3;
+  --category-ui-fg: #831843;
+  --category-tidy-up-bg: #fef3c7;
+  --category-tidy-up-fg: #713f12;
+  --category-test-bg: #cffafe;
+  --category-test-fg: #164e63;
+  --category-ci-bg: #e0e7ff;
+  --category-ci-fg: #312e81;
+  --category-docs-bg: #e7e5e4;
+  --category-docs-fg: #44403c;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -62,6 +80,24 @@
     --chart-3: #c99bff;
     --chart-4: #4fd1e0;
     --chart-5: #f5c84c;
+    --category-feature-bg: #1e3a5f;
+    --category-feature-fg: #bfdbfe;
+    --category-bug-bg: #4c1d1d;
+    --category-bug-fg: #fecaca;
+    --category-security-bg: #3b1f5c;
+    --category-security-fg: #e9d5ff;
+    --category-ux-bg: #163a24;
+    --category-ux-fg: #bbf7d0;
+    --category-ui-bg: #4a1a35;
+    --category-ui-fg: #fbcfe8;
+    --category-tidy-up-bg: #43330b;
+    --category-tidy-up-fg: #fde68a;
+    --category-test-bg: #0f3a40;
+    --category-test-fg: #a5f3fc;
+    --category-ci-bg: #262a5c;
+    --category-ci-fg: #c7d2fe;
+    --category-docs-bg: #33302d;
+    --category-docs-fg: #e7e5e4;
   }
 }
 
@@ -304,6 +340,70 @@ main {
 .badge-waiting {
   background: var(--waiting-bg);
   color: var(--waiting-fg);
+}
+
+/* A story's category (job.py's Category: line). Each name has its own colour pair in light and dark mode; the chip
+   wraps below the title on a narrow row instead of pushing it off. */
+.category-chip {
+  display: inline-block;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.4;
+  padding: 0 6px;
+  border-radius: 6px;
+  margin: 0 0 0 6px;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
+.story-title + .category-chip {
+  margin: -4px 0 12px;
+}
+
+.category-feature {
+  background: var(--category-feature-bg);
+  color: var(--category-feature-fg);
+}
+
+.category-bug {
+  background: var(--category-bug-bg);
+  color: var(--category-bug-fg);
+}
+
+.category-security {
+  background: var(--category-security-bg);
+  color: var(--category-security-fg);
+}
+
+.category-ux {
+  background: var(--category-ux-bg);
+  color: var(--category-ux-fg);
+}
+
+.category-ui {
+  background: var(--category-ui-bg);
+  color: var(--category-ui-fg);
+}
+
+.category-tidy-up {
+  background: var(--category-tidy-up-bg);
+  color: var(--category-tidy-up-fg);
+}
+
+.category-test {
+  background: var(--category-test-bg);
+  color: var(--category-test-fg);
+}
+
+.category-ci {
+  background: var(--category-ci-bg);
+  color: var(--category-ci-fg);
+}
+
+.category-docs {
+  background: var(--category-docs-bg);
+  color: var(--category-docs-fg);
 }
 
 .number {
@@ -1196,6 +1296,37 @@ textarea.edit-input {
   gap: 8px;
 }
 
+/* The Category select of the story bar: a native select with its visible label. */
+.story-category {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.story-category[hidden] {
+  display: none;
+}
+
+.story-category-select {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+  /* 16px or more keeps iOS Safari from zooming in on focus. */
+  font: inherit;
+  font-size: 16px;
+}
+
+.story-category-select:disabled,
+.edit-busy .story-category-select {
+  opacity: 0.5;
+  cursor: progress;
+}
+
 .edit-notice {
   position: fixed;
   left: 12px;
@@ -1505,12 +1636,14 @@ body:has(#edit-notice:not([hidden])) {
 
 .search-filters {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
 }
 
+/* Three filters: two share a row at iPhone width and the third wraps below, so no label is cut off. */
 .search-filter {
-  flex: 1 1 0;
+  flex: 1 1 8em;
   min-width: 0;
 }
 

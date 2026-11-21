@@ -25,6 +25,10 @@ internal sealed record BacklogEntry(
 
     public bool Waiting { get; init; }
 
+    /// <summary>The story's category (<see cref="StoryCategory"/>), filled in by the backlogs endpoint; <c>null</c>
+    /// without one or when the story can't be read.</summary>
+    public string? Category { get; init; }
+
     public int Line { get; init; }
 
     [JsonIgnore]
@@ -39,6 +43,7 @@ internal sealed record BacklogEntry(
             && Mark == other.Mark
             && Story == other.Story
             && Waiting == other.Waiting
+            && Category == other.Category
             && After.SequenceEqual(other.After);
     }
 

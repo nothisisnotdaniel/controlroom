@@ -4,14 +4,16 @@ using Microsoft.Extensions.Primitives;
 namespace ControlRoom.Server;
 
 /// <summary>The <c>GET /api/story</c> response: the block tree, plus the raw <c>Markdown</c> and its
-/// <c>StoryVersion</c> (SHA-256 of the file bytes) for the story editor.</summary>
+/// <c>StoryVersion</c> (SHA-256 of the file bytes) for the story editor, and its <c>Category</c>
+/// (<see cref="StoryCategory"/>, <c>null</c> without one).</summary>
 internal sealed record StoryResponse(
     string Project,
     int Number,
     string Title,
     IReadOnlyList<StoryBlock> Blocks,
     string Markdown,
-    string StoryVersion);
+    string StoryVersion,
+    string? Category);
 
 /// <summary><c>GET /api/story?project=&lt;name&gt;&amp;number=&lt;N&gt;</c>: one numbered backlog item's story as a
 /// block tree. Only <c>project</c> (matched exactly against the discovered projects) and <c>number</c> are read;
@@ -80,7 +82,8 @@ internal static partial class StoryEndpoint
 
         string text = SafeFileReader.Decode(bytes);
         return new StoryResponse(
-            project.Name, number, entry.Title, StoryMarkdown.Parse(text), text, SafeFileReader.Version(bytes));
+            project.Name, number, entry.Title, StoryMarkdown.Parse(text), text, SafeFileReader.Version(bytes),
+            StoryCategory.Parse(text));
     }
 
     [GeneratedRegex(@"\A[0-9]{1,9}\z", RegexOptions.CultureInvariant)]

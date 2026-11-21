@@ -2,16 +2,18 @@
 
 // Search: finds any backlog item across all projects through /api/search by number (#12, Times#12), by words in
 // the title or rest, or by words in its story (searched on the server; story text never comes to the page), with a
-// mark and a project filter. One request per field or filter change, no timer; an answer for an older request is
+// mark, a project and a category filter. One request per field or filter change, no timer; an answer for an older request is
 // dropped. The form is built once and kept, so Back from a story finds the same text, filters, results and scroll.
 // Loaded after tasks.js and before live.js and app.js; their functions (element, titleText, storyHash, openStory,
-// asText, asNumber, asList) are only called at run time. Read-only: no edit buttons. Only fixed texts and file text
+// asText, asNumber, asList, categoryChip, Categories) are only called at run time. Read-only: no edit buttons. Only fixed texts and file text
 // through textContent are shown, never server error text.
 
 const SearchTexts = {
   label: "Search backlogs",
   markLabel: "Mark",
   projectLabel: "Project",
+  categoryLabel: "Category",
+  allCategories: "All categories",
   allMarks: "All marks",
   allProjects: "All projects",
   hint: "Type a number, title or word.",
@@ -63,6 +65,10 @@ function searchProject() {
   return document.getElementById("search-project");
 }
 
+function searchCategory() {
+  return document.getElementById("search-category");
+}
+
 function searchLabel(text, target) {
   const label = element("label", "search-label", text);
   label.htmlFor = target;
@@ -106,11 +112,20 @@ function buildSearchView() {
   project.id = "search-project";
   project.appendChild(searchOption("", SearchTexts.allProjects));
   project.addEventListener("change", () => runSearch(true));
+  const category = element("select", "search-select");
+  category.id = "search-category";
+  category.appendChild(searchOption("", SearchTexts.allCategories));
+  for (const name of Categories) {
+    category.appendChild(searchOption(name, name));
+  }
+  category.addEventListener("change", () => runSearch(true));
   const markBox = element("div", "search-filter");
   markBox.append(searchLabel(SearchTexts.markLabel, "search-mark"), mark);
   const projectBox = element("div", "search-filter");
   projectBox.append(searchLabel(SearchTexts.projectLabel, "search-project"), project);
-  filters.append(markBox, projectBox);
+  const categoryBox = element("div", "search-filter");
+  categoryBox.append(searchLabel(SearchTexts.categoryLabel, "search-category"), category);
+  filters.append(markBox, projectBox, categoryBox);
   form.appendChild(filters);
 
   const status = element("p", "status search-status");
@@ -161,6 +176,7 @@ function readSearchItem(item) {
     rest: asText(item.rest),
     story: item.story === true,
     match: match,
+    category: typeof item.category === "string" && Categories.includes(item.category) ? item.category : null,
   };
 }
 
@@ -179,13 +195,16 @@ function readSearch(data) {
   };
 }
 
-function searchUrl(text, mark, project) {
+function searchUrl(text, mark, project, category) {
   let url = SearchApi + "?q=" + encodeURIComponent(text);
   if (mark !== "") {
     url += "&mark=" + encodeURIComponent(mark);
   }
   if (project !== "") {
     url += "&project=" + encodeURIComponent(project);
+  }
+  if (category !== "") {
+    url += "&category=" + encodeURIComponent(category);
   }
   return url;
 }
@@ -199,7 +218,8 @@ async function runSearch(progress) {
   const text = searchField().value.trim();
   const mark = searchMark().value;
   const project = searchProject().value;
-  if (text === "" && mark === "" && project === "") {
+  const category = searchCategory().value;
+  if (text === "" && mark === "" && project === "" && category === "") {
     showSearchStatus("");
     showSearchResults([element("p", "empty", SearchTexts.hint)]);
     return true;
@@ -209,7 +229,7 @@ async function runSearch(progress) {
   }
   let result;
   try {
-    const response = await authFetch(searchUrl(text, mark, project), { cache: "no-store" });
+    const response = await authFetch(searchUrl(text, mark, project, category), { cache: "no-store" });
     if (!response.ok) {
       throw new Error("status");
     }
@@ -266,6 +286,10 @@ function renderSearchItem(item) {
   const meta = element("span", "search-meta");
   meta.appendChild(element("span", "search-project", item.project));
   meta.appendChild(element("span", "badge search-mark search-mark-" + item.mark, SearchMarkLabels[item.mark]));
+  const chip = categoryChip(item.category);
+  if (chip !== null) {
+    meta.appendChild(chip);
+  }
   row.appendChild(meta);
   const label = (item.number !== null ? "#" + item.number + " " : "") + titleText(item.title);
   // Only a line with a numbered story link opens a story.

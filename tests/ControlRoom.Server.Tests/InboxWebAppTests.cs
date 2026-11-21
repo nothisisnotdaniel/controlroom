@@ -56,7 +56,7 @@ public sealed partial class InboxWebAppTests
     {
         string js = await Fetch("/sw.js");
 
-        Assert.Contains("const CacheVersion = \"v17\";", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v18\";", js, StringComparison.Ordinal);
         Assert.Contains("  \"/inbox.js\",\n", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/inbox", js, StringComparison.Ordinal);
         Assert.Contains("if (url.pathname.startsWith(\"/api/\") || url.pathname === \"/health\") {\n    return false;", js,
