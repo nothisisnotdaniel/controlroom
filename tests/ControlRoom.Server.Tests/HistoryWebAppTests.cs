@@ -234,7 +234,7 @@ public sealed partial class HistoryWebAppTests
     {
         string js = await Fetch("/sw.js");
 
-        Assert.Contains("const CacheVersion = \"v17\";", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v18\";", js, StringComparison.Ordinal);
         Assert.Contains("  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/history", js, StringComparison.Ordinal);
     }

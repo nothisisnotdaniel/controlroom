@@ -32,6 +32,9 @@ const Groups = [
 
 const Marks = { " ": "[ ]", "?": "[?]", h: "[h]", x: "[x]" };
 
+// The nine story categories (job.py's order). Only a value from this list becomes a chip or a class name.
+const Categories = ["feature", "bug", "security", "ux", "ui", "tidy-up", "test", "ci", "docs"];
+
 const StoryRoute = "#story/";
 
 // The project shown on Backlogs, kept on this device: only a project name, never the token.
@@ -130,6 +133,18 @@ function renderDependencies(projectName, after) {
   return line;
 }
 
+// A story's category as a chip (span.category-chip.category-<name>, the name as text), or null for no category or
+// a value outside the fixed list.
+function categoryChip(value) {
+  if (typeof value !== "string" || !Categories.includes(value)) {
+    return null;
+  }
+  const chip = document.createElement("span");
+  chip.className = "category-chip category-" + value;
+  chip.textContent = value;
+  return chip;
+}
+
 // The 1-based place of a line in its group; a screen reader hears "position N", the eye sees only the digit.
 function positionElement(position) {
   const node = element("span", "position");
@@ -146,6 +161,10 @@ function renderNumberedLine(projectName, version, entry, number, position) {
   head.appendChild(element("span", "mark", Marks[asText(entry.mark)] || Marks[" "]));
   head.appendChild(element("span", "number", "#" + number));
   head.appendChild(titleElement(entry.title));
+  const chip = categoryChip(entry.category);
+  if (chip !== null) {
+    head.appendChild(chip);
+  }
   if (entry.waiting === true) {
     head.appendChild(element("span", "badge badge-waiting", Texts.waiting));
   }
@@ -781,6 +800,10 @@ function renderStoryArticle(data) {
   const title = element("h1", "story-title", heading);
   title.tabIndex = -1;
   article.appendChild(title);
+  const chip = categoryChip(data && data.category);
+  if (chip !== null) {
+    article.appendChild(chip);
+  }
   for (const block of asList(data && data.blocks)) {
     article.appendChild(renderBlock(block));
   }

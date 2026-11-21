@@ -28,7 +28,8 @@ internal sealed record BacklogChangeRequest(
     string? Note = null,
     string? Text = null,
     int? Target = null,
-    bool? Before = null);
+    bool? Before = null,
+    string? Category = null);
 
 /// <summary>The <c>200</c> response of a change.</summary>
 internal sealed record BacklogChangeResponse(
@@ -87,7 +88,7 @@ internal static class BacklogChangeEndpoint
     private static readonly HashSet<string> Fields = new(StringComparer.Ordinal)
     {
         "project", "version", "action", "line", "where", "title", "what", "why", "story", "storyVersion", "markdown", "note",
-        "text", "target",
+        "text", "target", "category",
     };
 
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
@@ -286,6 +287,8 @@ internal static class BacklogChangeEndpoint
                 return PlanStory(project, request, text, line, file);
             case "note":
                 return PlanNote(project, request, text, line, file, today);
+            case "category":
+                return PlanCategory(project, request, text, line, file);
             default:
                 return InvalidPlan();
         }
@@ -502,8 +505,39 @@ internal static class BacklogChangeEndpoint
             file.Bytes);
     }
 
-    /// <summary>The checks <c>story</c> and <c>note</c> share: a numbered open item, its story path from the line, a
-    /// safe read and the <c>storyVersion</c> the client saw. <c>null</c> when all pass, else the refusal.</summary>
+    /// <summary>Sets the story's <c>Category:</c> line (<see cref="StoryCategory.Set"/>), with the same checks as
+    /// <c>note</c>. A story that already has that category is refused, so nothing is written or committed.</summary>
+    private static ChangePlan PlanCategory(
+        ProjectFolder project, BacklogChangeRequest request, EditableText text, int line, BacklogFile file)
+    {
+        ChangePlan? refused = OpenStory(project, request, text, line, out BacklogEntry? entry, out string? storyPath,
+            out byte[]? old);
+        if (refused is not null)
+        {
+            return refused;
+        }
+
+        EditableText? story = EditableText.Parse(old!);
+        if (story is null || StoryCategory.Parse(story.Text) == request.Category)
+        {
+            return InvalidPlan();
+        }
+
+        byte[] next = StoryCategory.Set(story, request.Category!).ToBytes();
+        if (next.Length > MaxStoryBytes || next.AsSpan().SequenceEqual(old))
+        {
+            return InvalidPlan();
+        }
+
+        return new ChangePlan(
+            [new FileChange(StoryRelative(storyPath!), storyPath!, next, old)],
+            "backlog: category " + Subject(entry!),
+            file.Bytes);
+    }
+
+    /// <summary>The checks <c>story</c>, <c>note</c> and <c>category</c> share: a numbered open item, its story
+    /// path from the line, a safe read and the <c>storyVersion</c> the client saw. <c>null</c> when all pass, else the
+    /// refusal.</summary>
     private static ChangePlan? OpenStory(
         ProjectFolder project,
         BacklogChangeRequest request,
@@ -584,12 +618,18 @@ internal static class BacklogChangeEndpoint
             || !TryString(fields, "storyVersion", out string? storyVersion)
             || !TryString(fields, "markdown", out string? markdown)
             || !TryString(fields, "note", out string? note)
-            || !TryString(fields, "text", out string? captured))
+            || !TryString(fields, "text", out string? captured)
+            || !TryString(fields, "category", out string? category))
         {
             return null;
         }
 
         if (!TryIndex(fields, "line", out int? line) || !TryIndex(fields, "target", out int? target))
+        {
+            return null;
+        }
+
+        if (category is not null && action != "category")
         {
             return null;
         }
@@ -664,6 +704,11 @@ internal static class BacklogChangeEndpoint
                     ? null
                     : request with { StoryVersion = storyVersion, Note = clean };
             }
+
+            case "category":
+                return line is null || storyVersion is null || !StoryCategory.IsName(category)
+                    ? null
+                    : request with { StoryVersion = storyVersion, Category = category };
 
             default:
                 return null;

@@ -1,6 +1,6 @@
 "use strict";
 
-// Backlog editing: per-project edit mode (approve, drop, move by drag or arrow keys, to top, edit title, add), the story editor and Add note. Every change
+// Backlog editing: per-project edit mode (approve, drop, move by drag or arrow keys, to top, edit title, add), the story editor, Add note and the story's Category select. Every change
 // is one POST to /api/backlog/change through authFetch with the version the view loaded. Only fixed texts are shown;
 // server text never is. Uses element() and the views' reload functions from app.js at call time.
 
@@ -28,6 +28,8 @@ const EditTexts = {
   addNote: "Add note",
   noteLabel: "Note",
   noteHint: "Saved as one line under Notes, with today's date.",
+  category: "Category",
+  noCategory: "No category",
   dismiss: "Close",
   confirmDrop: "Drop this proposal? Its line and story file are removed in one commit.",
   saved: "Saved.",
@@ -619,7 +621,8 @@ function storyFormOpen() {
 // never tapped while one of them is open.
 function showStoryButtons(visible) {
   for (const button of document.querySelectorAll(
-    "#story .edit-story-button, #story .add-note-button, #story .story-approve-button, #story .story-drop-button")) {
+    "#story .edit-story-button, #story .add-note-button, #story .story-category, #story .story-approve-button, "
+    + "#story .story-drop-button")) {
     button.hidden = !visible;
   }
 }
@@ -729,6 +732,7 @@ async function showStoryDecision(target, data) {
   if (bar === null) {
     return;
   }
+  showStoryCategory(bar, target, data, found);
   const shown = bar.querySelectorAll(".story-approve-button, .story-drop-button");
   if (found === null || found.group !== "approval") {
     for (const button of shown) {
@@ -739,6 +743,103 @@ async function showStoryDecision(target, data) {
   if (shown.length === 0) {
     bar.append(...storyDecisionButtons(target, number));
   }
+}
+
+// The Category select in the story bar, only while the item is not done (found by findStoryLine). Built again from the
+// shown story on every call, so it always carries the shown storyVersion; focus stays on it.
+function showStoryCategory(bar, target, data, found) {
+  const old = bar.querySelector(".story-category");
+  if (found === null) {
+    if (old !== null) {
+      old.remove();
+    }
+    return;
+  }
+  const next = storyCategoryControl(target, data);
+  if (old === null) {
+    const decision = bar.querySelector(".story-approve-button");
+    bar.insertBefore(next, decision);
+    return;
+  }
+  const focused = old.contains(document.activeElement);
+  old.replaceWith(next);
+  if (focused) {
+    next.querySelector("select").focus({ preventScroll: true });
+  }
+}
+
+// A labelled native select: the nine names, plus a disabled "No category" option chosen only while the story has
+// none. Choosing a name sends action "category" through sendChange with the line looked up again and the shown
+// storyVersion, then reloads the story.
+function storyCategoryControl(target, data) {
+  const storyVersion = asText(data && data.storyVersion);
+  const number = asNumber(data && data.number);
+  const current = typeof (data && data.category) === "string" && Categories.includes(data.category)
+    ? data.category
+    : "";
+  const label = element("label", "story-category");
+  label.appendChild(element("span", "story-category-label", EditTexts.category));
+  const select = element("select", "story-category-select");
+  if (current === "") {
+    const none = element("option", null, EditTexts.noCategory);
+    none.value = "";
+    none.disabled = true;
+    none.selected = true;
+    select.appendChild(none);
+  }
+  for (const name of Categories) {
+    const option = element("option", null, name);
+    option.value = name;
+    option.selected = name === current;
+    select.appendChild(option);
+  }
+  select.disabled = changeBusy;
+  select.addEventListener("click", (event) => event.stopPropagation());
+  select.addEventListener("change", async () => {
+    const chosen = select.value;
+    if (changeBusy || storyFormOpen() || !Categories.includes(chosen) || chosen === current || number === null
+      || storyVersion === "") {
+      select.value = current;
+      return;
+    }
+    select.disabled = true;
+    let found;
+    try {
+      found = await findStoryLine(target.project, number);
+    } catch {
+      found = undefined;
+    }
+    if (found === undefined) {
+      select.disabled = changeBusy;
+      select.value = current;
+      if (!tokenViewShown()) {
+        showEditNotice(ChangeErrors.unreachable, true);
+      }
+      return;
+    }
+    if (found === null) {
+      showEditNotice(ChangeErrors.changed, true);
+      loadStory(target);
+      return;
+    }
+    const ok = await sendChange({
+      project: target.project,
+      version: found.version,
+      action: "category",
+      line: found.line,
+      storyVersion: storyVersion,
+      category: chosen,
+    });
+    if (ok) {
+      loadStory(target);
+      return;
+    }
+    select.disabled = changeBusy;
+    select.value = current;
+  });
+  label.appendChild(select);
+  label.hidden = storyFormOpen();
+  return label;
 }
 
 // The two buttons, named for screen readers by number; hidden while Edit story or Add note is open.

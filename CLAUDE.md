@@ -64,7 +64,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     text cut at the last space at or before character 60 (else at 60), trailing `.,;:!?` and spaces removed, and must
     pass the title rule; with the `add` checks a `- [?] [#N](backlog/NNN-slug.md) <title>` line goes after the last item
     and a draft story (`## What` the text, a fixed `## Why`, `## Notes` with `- YYYY-MM-DD: Draft from ControlRoom`) is
-    created; committed as `backlog: capture #N`). The one other file the server writes in the factory root is a
+    created; committed as `backlog: capture #N`) and `category` (body `category`, exactly one of the nine `StoryCategory`
+    names, with `storyVersion` and the `note` checks on a numbered item that is not done: the story's first counting
+    `Category:` line is replaced, else one goes before the first `## ` with a blank line each side, else it is appended;
+    the same category, or `category` on any other action, is `invalid`; only the story file is committed, as
+    `backlog: category #N`). The one other file the server writes in the factory root is a
     job's request file `factory/jobs/<id>/human.json`, only through `POST /api/job/act` (see below). Nothing else in
     the factory root is written.
   - `POST /api/job/act` (body `{"id","action","round","note"?}`, at most 8 KiB, exact fields; `action` `approve`,
@@ -184,7 +188,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `IsMissing`: unknown project or no line with that number in a readable backlog, never for an unreadable one or
     `factory`), `BacklogPlan` (the rule of `job.py next`: numbered `[ ]` lines in file order, blocked while a
     dependency is unmet, the first one not blocked is next, spikes too), `BacklogsEndpoint` (`GET /api/backlogs`, with
-    `waiting`, `line` and the file `version`, and per project `pending` (true when read from the worktree), `next` (`{number, title, story, spike}` or `null`),
+    `waiting`, `line`, `category` (from each numbered line's story, read once through `StoryReader`, else `null`) and the file `version`, and per project `pending` (true when read from the worktree), `next` (`{number, title, story, spike}` or `null`),
     `stopped` (a blocked line has a missing dependency) and `blocked` (`[{number, title, story, after:[{project, number,
     missing}]}]`, only unmet dependencies); `null`, `false`, `[]` when unreadable), `BacklogEditor` (`EditableText` lines that keep their bytes; approve, drop, done, move (top), place, title
     and add edits (`Add` takes the mark), `CleanNote` and `AppendNote`, `CleanCapture`, `CaptureTitle` and `RenderDraft`, slug, next number and story template like `job.py`), `ProjectGit` (fixed-argument git calls
@@ -194,9 +198,10 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     checkout is not on `develop` and `Pending`, else the project; used by `GET /api/backlogs`, `/api/story`,
     `/api/inbox`, `/api/tasks` and `/api/search`), `BacklogChangeEndpoint` (`POST /api/backlog/change`: request
     checks, `not_develop` (no repo)/`worktree_failed`/`dirty`/`changed`, write, commit, push (develop only); `done` commits `backlog: done #N`, `note` commits `backlog: note on #N`, `capture` commits `backlog: capture #N`), `StoryReader` (fenced read of
-    `<project>/backlog/NNN-slug.md`), `StoryMarkdown` (Markdown to a JSON block tree, no HTML),
-    `StoryEndpoint` (`GET /api/story?project=&number=`, with `markdown`
-    and `storyVersion`), `InboxEndpoint` (`GET /api/inbox`: every `[?]` line as `{project, version, line, number, title,
+    `<project>/backlog/NNN-slug.md`), `StoryCategory` (the story's `Category: <name>` line like `job.py with_category`:
+    the nine names in `job.py` order, `Parse` (first `Category:` line before the first `## `, else `null`) and `Set`), `StoryMarkdown` (Markdown to a JSON block tree, no HTML),
+    `StoryEndpoint` (`GET /api/story?project=&number=`, with `markdown`,
+    `storyVersion` and `category`), `InboxEndpoint` (`GET /api/inbox`: every `[?]` line as `{project, version, line, number, title,
     rest, job}` plus `unreadable` project names, `no-store`; `job` from the first `Proposed by job <id>` in the story's
     `## Notes` through `StoryReader`, kept only as `^[0-9]{1,6}-[a-z0-9]+(-[a-z0-9]+)*$` up to 80 chars; with a job first by
     its number, then without, ties by project (ordinal) and line), `TasksEndpoint` (`GET /api/tasks`: every `[h]` line as
@@ -208,12 +213,13 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `FINDINGS`), `escalated`, `reverted`; `finished` the `Updated` time or `null`), newest first then id descending,
     `null` last; `days` the 30 UTC dates ending today; `totals.projects`/`totals.modes` `{name, last7, last30}` with
     `{jobs, tokens, unknown}` (only names with a job in the 30 days, ordinal, `null` last); `chart.modes` `{name,
-    tokens}` with 30 daily known-token sums; unknown tokens never count as 0), `SearchEndpoint` (`GET /api/search?q=&mark=&project=`: `{items, total, projects, unreadable}`, items
-    `{project, number, mark, title, rest, story, match}`, `no-store`; `#N`/`Name#N` (name ignoring case), else every
+    tokens}` with 30 daily known-token sums; unknown tokens never count as 0), `SearchEndpoint` (`GET /api/search?q=&mark=&project=&category=`: `{items, total, projects, unreadable}`, items
+    `{project, number, mark, title, rest, story, match, category}`, `no-store`; `#N`/`Name#N` (name ignoring case), else every
     word (ordinal, ignore case) in title or rest, else in the story through `StoryReader.Read` (read only for an item that
-    passes the filters and missed on title); `mark` (`open|approval|task|done`) and `project` (exact name) filters; order
-    number, title, story, filter, each by project then file line; at most 100 items; a repeated parameter, unknown mark or
-    project, or `q` over 200 chars gives `400 {"error":"invalid"}`), `JobReader` (`factory/jobs/<id>/state.json` to a typed
+    passes the filters and missed on title, for the `category` filter, or for a returned item's category; at most once per item); `mark` (`open|approval|task|done`),
+    `project` (exact name) and `category` (one of the nine) filters; order
+    number, title, story, filter, each by project then file line; at most 100 items; a repeated parameter, unknown mark,
+    category or project, or `q` over 200 chars gives `400 {"error":"invalid"}`), `JobReader` (`factory/jobs/<id>/state.json` to a typed
     `JobSummary`; `request` is the `human.json` action, filled only for `needs-human`; `tokens` is `null` when no agent
     gives a valid count; `Updated`, `CiUrl` and `CiSha` (never in JSON); `Updated` only from an exact `YYYY-MM-DDTHH:MM:SSZ` `updated`), `BoardEndpoint` (`GET /api/board`: jobs and `[h]` tasks), `ChangeFingerprint` (SHA-256 fingerprints from `lstat`
     metadata only: `jobs` over each `state.json` and `human.json` of `JobReader.ListFolders`, per project `backlog` over `backlog.md`
@@ -259,13 +265,17 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     readable project without storing it), kept on a live refresh and set by a story link into a readable project; every group (Open, Waiting for approval, For you,
     Done and Waiting) folds as a `details.group` named in `data-group`, only Done closed by default, each state per project in
     `controlroom-backlog-groups` and copied by name on a live refresh; every row of every group starts with its 1-based place in
-    that group (`positionElement`: `span.position` with a `span.visually-hidden` `position ` for screen readers)), story), `edit.js` (per-project edit mode; a `button.drag-handle` (`≡`, `Move #N`, arrow-key hint) at the start of every
+    that group (`positionElement`: `span.position` with a `span.visually-hidden` `position ` for screen readers); a numbered
+    row with a category shows `categoryChip` (`span.category-chip.category-<name>`, text only, class only from the fixed
+    `Categories` list) after the title), story (the same chip under the title)), `edit.js` (per-project edit mode; a `button.drag-handle` (`≡`, `Move #N`, arrow-key hint) at the start of every
     `[ ]` and `[?]` row, prepended by `appendEditRow`: pointer events only (captured on the handle, the only element with
     `touch-action: none`), a `.drop-indicator` among the rows of the row's own list, auto-scroll in the 48 px edges by
     `requestAnimationFrame`, one `place` per drop or ArrowUp/ArrowDown, Escape and `pointercancel` send nothing, focus back
     on the handle after a key move; `dragBusy` holds back live.js's section refresh; the Add form, Edit story and Add note (`add-note-button` in the story bar; only
     one of the two forms open at a time), Approve and Drop in the story bar of a `[?]` item only (`story-approve-button`,
-    `story-drop-button`, group `approval` from `/api/backlogs`; version and line looked up again at the tap, through
+    `story-drop-button`, group `approval` from `/api/backlogs`; a `Category` select (`label.story-category`,
+    `select.story-category-select`, a disabled `No category` option only without one) while the item is not done, sending
+    `action:"category"` through `sendChange`; version and line looked up again at the tap, through
     `sendChange`, Drop after a confirm; Approve reloads the story, Drop goes `history.back()` or to `#inbox` keeping the
     notice for that route (`routeEditNotice`); both refetch the inbox count; hidden while a story form is open), fixed texts per error code), `board.js` (jobs board and job page (a read-only state section between the facts and the record tabs: stage and round, review rows per round with visible values, decision chip, CI and note; a board card of a `needs-human` job with a request shows `Approve sent` or `Rework sent`), `pollBoard` fetched by `live.js`; a live refresh of the job page is held back while `act.js` says the decision section is in use; the `ControlRoom <version>`
     line at the foot of Jobs and the update banner under its heading, each asked once per page load), `live.js` (the one `setInterval`: asks `/api/changes` every 5 s while visible, no token view and nothing
@@ -287,7 +297,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `#N Title` story link, `rest` and `Waits for` links (`Project#N` or `#N`), a Done button on Ready items only
     (confirm, then `action:"done"` through `sendChange`, never rebuilt while `changeBusy`), fixed texts in `TasksTexts`;
     the nav count of Ready items, hidden at 0 or unknown, fetched as the inbox count), `search.js` (the `#search` view,
-    read-only: the form (field `Search backlogs`, mark and project selects, the project list from the first answer) is
+    read-only: the form (field `Search backlogs`, mark, project and category selects, the project list from the first answer) is
     built once and kept, so Back finds it as it was; one `/api/search` per change through `authFetch`, older answers
     dropped by a request counter, nothing sent with an empty field and no filter; only the results are replaced; fixed
     texts in `SearchTexts`), `capture.js` (the `#capture` view: a `Project` select of readable projects from

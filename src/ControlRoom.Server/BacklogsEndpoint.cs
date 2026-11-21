@@ -57,10 +57,10 @@ internal static class BacklogsEndpoint
             projects.Add(new ProjectBacklog(
                 project.Name,
                 file is not null,
-                WithWaiting(groups.Open, project.Name, waiting),
-                WithWaiting(groups.Approval, project.Name, waiting),
-                WithWaiting(groups.User, project.Name, waiting),
-                WithWaiting(groups.Done, project.Name, waiting),
+                WithWaiting(groups.Open, project, waiting),
+                WithWaiting(groups.Approval, project, waiting),
+                WithWaiting(groups.User, project, waiting),
+                WithWaiting(groups.Done, project, waiting),
                 file?.Version,
                 plan.Next,
                 plan.Stopped,
@@ -71,12 +71,25 @@ internal static class BacklogsEndpoint
         return new BacklogsResponse(projects);
     }
 
-    /// <summary>Marks an entry waiting when any of its dependencies is not met (<see cref="BacklogWaiting"/>).</summary>
+    /// <summary>Marks an entry waiting when any of its dependencies is not met (<see cref="BacklogWaiting"/>), and
+    /// fills in its category from its story, read once through <see cref="StoryReader"/> from the source
+    /// folder.</summary>
     private static List<BacklogEntry> WithWaiting(
-        IReadOnlyList<BacklogEntry> entries, string projectName, BacklogWaiting waiting)
+        IReadOnlyList<BacklogEntry> entries, ProjectFolder project, BacklogWaiting waiting)
     {
         return entries
-            .Select(entry => entry with { Waiting = waiting.IsWaiting(entry, projectName) })
+            .Select(entry => entry with
+            {
+                Waiting = waiting.IsWaiting(entry, project.Name),
+                Category = CategoryOf(project, entry),
+            })
             .ToList();
+    }
+
+    /// <summary>The category of a numbered line's story, or <c>null</c> for any other line or a story that can't be
+    /// read.</summary>
+    public static string? CategoryOf(ProjectFolder project, BacklogEntry entry)
+    {
+        return entry.Number is null || entry.Story is null ? null : StoryCategory.Parse(StoryReader.Read(project, entry));
     }
 }
