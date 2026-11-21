@@ -102,15 +102,15 @@ public sealed class StoryStatusWebAppTests
     }
 
     [Fact]
-    public async Task ApproveReloadsTheStoryInPlace_WhichBuildsTheChipAgain()
+    public async Task ApproveLeavesTheStory_AndLoadStoryBuildsTheChipOnTheNextVisit()
     {
         string edit = await Fetch("/edit.js");
         string app = await Fetch("/app.js");
         string decide = Between(edit, "async function decideStory(target, number, action) {", "\n}\n");
         string load = Between(app, "async function loadStory(target) {", "\n}\n");
 
-        Assert.Contains("if (action === \"approve\") {\n    loadStory(target);\n    return;\n  }", decide,
-            StringComparison.Ordinal);
+        // Since #128 Approve closes the story view; the chip is built again when the story is opened next.
+        Assert.Contains("loadInbox();\n  leaveDecidedStory();", decide, StringComparison.Ordinal);
         Assert.DoesNotContain("location.reload", edit, StringComparison.Ordinal);
         Assert.Contains("showStoryDecision(target, data);", load, StringComparison.Ordinal);
     }
