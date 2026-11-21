@@ -1071,9 +1071,14 @@ a.card:focus-visible {
 
 .job-times {
   display: block;
-  margin: -6px 0 12px;
+  margin: 0 0 12px;
   color: var(--muted);
   font-size: 0.85rem;
+}
+
+/* Right under the facts line, half its gap away. */
+.job-facts + .job-times {
+  margin-top: -6px;
 }
 
 /* Agents: one row per agent with its tokens and time. */
