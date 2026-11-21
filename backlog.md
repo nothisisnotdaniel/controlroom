@@ -140,7 +140,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#131](backlog/131-lifetime-totals-in-history.md) Lifetime totals in History
 - [x] [#132](backlog/132-capture-at-the-top-of-the.md) Capture at the top of the Inbox → 359-capture-in-inbox
 - [x] [#133](backlog/133-search-at-the-top-of-the.md) Search at the top of the Backlogs → 360-search-in-backlogs
-- [ ] [#134](backlog/134-done-button-for-your-tasks-in.md) Done button for your tasks in the story view
+- [x] [#134](backlog/134-done-button-for-your-tasks-in.md) Done button for your tasks in the story view → 365-done-button-tasks
 - [x] [#135](backlog/135-leaner-bottom-bar-with-counts-on.md) Leaner bottom bar with counts on Backlogs → 362-leaner-bottom-bar
 - [ ] [#136](backlog/136-start-end-and-time-per-agent.md) Start, end and time per agent on job cards (after: factory#22)
 - [ ] [#137](backlog/137-updater-replaces-itself-with-each-release.md) Updater replaces itself with each release
