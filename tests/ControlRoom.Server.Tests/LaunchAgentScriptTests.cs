@@ -22,6 +22,14 @@ public sealed class LaunchAgentScriptTests
 
     private const string Releases = "https://github.com/nothisisnotdaniel/controlroom/releases";
 
+    private const string ListUrl = "https://api.github.com/repos/nothisisnotdaniel/controlroom/releases?per_page=100";
+
+    /// <summary>A release list whose newest develop-channel tag is <c>v0.2.0-develop.7</c> (newer than the latest
+    /// final release <c>v0.1.0</c>; the release candidate is not a channel tag).</summary>
+    private const string DevelopList =
+        "[{\"tag_name\":\"v0.2.0-develop.3\"},{\"tag_name\":\"v0.3.0-rc.1\"},{\"tag_name\":\"v0.2.0-develop.7\"},"
+        + "{\"tag_name\":\"v0.1.0\"}]\n";
+
     private const string LatestFailedText = "Can't find the latest release. Nothing was changed.\n";
 
     private const string DownloadFailedText = "Download failed. Nothing was changed.\n";
@@ -838,6 +846,152 @@ public sealed class LaunchAgentScriptTests
     }
 
     [Theory]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\"}\n")]
+    [InlineData("{\"autoUpdate\":false,\"channel\":\"develop\"}\n")]
+    [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\"}")]
+    public void InstallRelease_WithoutATagOnTheDevelopChannel_InstallsTheNewestDevelopBuild(string settings)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.SetSettings(settings);
+        home.AddRelease("0.2.0-develop.7", ReleaseFault.None);
+        home.SetList(DevelopList);
+        home.SetRedirect(Releases + "/tag/v0.1.0");
+
+        ScriptRun run = home.Run(home.ReleaseScript, "install", "--release");
+
+        Assert.Equal(0, run.ExitCode);
+        Assert.Equal(
+            "Installed v0.2.0-develop.7: " + home.Plist + "\nLog: " + home.Log + "\nUpdater: " + home.UpdaterPlist + "\n",
+            run.Output);
+        IReadOnlyList<string> curl = home.CurlCalls();
+        Assert.Equal(3, curl.Count);
+        Assert.Equal("--proto =https --tlsv1.2 -fsS --max-time 30 --max-filesize 1048576 " + ListUrl, curl[0]);
+        AssertDownload(home, curl[1], "v0.2.0-develop.7", "controlroom-0.2.0-develop.7-osx-arm64.tar.gz");
+        AssertDownload(home, curl[2], "v0.2.0-develop.7", "SHA256SUMS");
+        Assert.Equal("v0.2.0-develop.7\n", File.ReadAllText(home.Marker));
+        Assert.Equal(settings, File.ReadAllText(home.Settings));
+        Assert.Empty(home.WorkFolders());
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("stable")]
+    [InlineData("short")]
+    [InlineData("two-line-breaks")]
+    [InlineData("crlf")]
+    [InlineData("other-key")]
+    [InlineData("over-cap")]
+    [InlineData("symlink")]
+    [InlineData("folder")]
+    public void InstallRelease_WithoutATagAndNoDevelopSetting_UsesTheLatestRedirect(string kind)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        const string DevelopSetting = "{\"autoUpdate\":true,\"channel\":\"develop\"}";
+        switch (kind)
+        {
+            case "missing":
+                break;
+            case "stable":
+                home.SetSettings("{\"autoUpdate\":true,\"channel\":\"stable\"}\n");
+                break;
+            case "short":
+                home.SetSettings("{\"autoUpdate\":true}\n");
+                break;
+            case "two-line-breaks":
+                home.SetSettings(DevelopSetting + "\n\n");
+                break;
+            case "crlf":
+                home.SetSettings(DevelopSetting + "\r\n");
+                break;
+            case "other-key":
+                home.SetSettings("{\"autoUpdate\":\"yes\",\"channel\":\"develop\"}\n");
+                break;
+            case "over-cap":
+                home.SetSettings(DevelopSetting + new string('\n', 64 - DevelopSetting.Length + 1));
+                break;
+            case "symlink":
+                string target = System.IO.Path.Combine(home.Path, "develop.json");
+                File.WriteAllText(target, DevelopSetting + "\n");
+                home.SetSettings(null);
+                File.CreateSymbolicLink(home.Settings, target);
+                break;
+            default:
+                home.SetSettings(null);
+                Directory.CreateDirectory(home.Settings);
+                break;
+        }
+
+        home.AddRelease("0.1.0", ReleaseFault.None);
+        home.SetList(DevelopList);
+        home.SetRedirect(Releases + "/tag/v0.1.0");
+
+        ScriptRun run = home.Run(home.ReleaseScript, "install", "--release");
+
+        Assert.Equal(0, run.ExitCode);
+        IReadOnlyList<string> curl = home.CurlCalls();
+        Assert.Equal(3, curl.Count);
+        Assert.Equal(
+            "--proto =https --tlsv1.2 -fsS --max-time 30 -o /dev/null -w %{redirect_url} " + Releases + "/latest",
+            curl[0]);
+        Assert.Equal("v0.1.0\n", File.ReadAllText(home.Marker));
+    }
+
+    [Fact]
+    public void InstallRelease_WithATagOnTheDevelopChannel_InstallsThatTag()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.SetSettings("{\"autoUpdate\":true,\"channel\":\"develop\"}\n");
+        home.AddRelease("0.1.0", ReleaseFault.None);
+        home.SetList(DevelopList);
+
+        ScriptRun run = home.Run(home.ReleaseScript, "install", "--release", "v0.1.0");
+
+        Assert.Equal(0, run.ExitCode);
+        IReadOnlyList<string> curl = home.CurlCalls();
+        Assert.Equal(2, curl.Count);
+        AssertDownload(home, curl[0], "v0.1.0", "controlroom-0.1.0-osx-arm64.tar.gz");
+        Assert.Equal("v0.1.0\n", File.ReadAllText(home.Marker));
+    }
+
+    [Fact]
+    public void InstallRelease_OnTheDevelopChannelWithNoListAnswer_IsLatestFailedAndChangesNothing()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.SetSettings("{\"autoUpdate\":true,\"channel\":\"develop\"}\n");
+        home.AddRelease("0.1.0", ReleaseFault.None);
+        home.SetRedirect(Releases + "/tag/v0.1.0");
+
+        ScriptRun run = home.Run(home.ReleaseScript, "install", "--release");
+
+        Assert.Equal(1, run.ExitCode);
+        Assert.Equal(LatestFailedText, run.Error);
+        Assert.Single(home.CurlCalls());
+        Assert.Empty(home.LaunchctlCalls());
+        Assert.False(File.Exists(home.Marker));
+        Assert.Empty(home.WorkFolders());
+    }
+
+    [Theory]
     [InlineData("1.2.3-rc.1")]
     [InlineData("1.2.4-develop.7")]
     [InlineData("1.2.3-01a")]
@@ -1139,6 +1293,7 @@ public sealed class LaunchAgentScriptTests
             ["/bin/sh", home.UpdaterScript, "--factory-root", home.TreeRoot, "--start-delay", "60"],
             ProgramArguments(home.UpdaterPlist));
         string plist = File.ReadAllText(home.UpdaterPlist);
+        Assert.Equal(ScriptFixtures.UpdaterPlist(home.UpdaterScript, home.TreeRoot, home.UpdaterLog), plist);
         Assert.Contains("<key>RunAtLoad</key>\n    <true/>\n", plist, StringComparison.Ordinal);
         Assert.DoesNotContain("KeepAlive", plist, StringComparison.Ordinal);
         Assert.Empty(Directory.GetFiles(home.Support, ".controlroom.*"));
@@ -1229,6 +1384,59 @@ public sealed class LaunchAgentScriptTests
         Assert.False(File.Exists(home.Marker));
         Assert.False(Directory.Exists(home.Previous));
         Assert.False(Directory.Exists(home.Server));
+    }
+
+    [Theory]
+    [InlineData("uninstall")]
+    [InlineData("install")]
+    [InlineData("install --release v1.2.3")]
+    public void InstallOrUninstall_RemovesTheUpdaterPreviousCopies(string joined)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.AddRelease("1.2.3", ReleaseFault.None);
+        Assert.Equal(0, home.Run(home.ReleaseScript, "install", "--release", "v1.2.3").ExitCode);
+        File.WriteAllText(home.UpdaterScriptPrevious, "#!/bin/sh\n# old updater\n");
+        File.WriteAllText(home.UpdaterPlistPrevious, "<plist>old</plist>\n");
+
+        ScriptRun run = home.Run(home.ReleaseScript, joined.Split(' '));
+
+        Assert.Equal(0, run.ExitCode);
+        Assert.False(File.Exists(home.UpdaterScriptPrevious));
+        Assert.False(File.Exists(home.UpdaterPlistPrevious));
+    }
+
+    [Theory]
+    [InlineData("uninstall", "script")]
+    [InlineData("uninstall", "plist")]
+    [InlineData("install", "script")]
+    [InlineData("install --release v1.2.3", "plist")]
+    public void InstallOrUninstall_RefusesASymlinkedUpdaterPreviousCopy(string joined, string which)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using ScriptHome home = new();
+        home.AddRelease("1.2.3", ReleaseFault.None);
+        Directory.CreateDirectory(home.Support);
+        string target = System.IO.Path.Combine(home.Path, "elsewhere");
+        File.WriteAllText(target, "keep");
+        string link = which == "script" ? home.UpdaterScriptPrevious : home.UpdaterPlistPrevious;
+        File.CreateSymbolicLink(link, target);
+
+        ScriptRun run = home.Run(home.ReleaseScript, joined.Split(' '));
+
+        Assert.Equal(1, run.ExitCode);
+        Assert.Equal(SymlinkText + link + "\n", run.Error);
+        Assert.Equal("keep", File.ReadAllText(target));
+        Assert.Empty(home.LaunchctlCalls());
+        Assert.NotNull(new FileInfo(link).LinkTarget);
     }
 
     [Fact]
@@ -1642,7 +1850,8 @@ public sealed class LaunchAgentScriptTests
             + "printf dll > \"$out/ControlRoom.Server.dll\"\n"
             + "exit 0\n";
 
-        /// <summary>Logs its arguments as one line; for <c>-w</c> prints <c>$HOME/redirect</c> (exit 22 when
+        /// <summary>Logs its arguments as one line; for the release list URL prints <c>$HOME/list</c> (exit 22 when
+        /// missing); for <c>-w</c> prints <c>$HOME/redirect</c> (exit 22 when
         /// missing), else copies <c>$HOME/release/&lt;last URL part&gt;</c> to <c>-o</c> (exit 22 when
         /// missing, exit 63 like curl when it is larger than <c>--max-filesize</c>).</summary>
         private const string FakeCurl =
@@ -1654,6 +1863,10 @@ public sealed class LaunchAgentScriptTests
             + " https://*) url=$1 ;; esac\n"
             + "  shift\n"
             + "done\n"
+            + "if [ \"$url\" = '" + ListUrl + "' ]; then\n"
+            + "  if [ -f \"$HOME/list\" ]; then cat \"$HOME/list\"; exit 0; fi\n"
+            + "  exit 22\n"
+            + "fi\n"
             + "if [ $w = yes ]; then\n"
             + "  if [ -f \"$HOME/redirect\" ]; then cat \"$HOME/redirect\"; exit 0; fi\n"
             + "  exit 22\n"
@@ -1740,6 +1953,12 @@ public sealed class LaunchAgentScriptTests
         public string UpdaterScript => System.IO.Path.Combine(Support, "updater.sh");
 
         public string Marker => System.IO.Path.Combine(Support, "installed-release");
+
+        public string UpdaterScriptPrevious => System.IO.Path.Combine(Support, "updater.sh.previous");
+
+        public string UpdaterPlistPrevious => System.IO.Path.Combine(Support, "updater.plist.previous");
+
+        public string Settings => System.IO.Path.Combine(Support, "settings.json");
 
         public string Previous => System.IO.Path.Combine(Support, "server.previous");
 
@@ -1912,6 +2131,28 @@ public sealed class LaunchAgentScriptTests
         public IReadOnlyList<string> CurlCalls()
         {
             return ReadLines("curl.log");
+        }
+
+        /// <summary>Writes <c>settings.json</c> (<c>0600</c>, support folder <c>0700</c>), or removes it for
+        /// <c>null</c>.</summary>
+        public void SetSettings(string? content)
+        {
+            Directory.CreateDirectory(Support);
+            File.SetUnixFileMode(Support, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            if (content is null)
+            {
+                File.Delete(Settings);
+                return;
+            }
+
+            File.WriteAllText(Settings, content);
+            File.SetUnixFileMode(Settings, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+
+        /// <summary>Writes what the fake <c>curl</c> prints for the develop channel's release list.</summary>
+        public void SetList(string json)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "list"), json);
         }
 
         /// <summary>Writes what the fake <c>curl</c> prints for <c>-w '%{redirect_url}'</c>.</summary>

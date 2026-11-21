@@ -293,6 +293,9 @@ jobs:
             echo "The publish output has no wwwroot/index.html" >&2
             exit 1
           fi
+          # The updater installs this copy of itself with the release it swaps in.
+          cp scripts/updater.sh "$RUNNER_TEMP/pack/$NAME/updater.sh"
+          chmod 0755 "$RUNNER_TEMP/pack/$NAME/updater.sh"
           tar -czf "dist/$NAME.tar.gz" -C "$RUNNER_TEMP/pack" "$NAME"
 
       - name: Checksums

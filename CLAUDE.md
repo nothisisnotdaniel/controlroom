@@ -149,12 +149,13 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   Start at login: `scripts/launch-agent.sh install [--tailnet-host <name>]|status|uninstall` (LaunchAgent `local.controlroom.server`,
   published server in `~/Library/Application Support/ControlRoom/server/`, log `~/Library/Logs/ControlRoom/server.log`).
   `scripts/launch-agent.sh install --release [vX.Y.Z] [--tailnet-host <name>]` installs a GitHub release instead (latest
-  when no tag; no .NET SDK needed; launchd runs `server/ControlRoom.Server` directly). It also installs the
+  when no tag, or the newest `develop_tag` build when `settings.json` holds the develop channel; no .NET SDK needed; launchd runs `server/ControlRoom.Server` directly). It also installs the
   updater (`local.controlroom.updater`, `RunAtLoad` with `--start-delay 60` so the first check is about a minute
   after install or login, then every 6 h, and every 15 min (up to 5 h 45 min) while a factory job runs; `<support>/updater.sh`, marker `<support>/installed-release`, log
   `~/Library/Logs/ControlRoom/updater.log`), which installs newer releases (by SemVer; on `stable` prereleases are
   ignored, on `develop` the newest `vX.Y.Z` or `vX.Y.Z-develop.N`) only while `settings.json` says on and
-  no job is in `spike|spec|build|review`; a plain `install` and `uninstall` remove it.
+  no job is in `spike|spec|build|review`, and with each one also its own `updater.sh` and plist; a plain `install` and
+  `uninstall` remove it (with `updater.sh.previous` and `updater.plist.previous`).
   `dotnet run --project src/ControlRoom.Server -- version` prints `ControlRoom <version>` (`dev` without `-p:Version`);
   `GET /api/version` returns `{"version":"…"}`; `GET /api/update` returns `{current, available, latest, url,
   command, autoUpdate, channel}` from the last update check (`dev` never checks) and `settings.json` (`null` when refused).
@@ -172,7 +173,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   `Remove signing keychain` (`remove`, only a `::warning::` on failure, then `delete-keychain`),
   `.github/signing/entitlements.plist` holds the three hardened-runtime entitlements; the secrets reach only `Sign`
   through its `env:`; missing file is a `::warning::` and an ad-hoc build), smoke-checks `ControlRoom.Server version`, packs `controlroom-X.Y.Z-osx-arm64.tar.gz` (one top
-  folder), writes `SHA256SUMS`, attests build provenance and runs `gh release create vX.Y.Z` on the merge commit or pushed commit
+  folder, with a byte copy of `scripts/updater.sh` (`0755`) as `<top>/updater.sh`), writes `SHA256SUMS`, attests build provenance and runs `gh release create vX.Y.Z` on the merge commit or pushed commit
   (`--title "ControlRoom X.Y.Z" --generate-notes`, plus `--prerelease` for a prerelease version). After a stable
   release, `Prune old prereleases` (`continue-on-error`) deletes every `-develop` prerelease and tag at or below
   that version (`.github/scripts/old-prereleases.sh`). Top-level `permissions: {}`; the job has only `contents: write`,
@@ -361,7 +362,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     for `SHA256SUMS`, one matching `SHA256SUMS` line, archive entries only regular files and folders under
     `controlroom-<ver>-osx-arm64/`, at most 10000 entries and 512 MiB of unpacked content (counted through a pipe
     before extraction), checked again after extraction, then `verify_signature` when `signing-cert.sha1` pins the
-    signing certificate. Not part of the server.
+    signing certificate. Without a tag it uses `develop_tag` when `<support>/settings.json` is a regular file (not a
+    symlink) of at most 64 bytes holding `{"autoUpdate":true|false,"channel":"develop"}` plus at most one line break,
+    else `latest_tag`. `remove_updater` also removes `updater.sh.previous` and `updater.plist.previous` (a symlink at
+    either is refused by `install` and `uninstall`). The updater plist comes from the shared `updater_plist`. Not
+    part of the server.
   - `scripts/updater.sh`: POSIX `sh` updater run by launchd (`--factory-root <root> [--start-delay <1-600>]`; any
     other argument list ends `job_running`; the delay is one `sleep` before anything is read, skipped without `sleep`
     on `PATH`). While a job runs it logs `<UTC> waiting <installed>`, removes its lock, waits `sleep 900` (in the
@@ -376,10 +381,20 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     both without polling `/health`; swap: bootout, `server` to
     `server.previous`, new folder to `server`, bootstrap, poll `/health` up to 15 times (an answer counts only while
     `launchctl print` shows the server running and its pid is the only listener `lsof` shows on port 8100); rolls
-    back when it does not answer, and (as `swap_failed`) when the marker can't be updated. A `state.json` over
+    back when it does not answer, and (as `swap_failed`) when the marker can't be updated. Self-update (all inside
+    `swap()` after the signal trap): before the bootout it stages the release's `$WORK/out/$TOP/updater.sh` (a regular
+    file of at most 256 KiB whose first line is exactly `#!/bin/sh`; `ROOT`/`HOME` without control characters) as
+    `<support>/.updater.XXXXXX` (`0700`) and the `updater_plist` output (`0644`); after the new server folder is in
+    place and before the bootstrap it copies the installed `updater.sh` and updater plist to `<support>/updater.sh.previous`
+    (`0700`) and `<support>/updater.plist.previous` (`0644`), then renames the staged files over `<support>/updater.sh`
+    and `~/Library/LaunchAgents/local.controlroom.updater.plist` (every write a rename). Every rollback (through
+    `roll_back`) renames the `.previous` copies back, only for files this run replaced. It never bootouts, bootstraps or
+    runs the updater itself. When the release's copy is not used it logs `<UTC> updater_kept missing|bad|write_failed`
+    before the final line (a failed write puts back what it renamed) and the server update goes on. A `state.json` over
     64 KiB counts as a running job. `valid_tag` (`v`+SemVer, `-develop.N` allowed, no build
-    metadata), `latest_tag`, `download`, `check_and_extract`, `fingerprint_file` and `verify_signature` are byte-identical to `launch-agent.sh` (a test
-    compares them). The channel comes from `settings.json` (at most 64 bytes).
+    metadata), `latest_tag`, `download`, `check_and_extract`, `fingerprint_file`, `verify_signature`, `xml_escape`,
+    `updater_plist`, `number_greater`, `text_greater`, `semver_newer`, `channel_tag` and `develop_tag` are byte-identical
+    to `launch-agent.sh` (a test compares them). The channel comes from `settings.json` (at most 64 bytes).
   - `.github/workflows/release.yml` and `.github/scripts/release-version.sh` (title `release vX.Y.Z` to `X.Y.Z`;
     existing tags on stdin), `.github/scripts/develop-version.sh` (run number to the next `-develop.<run>`
     version; tags on stdin), `.github/scripts/old-prereleases.sh` (version to the `-develop` tags at or below
@@ -391,8 +406,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   - `tests/ControlRoom.Server.Tests/`: one test class per unit or concern (`LaunchAgentScriptTests` runs the script with fake
     `launchctl`/`dotnet`/`curl`/`codesign` in a temp `HOME`, runs every `install --release` from its own copy of the
     scripts (`ScriptFixtures.BuildReleaseTree`, so the real `signing-cert.sha1` is never read) and builds release
-    tarballs with `/usr/bin/tar`; `UpdaterScriptTests` runs `updater.sh` with fake
-    `launchctl`/`curl`/`sleep`/`mv`/`codesign`; `ScriptFixtures` holds the fake `codesign` and a `PATH` folder without it;
+    tarballs with `/usr/bin/tar`; `UpdaterScriptTests` (with its part `UpdaterSelfUpdateTests.cs`) runs `updater.sh` with fake
+    `launchctl`/`curl`/`sleep`/`mv`/`codesign`; `ScriptFixtures.UpdaterPlist` is the expected updater plist for both; `ScriptFixtures` holds the fake `codesign` and a `PATH` folder without it;
     `ReleaseWorkflowTests` reads `release.yml` as text and runs `.github/scripts/signing-cert.sh`;
     `SigningKeychainScriptTests` runs `signing-keychain.sh` with a fake `security` first on `PATH`); `TempFactoryRoot` (`InitGit`, `AddBareRemote`
     and `Git` for a real local repo), `TempTokenFolder` and `ServerFactory` (own temp token file; clients send `Host: 127.0.0.1:8100`; optional tailnet name;

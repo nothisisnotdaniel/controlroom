@@ -9,7 +9,11 @@
 # GitHub release (on the develop channel also a -develop prerelease) with the same download and checks as
 # `launch-agent.sh install --release`, swaps it in, confirms it through the public GET /health route (counted only
 # while launchd runs the server and its pid is the one listening on the port) and rolls back when it doesn't
-# answer or the marker can't be updated. After every bootout it waits until launchd has removed the service, and a
+# answer or the marker can't be updated. With the server it also installs the release's own updater.sh (as
+# <support>/updater.sh) and rewrites the updater plist, keeping the old ones as updater.sh.previous and
+# updater.plist.previous, which a rollback puts back; it never reloads or runs the updater, so both count from the
+# next run or load ("<UTC> updater_kept missing|bad|write_failed" before the final line when they are kept as they
+# were). After every bootout it waits until launchd has removed the service, and a
 # failed bootstrap is tried again a few times (one that never succeeds is bootstrap_failed). It writes
 # update-result.json for the server's push and prints one final line, "<UTC ISO-8601> <word>[ <tags>]", which
 # launchd appends to ~/Library/Logs/ControlRoom/updater.log. The words:
@@ -29,6 +33,13 @@ umask 077
 exec 3>&1 1>/dev/null 2>/dev/null
 
 LABEL="local.controlroom.server"
+# The updater's own LaunchAgent, with the same values as launch-agent.sh (updater_plist prints it).
+UPDATER_LABEL="local.controlroom.updater"
+UPDATER_INTERVAL=21600
+UPDATER_START_DELAY=60
+FIXED_PATH="/usr/local/share/dotnet:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+# A release's updater.sh is installed only when it is at most this long (the script is about 40 KiB).
+MAX_UPDATER_BYTES=262144
 # The one repository releases come from (the same as launch-agent.sh).
 RELEASES="https://github.com/nothisisnotdaniel/controlroom/releases"
 # The develop channel's one release list (newest first; the API never shows drafts without a token).
@@ -73,6 +84,16 @@ SLEEP_PID=""
 # The pinned signing certificate; empty means the signature check is off. Set only from the support folder's
 # signing-cert.sha1 (written by launch-agent.sh install --release), never from the environment.
 SIGNING_CERT_SHA1=""
+# The release's own updater: empty while it is used, else why it was kept out (missing, bad, write_failed), logged as
+# "<UTC> updater_kept <why>" just before the final line.
+UPDATER_KEPT=""
+# Its staged copies (temp files in the support folder, removed on every exit).
+STAGED_SCRIPT=""
+STAGED_PLIST=""
+COPY_TEMP=""
+# yes once this run renamed the release's copy over the installed updater script or plist (a rollback puts it back).
+SCRIPT_SWAPPED=no
+PLIST_SWAPPED=no
 
 # Prints the one log line: the time, the word, then the installed and the latest tag once they are known and
 # checked. Only v+SemVer tags ever follow the word.
@@ -89,6 +110,9 @@ log_line() {
 
 # Logs the word and ends the run (the EXIT trap removes the work folder and the lock).
 finish() {
+    if [ -n "$UPDATER_KEPT" ]; then
+        printf '%s updater_kept %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$UPDATER_KEPT" >&3
+    fi
     log_line "$1"
     exit 0
 }
@@ -108,6 +132,11 @@ cleanup() {
     if [ -n "$WORK" ]; then
         rm -rf "$WORK"
     fi
+    for staged in "$STAGED_SCRIPT" "$STAGED_PLIST" "$COPY_TEMP"; do
+        if [ -n "$staged" ]; then
+            rm -f "$staged"
+        fi
+    done
     if [ "$LOCKED" = yes ]; then
         rmdir "$LOCK"
     fi
@@ -162,121 +191,6 @@ write_result() {
         json="{\"run\":\"$run\",\"result\":\"update_failed\",\"version\":\"${TAG#v}\",\"reason\":\"$2\"}"
     fi
     write_private "$RESULT" "$json"
-}
-
-# True when $1 is greater than $2, both numbers without leading zeros (compared as text, so any length works).
-number_greater() {
-    if [ ${#1} -ne ${#2} ]; then
-        [ ${#1} -gt ${#2} ]
-        return
-    fi
-    [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | LC_ALL=C sort | tail -n 1)" = "$1" ]
-}
-
-# True when $1 is ASCII-greater than $2 (two different prerelease identifiers that are not numbers).
-text_greater() {
-    [ "$(printf '%s\n%s\n' "$1" "$2" | LC_ALL=C sort | tail -n 1)" = "$1" ]
-}
-
-# True when tag $1 is newer than tag $2 by SemVer precedence: the higher X.Y.Z; for the same X.Y.Z, no prerelease
-# beats a prerelease; two prereleases compare identifier by identifier (numbers as numbers and below names, names
-# in ASCII order, and more identifiers win when all before are equal). Both tags passed valid_tag.
-semver_newer() {
-    a=${1#v}
-    b=${2#v}
-    a_core=${a%%-*}
-    b_core=${b%%-*}
-    a_pre=""
-    b_pre=""
-    case $a in
-        *-*) a_pre=${a#*-} ;;
-    esac
-    case $b in
-        *-*) b_pre=${b#*-} ;;
-    esac
-    a_rest=$a_core.
-    b_rest=$b_core.
-    while [ -n "$a_rest" ]; do
-        a_id=${a_rest%%.*}
-        b_id=${b_rest%%.*}
-        a_rest=${a_rest#*.}
-        b_rest=${b_rest#*.}
-        if [ "$a_id" != "$b_id" ]; then
-            number_greater "$a_id" "$b_id"
-            return
-        fi
-    done
-    if [ -z "$a_pre" ] || [ -z "$b_pre" ]; then
-        [ -z "$a_pre" ] && [ -n "$b_pre" ]
-        return
-    fi
-    a_rest=$a_pre.
-    b_rest=$b_pre.
-    while :; do
-        if [ -z "$a_rest" ]; then
-            return 1
-        fi
-        if [ -z "$b_rest" ]; then
-            return 0
-        fi
-        a_id=${a_rest%%.*}
-        b_id=${b_rest%%.*}
-        a_rest=${a_rest#*.}
-        b_rest=${b_rest#*.}
-        if [ "$a_id" = "$b_id" ]; then
-            continue
-        fi
-        case $a_id in
-            *[!0-9]*) a_number=no ;;
-            *) a_number=yes ;;
-        esac
-        case $b_id in
-            *[!0-9]*) b_number=no ;;
-            *) b_number=yes ;;
-        esac
-        if [ "$a_number" = yes ] && [ "$b_number" = yes ]; then
-            number_greater "$a_id" "$b_id"
-        elif [ "$a_number" = yes ]; then
-            return 1
-        elif [ "$b_number" = yes ]; then
-            return 0
-        else
-            text_greater "$a_id" "$b_id"
-        fi
-        return
-    done
-}
-
-# True for a tag the develop channel installs: exactly vX.Y.Z or vX.Y.Z-develop.N (after valid_tag).
-channel_tag() {
-    valid_tag "$1" || return 1
-    printf '%s\n' "$1" \
-        | LC_ALL=C grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-develop\.[1-9][0-9]*)?$'
-}
-
-# The develop channel: lists the releases (one fixed GET, no Authorization, no redirects, 1 MiB at most) and sets
-# TAG to the newest channel_tag among their tag_name values. Any failure, or no such tag, is latest_failed.
-develop_tag() {
-    # The trailing x keeps the answer's last line break, so nothing is cut before the tags are read.
-    answer=$("$CURL" --proto =https --tlsv1.2 -fsS --max-time 30 --max-filesize "$MAX_LIST_BYTES" "$LIST_URL" \
-        && printf x) || finish "$LATEST_FAILED"
-    answer=${answer%x}
-    [ ${#answer} -le "$MAX_LIST_BYTES" ] || finish "$LATEST_FAILED"
-    best=""
-    # Only "tag_name":"<value>" pairs: in a JSON string a quote is escaped, so text inside one never matches.
-    names=$(printf '%s\n' "$answer" | LC_ALL=C grep -Eo '"tag_name"[[:space:]]*:[[:space:]]*"[^"\\]*"' \
-        | LC_ALL=C sed -E 's/^"tag_name"[[:space:]]*:[[:space:]]*"([^"]*)"$/\1/')
-    # Read line by line from a here-document: no word splitting or globbing of the names.
-    while IFS= read -r name; do
-        channel_tag "$name" || continue
-        if [ -z "$best" ] || semver_newer "$name" "$best"; then
-            best=$name
-        fi
-    done <<NAMES
-$names
-NAMES
-    [ -n "$best" ] || finish "$LATEST_FAILED"
-    TAG=$best
 }
 
 # True when no job is in an active stage. A missing jobs folder, or a state.json that is not a regular file, is
@@ -404,10 +318,111 @@ end_swap_failed() {
     end_rollback_failed
 }
 
+# Stages the release's updater.sh and the updater plist before the bootout: the script only when it is a regular file
+# (not a symlink) of at most MAX_UPDATER_BYTES whose first line is exactly #!/bin/sh, and only when ROOT and HOME
+# can go into the plist. Sets UPDATER_KEPT (missing, bad, write_failed) when it is not used. Nothing is run.
+stage_updater() {
+    source_script="$WORK/out/$TOP/updater.sh"
+    if [ ! -e "$source_script" ] && [ ! -L "$source_script" ]; then
+        UPDATER_KEPT=missing
+        return
+    fi
+    if [ ! -f "$source_script" ] || [ -L "$source_script" ]; then
+        UPDATER_KEPT=bad
+        return
+    fi
+    script_size=$(wc -c <"$source_script") || {
+        UPDATER_KEPT=bad
+        return
+    }
+    first_line=$(head -n 1 "$source_script") || {
+        UPDATER_KEPT=bad
+        return
+    }
+    if [ $((script_size + 0)) -gt "$MAX_UPDATER_BYTES" ] || [ "$first_line" != '#!/bin/sh' ]; then
+        UPDATER_KEPT=bad
+        return
+    fi
+    case $ROOT$HOME in
+        *[[:cntrl:]]*)
+            UPDATER_KEPT=bad
+            return
+            ;;
+    esac
+    STAGED_SCRIPT=$(mktemp "$SUPPORT/.updater.XXXXXX") || {
+        STAGED_SCRIPT=""
+        UPDATER_KEPT=write_failed
+        return
+    }
+    STAGED_PLIST=$(mktemp "$SUPPORT/.updater.XXXXXX") || {
+        STAGED_PLIST=""
+        UPDATER_KEPT=write_failed
+        return
+    }
+    if ! cat "$source_script" >"$STAGED_SCRIPT" || ! chmod 700 "$STAGED_SCRIPT" \
+        || ! updater_plist >"$STAGED_PLIST" || ! chmod 644 "$STAGED_PLIST"; then
+        UPDATER_KEPT=write_failed
+    fi
+}
+
+# Copies the installed file $1 to $2 with mode $3 through a temp file in the support folder, then rename.
+copy_previous() {
+    if [ ! -f "$1" ] || [ -L "$1" ] || [ -d "$2" ]; then
+        return 1
+    fi
+    COPY_TEMP=$(mktemp "$SUPPORT/.updater.XXXXXX") || {
+        COPY_TEMP=""
+        return 1
+    }
+    cat "$1" >"$COPY_TEMP" && chmod "$3" "$COPY_TEMP" && mv -f "$COPY_TEMP" "$2" || return 1
+    COPY_TEMP=""
+}
+
+# Puts back what this run renamed over the installed updater script and plist, from their .previous copies.
+# Failures are ignored: the caller ends with its own word.
+restore_updater() {
+    if [ "$SCRIPT_SWAPPED" = yes ] && mv -f "$UPDATER_SCRIPT_PREVIOUS" "$UPDATER_SCRIPT"; then
+        SCRIPT_SWAPPED=no
+    fi
+    if [ "$PLIST_SWAPPED" = yes ] && mv -f "$UPDATER_PLIST_PREVIOUS" "$UPDATER_PLIST"; then
+        PLIST_SWAPPED=no
+    fi
+}
+
+# Installs the staged updater script and plist (the new server folder is in place, not yet bootstrapped): the
+# installed ones are first copied to updater.sh.previous and updater.plist.previous, then the staged files are
+# renamed over them. Every write is a rename. On a failure what was renamed is put back (write_failed). The updater's
+# own service is never touched: the new plist counts from its next load, the new script from its next run.
+install_updater_files() {
+    if [ -n "$UPDATER_KEPT" ]; then
+        return
+    fi
+    if [ -L "$UPDATER_SCRIPT_PREVIOUS" ] || [ -L "$UPDATER_PLIST_PREVIOUS" ] \
+        || ! copy_previous "$UPDATER_SCRIPT" "$UPDATER_SCRIPT_PREVIOUS" 700 \
+        || ! copy_previous "$UPDATER_PLIST" "$UPDATER_PLIST_PREVIOUS" 644; then
+        UPDATER_KEPT=write_failed
+        return
+    fi
+    if ! mv -f "$STAGED_SCRIPT" "$UPDATER_SCRIPT"; then
+        UPDATER_KEPT=write_failed
+        return
+    fi
+    STAGED_SCRIPT=""
+    SCRIPT_SWAPPED=yes
+    if ! mv -f "$STAGED_PLIST" "$UPDATER_PLIST"; then
+        UPDATER_KEPT=write_failed
+        restore_updater
+        return
+    fi
+    STAGED_PLIST=""
+    PLIST_SWAPPED=yes
+}
+
 # Swaps the checked release in, confirms it and rolls back when it does not answer.
 swap() {
     # From here on a signal must not leave the server half swapped.
     trap '' HUP INT TERM
+    stage_updater
     bootout_server
     rm -rf "$PREVIOUS"
     if [ -e "$PREVIOUS" ] || [ -L "$PREVIOUS" ] || ! mv "$SERVER" "$PREVIOUS"; then
@@ -416,6 +431,7 @@ swap() {
     if ! mv "$WORK/out/$TOP" "$SERVER"; then
         end_swap_failed yes
     fi
+    install_updater_files
     # A new server that launchd never starts is put back without polling /health.
     bootstrap_server || roll_back bootstrap_failed bootstrap_failed
     if health_is "${TAG#v}"; then
@@ -430,15 +446,18 @@ swap() {
     roll_back rolled_back no_answer
 }
 
-# Puts server.previous back in place of the new server and confirms the old version; logs $1 and writes result
-# reason $2, or rollback_failed when the rename fails or the old version does not answer.
+# Puts server.previous back in place of the new server, then the updater script and plist this run replaced, and
+# confirms the old version; logs $1 and writes result reason $2, or rollback_failed when the rename fails or the old
+# version does not answer.
 roll_back() {
     bootout_server
     rm -rf "$SERVER"
     if [ -e "$SERVER" ] || [ -L "$SERVER" ] || ! mv "$PREVIOUS" "$SERVER"; then
+        restore_updater
         bootstrap_server
         end_rollback_failed
     fi
+    restore_updater
     bootstrap_server || end_rollback_failed
     if health_is "${INSTALLED#v}"; then
         write_result update_failed "$2"
@@ -598,6 +617,162 @@ verify_signature() {
     done
 }
 
+# XML-escapes one value (no control characters, checked before).
+xml_escape() {
+    printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g' -e "s/'/\&apos;/g"
+}
+
+# True when $1 is greater than $2, both numbers without leading zeros (compared as text, so any length works).
+number_greater() {
+    if [ ${#1} -ne ${#2} ]; then
+        [ ${#1} -gt ${#2} ]
+        return
+    fi
+    [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | LC_ALL=C sort | tail -n 1)" = "$1" ]
+}
+
+# True when $1 is ASCII-greater than $2 (two different prerelease identifiers that are not numbers).
+text_greater() {
+    [ "$(printf '%s\n%s\n' "$1" "$2" | LC_ALL=C sort | tail -n 1)" = "$1" ]
+}
+
+# True when tag $1 is newer than tag $2 by SemVer precedence: the higher X.Y.Z; for the same X.Y.Z, no prerelease
+# beats a prerelease; two prereleases compare identifier by identifier (numbers as numbers and below names, names
+# in ASCII order, and more identifiers win when all before are equal). Both tags passed valid_tag.
+semver_newer() {
+    a=${1#v}
+    b=${2#v}
+    a_core=${a%%-*}
+    b_core=${b%%-*}
+    a_pre=""
+    b_pre=""
+    case $a in
+        *-*) a_pre=${a#*-} ;;
+    esac
+    case $b in
+        *-*) b_pre=${b#*-} ;;
+    esac
+    a_rest=$a_core.
+    b_rest=$b_core.
+    while [ -n "$a_rest" ]; do
+        a_id=${a_rest%%.*}
+        b_id=${b_rest%%.*}
+        a_rest=${a_rest#*.}
+        b_rest=${b_rest#*.}
+        if [ "$a_id" != "$b_id" ]; then
+            number_greater "$a_id" "$b_id"
+            return
+        fi
+    done
+    if [ -z "$a_pre" ] || [ -z "$b_pre" ]; then
+        [ -z "$a_pre" ] && [ -n "$b_pre" ]
+        return
+    fi
+    a_rest=$a_pre.
+    b_rest=$b_pre.
+    while :; do
+        if [ -z "$a_rest" ]; then
+            return 1
+        fi
+        if [ -z "$b_rest" ]; then
+            return 0
+        fi
+        a_id=${a_rest%%.*}
+        b_id=${b_rest%%.*}
+        a_rest=${a_rest#*.}
+        b_rest=${b_rest#*.}
+        if [ "$a_id" = "$b_id" ]; then
+            continue
+        fi
+        case $a_id in
+            *[!0-9]*) a_number=no ;;
+            *) a_number=yes ;;
+        esac
+        case $b_id in
+            *[!0-9]*) b_number=no ;;
+            *) b_number=yes ;;
+        esac
+        if [ "$a_number" = yes ] && [ "$b_number" = yes ]; then
+            number_greater "$a_id" "$b_id"
+        elif [ "$a_number" = yes ]; then
+            return 1
+        elif [ "$b_number" = yes ]; then
+            return 0
+        else
+            text_greater "$a_id" "$b_id"
+        fi
+        return
+    done
+}
+
+# True for a tag the develop channel installs: exactly vX.Y.Z or vX.Y.Z-develop.N (after valid_tag).
+channel_tag() {
+    valid_tag "$1" || return 1
+    printf '%s\n' "$1" \
+        | LC_ALL=C grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-develop\.[1-9][0-9]*)?$'
+}
+
+# The develop channel: lists the releases (one fixed GET, no Authorization, no redirects, 1 MiB at most) and sets
+# TAG to the newest channel_tag among their tag_name values. Any failure, or no such tag, fails with LATEST_FAILED.
+develop_tag() {
+    # The trailing x keeps the answer's last line break, so nothing is cut before the tags are read.
+    answer=$("$CURL" --proto =https --tlsv1.2 -fsS --max-time 30 --max-filesize "$MAX_LIST_BYTES" "$LIST_URL" \
+        && printf x) || fail "$LATEST_FAILED"
+    answer=${answer%x}
+    [ ${#answer} -le "$MAX_LIST_BYTES" ] || fail "$LATEST_FAILED"
+    best=""
+    # Only "tag_name":"<value>" pairs: in a JSON string a quote is escaped, so text inside one never matches.
+    names=$(printf '%s\n' "$answer" | LC_ALL=C grep -Eo '"tag_name"[[:space:]]*:[[:space:]]*"[^"\\]*"' \
+        | LC_ALL=C sed -E 's/^"tag_name"[[:space:]]*:[[:space:]]*"([^"]*)"$/\1/')
+    # Read line by line from a here-document: no word splitting or globbing of the names.
+    while IFS= read -r name; do
+        channel_tag "$name" || continue
+        if [ -z "$best" ] || semver_newer "$name" "$best"; then
+            best=$name
+        fi
+    done <<NAMES
+$names
+NAMES
+    [ -n "$best" ] || fail "$LATEST_FAILED"
+    TAG=$best
+}
+
+# Prints the updater LaunchAgent plist: /bin/sh UPDATER_SCRIPT --factory-root ROOT --start-delay UPDATER_START_DELAY,
+# at load and every UPDATER_INTERVAL seconds, PATH FIXED_PATH, both outputs to UPDATER_LOG (ROOT and the paths have no
+# control characters, checked before).
+updater_plist() {
+    printf '<?xml version="1.0" encoding="UTF-8"?>\n'
+    printf '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+    printf '<plist version="1.0">\n'
+    printf '<dict>\n'
+    printf '    <key>Label</key>\n'
+    printf '    <string>%s</string>\n' "$UPDATER_LABEL"
+    printf '    <key>ProgramArguments</key>\n'
+    printf '    <array>\n'
+    printf '        <string>/bin/sh</string>\n'
+    printf '        <string>%s</string>\n' "$(xml_escape "$UPDATER_SCRIPT")"
+    printf '        <string>--factory-root</string>\n'
+    printf '        <string>%s</string>\n' "$(xml_escape "$ROOT")"
+    printf '        <string>--start-delay</string>\n'
+    printf '        <string>%s</string>\n' "$UPDATER_START_DELAY"
+    printf '    </array>\n'
+    printf '    <key>EnvironmentVariables</key>\n'
+    printf '    <dict>\n'
+    printf '        <key>PATH</key>\n'
+    printf '        <string>%s</string>\n' "$FIXED_PATH"
+    printf '    </dict>\n'
+    printf '    <key>RunAtLoad</key>\n'
+    printf '    <true/>\n'
+    printf '    <key>StartInterval</key>\n'
+    printf '    <integer>%s</integer>\n' "$UPDATER_INTERVAL"
+    printf '    <key>StandardOutPath</key>\n'
+    printf '    <string>%s</string>\n' "$(xml_escape "$UPDATER_LOG")"
+    printf '    <key>StandardErrorPath</key>\n'
+    printf '    <string>%s</string>\n' "$(xml_escape "$UPDATER_LOG")"
+    printf '</dict>\n'
+    printf '</plist>\n'
+}
+
 # --- Main -----------------------------------------------------------------------------------------------------
 
 # Exactly --factory-root <absolute root> [--start-delay <1-600>]; any other argument list leaves ROOT empty, which
@@ -644,6 +819,11 @@ SERVER="$SUPPORT/server"
 PREVIOUS="$SUPPORT/server.previous"
 AGENTS="$HOME/Library/LaunchAgents"
 PLIST="$AGENTS/$LABEL.plist"
+UPDATER_SCRIPT="$SUPPORT/updater.sh"
+UPDATER_PLIST="$AGENTS/$UPDATER_LABEL.plist"
+UPDATER_LOG="$HOME/Library/Logs/ControlRoom/updater.log"
+UPDATER_SCRIPT_PREVIOUS="$SUPPORT/updater.sh.previous"
+UPDATER_PLIST_PREVIOUS="$SUPPORT/updater.plist.previous"
 
 waits=0
 while :; do

@@ -3,8 +3,8 @@
 # Usage: scripts/launch-agent.sh install|uninstall|status
 #        scripts/launch-agent.sh install --tailnet-host <mac>.<tailnet>.ts.net  (adds --TailnetHost <name>)
 #        scripts/launch-agent.sh install --release [vX.Y.Z] [--tailnet-host <name>]
-#          (installs the ready-built release from GitHub instead of publishing: the latest one, or vX.Y.Z,
-#          plus the updater LaunchAgent local.controlroom.updater that runs <support>/updater.sh about a minute
+#          (installs the ready-built release from GitHub instead of publishing: vX.Y.Z, or without a tag the
+#          latest one, or the newest develop build when settings.json picks the develop channel, plus the updater LaunchAgent local.controlroom.updater that runs <support>/updater.sh about a minute
 #          after install or login and then every 6 h)
 # POSIX sh. Runs only dotnet (publish), launchctl, sleep and, with --release, curl, tar, shasum and (once
 # signing-cert.sha1 is committed next to ControlRoom.slnx) codesign --verify, all with fixed arguments. Never reads
@@ -22,6 +22,11 @@ UPDATE_RUNNING="An update is running. Try again in a few minutes."
 USAGE="usage: scripts/launch-agent.sh install [--release [vX.Y.Z]] [--tailnet-host <name>]|uninstall|status"
 # The one repository releases come from (renaming it breaks --release).
 RELEASES="https://github.com/nothisisnotdaniel/controlroom/releases"
+# The develop channel's one release list (newest first), the same as updater.sh.
+LIST_URL="https://api.github.com/repos/nothisisnotdaniel/controlroom/releases?per_page=100"
+MAX_LIST_BYTES=1048576
+# <support>/settings.json is at most this long (the same cap as updater.sh).
+MAX_SETTINGS_BYTES=64
 LATEST_FAILED="Can't find the latest release. Nothing was changed."
 DOWNLOAD_FAILED="Download failed. Nothing was changed."
 RELEASE_BAD="The release download doesn't check out. Nothing was changed."
@@ -173,6 +178,9 @@ PREVIOUS="$SUPPORT/server.previous"
 UPDATER_PLIST="$AGENTS/$UPDATER_LABEL.plist"
 UPDATER_SCRIPT="$SUPPORT/updater.sh"
 UPDATER_LOG="$LOG_DIR/updater.log"
+# The updater keeps its last script and plist here when it installs a release's copy of itself.
+UPDATER_SCRIPT_PREVIOUS="$SUPPORT/updater.sh.previous"
+UPDATER_PLIST_PREVIOUS="$SUPPORT/updater.plist.previous"
 MARKER="$SUPPORT/installed-release"
 SIGNING_COPY="$SUPPORT/signing-cert.sha1"
 UPDATE_LOCK="$SUPPORT/.update.lock"
@@ -248,10 +256,12 @@ put_file() {
     return 1
 }
 
-# Boots out the updater and removes its plist, the copied script, the release marker and the fingerprint copy.
+# Boots out the updater and removes its plist, the copied script, their .previous copies, the release marker and
+# the fingerprint copy.
 remove_updater() {
     bootout_service "$UPDATER_SERVICE"
-    rm -f "$UPDATER_PLIST" "$UPDATER_SCRIPT" "$MARKER" "$SIGNING_COPY" || fail "Can't remove the updater."
+    rm -f "$UPDATER_PLIST" "$UPDATER_SCRIPT" "$UPDATER_SCRIPT_PREVIOUS" "$UPDATER_PLIST_PREVIOUS" "$MARKER" \
+        "$SIGNING_COPY" || fail "Can't remove the updater."
 }
 
 do_status() {
@@ -280,6 +290,8 @@ do_uninstall() {
     refuse_link "$HOME/Library/Application Support"
     refuse_link "$SUPPORT"
     refuse_link "$UPDATER_PLIST"
+    refuse_link "$UPDATER_SCRIPT_PREVIOUS"
+    refuse_link "$UPDATER_PLIST_PREVIOUS"
     refuse_while_updating
     remove_updater
     bootout_service "$SERVICE"
@@ -459,14 +471,189 @@ verify_signature() {
     done
 }
 
-# Downloads, checks and extracts release TAG (the latest one when empty) into server.new; launchd runs its
-# ControlRoom.Server directly. Nothing from the download runs here.
+# True when $1 is greater than $2, both numbers without leading zeros (compared as text, so any length works).
+number_greater() {
+    if [ ${#1} -ne ${#2} ]; then
+        [ ${#1} -gt ${#2} ]
+        return
+    fi
+    [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | LC_ALL=C sort | tail -n 1)" = "$1" ]
+}
+
+# True when $1 is ASCII-greater than $2 (two different prerelease identifiers that are not numbers).
+text_greater() {
+    [ "$(printf '%s\n%s\n' "$1" "$2" | LC_ALL=C sort | tail -n 1)" = "$1" ]
+}
+
+# True when tag $1 is newer than tag $2 by SemVer precedence: the higher X.Y.Z; for the same X.Y.Z, no prerelease
+# beats a prerelease; two prereleases compare identifier by identifier (numbers as numbers and below names, names
+# in ASCII order, and more identifiers win when all before are equal). Both tags passed valid_tag.
+semver_newer() {
+    a=${1#v}
+    b=${2#v}
+    a_core=${a%%-*}
+    b_core=${b%%-*}
+    a_pre=""
+    b_pre=""
+    case $a in
+        *-*) a_pre=${a#*-} ;;
+    esac
+    case $b in
+        *-*) b_pre=${b#*-} ;;
+    esac
+    a_rest=$a_core.
+    b_rest=$b_core.
+    while [ -n "$a_rest" ]; do
+        a_id=${a_rest%%.*}
+        b_id=${b_rest%%.*}
+        a_rest=${a_rest#*.}
+        b_rest=${b_rest#*.}
+        if [ "$a_id" != "$b_id" ]; then
+            number_greater "$a_id" "$b_id"
+            return
+        fi
+    done
+    if [ -z "$a_pre" ] || [ -z "$b_pre" ]; then
+        [ -z "$a_pre" ] && [ -n "$b_pre" ]
+        return
+    fi
+    a_rest=$a_pre.
+    b_rest=$b_pre.
+    while :; do
+        if [ -z "$a_rest" ]; then
+            return 1
+        fi
+        if [ -z "$b_rest" ]; then
+            return 0
+        fi
+        a_id=${a_rest%%.*}
+        b_id=${b_rest%%.*}
+        a_rest=${a_rest#*.}
+        b_rest=${b_rest#*.}
+        if [ "$a_id" = "$b_id" ]; then
+            continue
+        fi
+        case $a_id in
+            *[!0-9]*) a_number=no ;;
+            *) a_number=yes ;;
+        esac
+        case $b_id in
+            *[!0-9]*) b_number=no ;;
+            *) b_number=yes ;;
+        esac
+        if [ "$a_number" = yes ] && [ "$b_number" = yes ]; then
+            number_greater "$a_id" "$b_id"
+        elif [ "$a_number" = yes ]; then
+            return 1
+        elif [ "$b_number" = yes ]; then
+            return 0
+        else
+            text_greater "$a_id" "$b_id"
+        fi
+        return
+    done
+}
+
+# True for a tag the develop channel installs: exactly vX.Y.Z or vX.Y.Z-develop.N (after valid_tag).
+channel_tag() {
+    valid_tag "$1" || return 1
+    printf '%s\n' "$1" \
+        | LC_ALL=C grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-develop\.[1-9][0-9]*)?$'
+}
+
+# The develop channel: lists the releases (one fixed GET, no Authorization, no redirects, 1 MiB at most) and sets
+# TAG to the newest channel_tag among their tag_name values. Any failure, or no such tag, fails with LATEST_FAILED.
+develop_tag() {
+    # The trailing x keeps the answer's last line break, so nothing is cut before the tags are read.
+    answer=$("$CURL" --proto =https --tlsv1.2 -fsS --max-time 30 --max-filesize "$MAX_LIST_BYTES" "$LIST_URL" \
+        && printf x) || fail "$LATEST_FAILED"
+    answer=${answer%x}
+    [ ${#answer} -le "$MAX_LIST_BYTES" ] || fail "$LATEST_FAILED"
+    best=""
+    # Only "tag_name":"<value>" pairs: in a JSON string a quote is escaped, so text inside one never matches.
+    names=$(printf '%s\n' "$answer" | LC_ALL=C grep -Eo '"tag_name"[[:space:]]*:[[:space:]]*"[^"\\]*"' \
+        | LC_ALL=C sed -E 's/^"tag_name"[[:space:]]*:[[:space:]]*"([^"]*)"$/\1/')
+    # Read line by line from a here-document: no word splitting or globbing of the names.
+    while IFS= read -r name; do
+        channel_tag "$name" || continue
+        if [ -z "$best" ] || semver_newer "$name" "$best"; then
+            best=$name
+        fi
+    done <<NAMES
+$names
+NAMES
+    [ -n "$best" ] || fail "$LATEST_FAILED"
+    TAG=$best
+}
+
+# True when <support>/settings.json picks the develop channel: a regular file (not a symlink) of at most
+# MAX_SETTINGS_BYTES holding {"autoUpdate":true|false,"channel":"develop"} and at most one line break. Anything else
+# (missing, other content, a symlink) is the stable channel.
+develop_channel() {
+    settings_file="$SUPPORT/settings.json"
+    if [ ! -f "$settings_file" ] || [ -L "$settings_file" ]; then
+        return 1
+    fi
+    settings_size=$(wc -c <"$settings_file") || return 1
+    [ $((settings_size + 0)) -le "$MAX_SETTINGS_BYTES" ] || return 1
+    settings=$(cat "$settings_file") || return 1
+    case $settings in
+        '{"autoUpdate":true,"channel":"develop"}' | '{"autoUpdate":false,"channel":"develop"}') ;;
+        *) return 1 ;;
+    esac
+    # $(cat) drops every trailing line break: the size allows the text plus at most one.
+    [ $((settings_size + 0)) -le $((${#settings} + 1)) ]
+}
+
+# Prints the updater LaunchAgent plist: /bin/sh UPDATER_SCRIPT --factory-root ROOT --start-delay UPDATER_START_DELAY,
+# at load and every UPDATER_INTERVAL seconds, PATH FIXED_PATH, both outputs to UPDATER_LOG (ROOT and the paths have no
+# control characters, checked before).
+updater_plist() {
+    printf '<?xml version="1.0" encoding="UTF-8"?>\n'
+    printf '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+    printf '<plist version="1.0">\n'
+    printf '<dict>\n'
+    printf '    <key>Label</key>\n'
+    printf '    <string>%s</string>\n' "$UPDATER_LABEL"
+    printf '    <key>ProgramArguments</key>\n'
+    printf '    <array>\n'
+    printf '        <string>/bin/sh</string>\n'
+    printf '        <string>%s</string>\n' "$(xml_escape "$UPDATER_SCRIPT")"
+    printf '        <string>--factory-root</string>\n'
+    printf '        <string>%s</string>\n' "$(xml_escape "$ROOT")"
+    printf '        <string>--start-delay</string>\n'
+    printf '        <string>%s</string>\n' "$UPDATER_START_DELAY"
+    printf '    </array>\n'
+    printf '    <key>EnvironmentVariables</key>\n'
+    printf '    <dict>\n'
+    printf '        <key>PATH</key>\n'
+    printf '        <string>%s</string>\n' "$FIXED_PATH"
+    printf '    </dict>\n'
+    printf '    <key>RunAtLoad</key>\n'
+    printf '    <true/>\n'
+    printf '    <key>StartInterval</key>\n'
+    printf '    <integer>%s</integer>\n' "$UPDATER_INTERVAL"
+    printf '    <key>StandardOutPath</key>\n'
+    printf '    <string>%s</string>\n' "$(xml_escape "$UPDATER_LOG")"
+    printf '    <key>StandardErrorPath</key>\n'
+    printf '    <string>%s</string>\n' "$(xml_escape "$UPDATER_LOG")"
+    printf '</dict>\n'
+    printf '</plist>\n'
+}
+
+# Downloads, checks and extracts release TAG into server.new; launchd runs its ControlRoom.Server directly. Without
+# a tag it takes the channel the user chose: the newest develop build on develop (settings.json), else the latest
+# release. Nothing from the download runs here.
 install_release() {
     WORK=$(mktemp -d "$SUPPORT/.release.XXXXXX") || fail "$DOWNLOAD_FAILED"
     trap cleanup_work EXIT
     trap 'exit 1' HUP INT TERM
     if [ -z "$TAG" ]; then
-        latest_tag
+        if develop_channel; then
+            develop_tag
+        else
+            latest_tag
+        fi
     fi
     TOP="controlroom-${TAG#v}-osx-arm64"
     TARBALL="$TOP.tar.gz"
@@ -517,6 +704,8 @@ do_install() {
     refuse_link "$PREVIOUS"
     refuse_link "$UPDATER_PLIST"
     refuse_link "$UPDATER_SCRIPT"
+    refuse_link "$UPDATER_SCRIPT_PREVIOUS"
+    refuse_link "$UPDATER_PLIST_PREVIOUS"
     refuse_link "$UPDATER_LOG"
     refuse_link "$MARKER"
     refuse_link "$SIGNING_COPY"
@@ -630,38 +819,7 @@ install_updater() {
     else
         rm -f "$SIGNING_COPY" || fail "Can't remove $SIGNING_COPY"
     fi
-    {
-        printf '<?xml version="1.0" encoding="UTF-8"?>\n'
-        printf '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
-        printf '<plist version="1.0">\n'
-        printf '<dict>\n'
-        printf '    <key>Label</key>\n'
-        printf '    <string>%s</string>\n' "$UPDATER_LABEL"
-        printf '    <key>ProgramArguments</key>\n'
-        printf '    <array>\n'
-        printf '        <string>/bin/sh</string>\n'
-        printf '        <string>%s</string>\n' "$(xml_escape "$UPDATER_SCRIPT")"
-        printf '        <string>--factory-root</string>\n'
-        printf '        <string>%s</string>\n' "$(xml_escape "$ROOT")"
-        printf '        <string>--start-delay</string>\n'
-        printf '        <string>%s</string>\n' "$UPDATER_START_DELAY"
-        printf '    </array>\n'
-        printf '    <key>EnvironmentVariables</key>\n'
-        printf '    <dict>\n'
-        printf '        <key>PATH</key>\n'
-        printf '        <string>%s</string>\n' "$FIXED_PATH"
-        printf '    </dict>\n'
-        printf '    <key>RunAtLoad</key>\n'
-        printf '    <true/>\n'
-        printf '    <key>StartInterval</key>\n'
-        printf '    <integer>%s</integer>\n' "$UPDATER_INTERVAL"
-        printf '    <key>StandardOutPath</key>\n'
-        printf '    <string>%s</string>\n' "$(xml_escape "$UPDATER_LOG")"
-        printf '    <key>StandardErrorPath</key>\n'
-        printf '    <string>%s</string>\n' "$(xml_escape "$UPDATER_LOG")"
-        printf '</dict>\n'
-        printf '</plist>\n'
-    } | put_file "$UPDATER_PLIST" 644 || fail "Can't write $UPDATER_PLIST"
+    updater_plist | put_file "$UPDATER_PLIST" 644 || fail "Can't write $UPDATER_PLIST"
     bootstrap_plist "$UPDATER_PLIST" \
         || fail "launchctl bootstrap failed. Check: launchctl print $UPDATER_SERVICE"
 }

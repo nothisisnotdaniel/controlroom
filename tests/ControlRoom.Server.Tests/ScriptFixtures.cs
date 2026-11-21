@@ -49,6 +49,47 @@ internal static class ScriptFixtures
         return script;
     }
 
+    /// <summary>The updater LaunchAgent plist that <c>updater_plist</c> prints (in <c>launch-agent.sh install
+    /// --release</c> and in <c>updater.sh</c>) for these paths, which must need no XML escaping.</summary>
+    public static string UpdaterPlist(string script, string root, string log)
+    {
+        foreach (string value in new[] { script, root, log })
+        {
+            Assert.DoesNotMatch("[&<>\"']", value);
+        }
+
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            + "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+            + "<plist version=\"1.0\">\n"
+            + "<dict>\n"
+            + "    <key>Label</key>\n"
+            + "    <string>local.controlroom.updater</string>\n"
+            + "    <key>ProgramArguments</key>\n"
+            + "    <array>\n"
+            + "        <string>/bin/sh</string>\n"
+            + "        <string>" + script + "</string>\n"
+            + "        <string>--factory-root</string>\n"
+            + "        <string>" + root + "</string>\n"
+            + "        <string>--start-delay</string>\n"
+            + "        <string>60</string>\n"
+            + "    </array>\n"
+            + "    <key>EnvironmentVariables</key>\n"
+            + "    <dict>\n"
+            + "        <key>PATH</key>\n"
+            + "        <string>/usr/local/share/dotnet:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>\n"
+            + "    </dict>\n"
+            + "    <key>RunAtLoad</key>\n"
+            + "    <true/>\n"
+            + "    <key>StartInterval</key>\n"
+            + "    <integer>21600</integer>\n"
+            + "    <key>StandardOutPath</key>\n"
+            + "    <string>" + log + "</string>\n"
+            + "    <key>StandardErrorPath</key>\n"
+            + "    <string>" + log + "</string>\n"
+            + "</dict>\n"
+            + "</plist>\n";
+    }
+
     /// <summary>Makes <paramref name="folder"/> hold a symlink to every program in <c>/usr/bin</c>, <c>/bin</c>,
     /// <c>/usr/sbin</c> and <c>/sbin</c> apart from those named in <paramref name="leaveOut"/>, so it can stand in
     /// for those on <c>PATH</c>.</summary>

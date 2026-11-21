@@ -66,7 +66,7 @@ Run `install` again after you pull changes. It publishes the server again and re
 ### From a release (no .NET SDK needed)
 
 ```sh
-scripts/launch-agent.sh install --release          # the latest release from GitHub
+scripts/launch-agent.sh install --release          # the latest release (on the develop channel: the newest develop build)
 scripts/launch-agent.sh install --release v1.2.3   # that release
 scripts/launch-agent.sh install --release --tailnet-host mac.tail1234.ts.net  # either one, for Tailscale
 ```
@@ -80,6 +80,12 @@ It also installs the updater. When "Install updates automatically" is on (at the
 for a newer release about a minute after install or login, then every 6 h. While a factory job runs it never swaps
 the server: it checks again every 15 min (up to 5 h 45 min) and installs the update once the job is done. Each check
 adds a line to `~/Library/Logs/ControlRoom/updater.log`.
+
+Every release carries its own `updater.sh`. When the updater installs a release, it also installs that copy of itself
+and rewrites its LaunchAgent plist, so updater fixes arrive without a reinstall. The new script runs from the next
+check, the new plist counts from the next login or install. The old ones stay as `updater.sh.previous` and
+`updater.plist.previous` in `~/Library/Application Support/ControlRoom/`, and a rollback puts them back. If the
+release's copy is missing or doesn't check out, the updater keeps its own and logs `updater_kept`.
 
 Every release also has a build-provenance attestation. To check a downloaded tarball by hand:
 
@@ -100,8 +106,8 @@ Every push to `develop` (except one that changes only `backlog.md` or `backlog/`
 attestation. A stable release then deletes the develop prereleases (and their tags) at or below its version.
 
 To try those builds, choose **Develop (prereleases)** under "Update channel" at the foot of the Jobs page (under
-"Install updates automatically"). The update notice and the updater then follow the newest develop build or release;
-**Stable** (the default) ignores prereleases. A develop build can also be installed by hand:
+"Install updates automatically"). The update notice, the updater and `install --release` without a tag then follow the
+newest develop build or release; **Stable** (the default) ignores prereleases. A develop build can also be installed by hand:
 
 ```sh
 scripts/launch-agent.sh install --release v1.2.4-develop.7
