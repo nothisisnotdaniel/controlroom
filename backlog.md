@@ -63,7 +63,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#47](backlog/047-automatic-updates.md) Automatic updates (after: #46) → 229-automatic-updates
 - [x] [#48](backlog/048-strict-semver-prerelease-identifiers-in-release.md) Strict SemVer prerelease identifiers in release tags → 270-strict-semver-prerelease
 - [?] [#49](backlog/049-verify-release-signatures-in-the-updater.md) Verify release signatures in the updater without gh
-- [?] [#50](backlog/050-updater-port-check-when-another-user.md) Updater port check when another user holds the port
+- [ ] [#50](backlog/050-updater-port-check-when-another-user.md) Updater port check when another user holds the port
 - [x] [#51](backlog/051-develop-prerelease-builds-and-an-opt.md) Develop prerelease builds and an opt-in develop update channel → 234-develop-prereleases-channel
 - [?] [#52](backlog/052-test-that-keeping-the-update-channel.md) Test that keeping the update channel starts no check
 - [?] [#53](backlog/053-keep-focus-on-the-channel-select.md) Keep focus on the channel select after saving
