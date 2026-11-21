@@ -726,7 +726,7 @@ main {
   white-space: pre;
 }
 
-/* Bottom tab bar: the seven sections in one row on every view and width, an icon over a tiny label. */
+/* Bottom tab bar: the six sections in one row on every view and width, an icon over a tiny label. */
 .tab-bar {
   position: fixed;
   left: 0;
@@ -1750,7 +1750,16 @@ body:has(#edit-notice:not([hidden])) {
   margin: 0 0 12px;
 }
 
-/* Search: a labelled field and two filters above one card list of results; long titles wrap. */
+/* Search: at the top of the Backlogs (#133), a labelled field and three filters above one card list of results; long
+   titles wrap. While a query is entered the results stand in place of the backlog. */
+.backlog-search {
+  margin: 0 0 12px;
+}
+
+#backlogs.searching > :not(#backlog-search) {
+  display: none;
+}
+
 .search-form {
   margin: 0 0 12px;
 }

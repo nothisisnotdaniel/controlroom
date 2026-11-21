@@ -3,21 +3,23 @@ using System.Text.RegularExpressions;
 namespace ControlRoom.Server.Tests;
 
 /// <summary>Checks <c>search.js</c> and its hooks in <c>index.html</c>, <c>app.js</c>, <c>live.js</c>,
-/// <c>app.css</c> and <c>sw.js</c> as text (there is no JS test runtime). Typing, Back restoring the view and the
-/// live re-run keeping focus are checked by hand.</summary>
+/// <c>app.css</c> and <c>sw.js</c> as text (there is no JS test runtime). Search sits at the top of the Backlogs
+/// (#133). Typing, Back restoring the view and the live re-run keeping focus are checked by hand.</summary>
 public sealed partial class SearchWebAppTests
 {
     [Fact]
-    public async Task IndexHtml_HasTheSearchLinkAfterTasksAndTheSearchView()
+    public async Task IndexHtml_HasNoSearchTabAndTheSearchBoxAtTheTopOfBacklogs()
     {
         string html = await Fetch("/index.html");
 
-        int tasks = html.IndexOf("<a href=\"#tasks\" data-view=\"tasks\">", StringComparison.Ordinal);
-        int search = html.IndexOf("<a href=\"#search\" data-view=\"search\">", StringComparison.Ordinal);
         int navEnd = html.IndexOf("</nav>", StringComparison.Ordinal);
-        Assert.True(tasks >= 0 && search > tasks && search < navEnd);
-        Assert.Equal(7, NavLink().Matches(html[..navEnd]).Count);
-        Assert.Contains("<main id=\"search\" hidden></main>", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("href=\"#search\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("data-view=\"search\"", html, StringComparison.Ordinal);
+        Assert.Equal(6, NavLink().Matches(html[..navEnd]).Count);
+        Assert.DoesNotContain("<main id=\"search\"", html, StringComparison.Ordinal);
+        Assert.Contains(
+            "<main id=\"backlogs\">\n    <div class=\"backlog-search\" id=\"backlog-search\"></div>\n    <p class=\"status\">Loading…</p>",
+            html.ReplaceLineEndings("\n"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -36,24 +38,95 @@ public sealed partial class SearchWebAppTests
     }
 
     [Fact]
-    public async Task AppJs_RoutesHashSearchToTheSearchViewTitledSearch_AndKeepsItsScroll()
+    public async Task AppJs_HasNoSearchView()
     {
         string app = await Fetch("/app.js");
         string search = await Fetch("/search.js");
 
         Assert.Contains(
-            "const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"search\", \"history\", \"doctor\", \"job\", \"story\"];", app,
+            "const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"history\", \"doctor\", \"job\", \"story\"];", app,
             StringComparison.Ordinal);
         Assert.Contains(
-            "const ViewTitles = { backlogs: \"Backlogs\", board: \"Jobs\", inbox: \"Inbox\", tasks: \"Tasks\", search: \"Search\",\n  history: \"History\", doctor: \"Health\" };",
+            "const ViewTitles = { backlogs: \"Backlogs\", board: \"Jobs\", inbox: \"Inbox\", tasks: \"Tasks\",\n  history: \"History\", doctor: \"Health\" };",
             app, StringComparison.Ordinal);
-        Assert.Contains("if (hash === SearchRoute) {\n    return \"search\";\n  }", app, StringComparison.Ordinal);
-        Assert.Contains("if (next === \"search\") {\n    showSearch();\n    return;\n  }", app, StringComparison.Ordinal);
-        Assert.Contains("if (currentView === \"search\" && next !== \"search\") {\n    rememberSearchScroll();", app,
-            StringComparison.Ordinal);
+        Assert.DoesNotContain("next === \"search\"", app, StringComparison.Ordinal);
+        Assert.DoesNotContain("rememberSearchScroll", app + search, StringComparison.Ordinal);
+        Assert.DoesNotContain("getElementById(\"search\")", search, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AppJs_RoutesHashSearchToBacklogsWithTheFieldFocused()
+    {
+        string app = await Fetch("/app.js");
+        string search = await Fetch("/search.js");
+
         Assert.Contains("const SearchRoute = \"#search\";", search, StringComparison.Ordinal);
-        Assert.Contains("searchScroll = window.scrollY;", search, StringComparison.Ordinal);
-        Assert.Contains("window.scrollTo(0, searchScroll);", search, StringComparison.Ordinal);
+        Assert.Contains("const BacklogsRoute = \"#backlogs\";", app, StringComparison.Ordinal);
+        Assert.Contains("if (hash === SearchRoute) {\n    return \"backlogs\";\n  }", app, StringComparison.Ordinal);
+        Assert.Contains(
+            "  const fromSearch = location.hash === SearchRoute;\n  if (fromSearch) {\n    history.replaceState(null, \"\", BacklogsRoute);\n  }",
+            app, StringComparison.Ordinal);
+        Assert.Contains(
+            "  showStatus();\n  showSearch();\n  if (fromSearch) {\n    window.scrollTo(0, 0);\n    focusSearch();\n    return;\n  }\n  window.scrollTo(0, listScroll);",
+            app, StringComparison.Ordinal);
+        Assert.Contains("function focusSearch() {\n  searchField().focus({ preventScroll: true });\n}", search,
+            StringComparison.Ordinal);
+        // The redirect is read before the view is chosen, so the replaced hash still opens Backlogs.
+        int view = app.IndexOf("const next = viewFor(location.hash);", StringComparison.Ordinal);
+        int redirect = app.IndexOf("const fromSearch = location.hash === SearchRoute;", StringComparison.Ordinal);
+        Assert.True(view >= 0 && redirect > view);
+    }
+
+    [Fact]
+    public async Task SearchJs_BuildsTheFormOnceIntoTheBacklogSearchBox()
+    {
+        string search = await Fetch("/search.js");
+
+        Assert.Contains("function backlogSearchBox() {\n  return document.getElementById(\"backlog-search\");\n}", search,
+            StringComparison.Ordinal);
+        Assert.Contains("function buildSearchView() {\n  const box = backlogSearchBox();", search, StringComparison.Ordinal);
+        Assert.Contains("box.replaceChildren(form, status, results);", search, StringComparison.Ordinal);
+        Assert.Contains(
+            "function searchShown() {\n  return !document.getElementById(\"backlogs\").hidden;\n}", search,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AppJs_KeepsTheSearchBoxFirstWhenRenderingTheBacklog()
+    {
+        string app = await Fetch("/app.js");
+
+        Assert.Contains(
+            "function show(nodes) {\n  const box = backlogSearchBox();\n  for (const child of [...document.getElementById(\"backlogs\").children]) {\n    if (child !== box) {\n      child.remove();\n    }\n  }\n  box.after(...nodes);\n}",
+            app, StringComparison.Ordinal);
+        Assert.Contains("backlogSearchBox().after(renderBacklogPicker());", app, StringComparison.Ordinal);
+        Assert.Contains("backlogSearchBox().after(next);", app, StringComparison.Ordinal);
+        Assert.DoesNotContain("main.prepend(", app, StringComparison.Ordinal);
+        Assert.Single(ReplaceView().Matches(app)); // only the story view's own main
+    }
+
+    [Fact]
+    public async Task SearchJs_ShowsResultsInPlaceOfTheBacklogWhileAQueryIsEntered_AndTheBacklogWhenCleared()
+    {
+        string js = await Fetch("/search.js");
+
+        Assert.Contains("const SearchingClass = \"searching\";", js, StringComparison.Ordinal);
+        Assert.Contains(
+            "function showSearching(searching) {\n  document.getElementById(\"backlogs\").classList.toggle(SearchingClass, searching);\n}",
+            js, StringComparison.Ordinal);
+        Assert.Contains(
+            "if (text === \"\" && mark === \"\" && project === \"\" && category === \"\") {\n    showSearchStatus(\"\");\n    showSearchResults([]);\n    showSearching(false);\n    return true;\n  }\n  showSearching(true);\n",
+            js, StringComparison.Ordinal);
+        Assert.Contains("field.placeholder = SearchTexts.hint;", js, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AppCss_HidesTheBacklogWhileSearching()
+    {
+        string css = (await Fetch("/app.css")).ReplaceLineEndings("\n");
+
+        Assert.Contains("#backlogs.searching > :not(#backlog-search) {\n  display: none;\n}", css, StringComparison.Ordinal);
+        Assert.Contains(".backlog-search {\n  margin: 0 0 12px;\n}", css, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -95,9 +168,6 @@ public sealed partial class SearchWebAppTests
         Assert.Contains("if (request !== searchRequest) {\n    return true;\n  }\n  fillSearchProjects", js,
             StringComparison.Ordinal);
         Assert.Contains("hint: \"Type a number, title or word.\",", js, StringComparison.Ordinal);
-        Assert.Contains(
-            "if (text === \"\" && mark === \"\" && project === \"\" && category === \"\") {\n    showSearchStatus(\"\");\n    showSearchResults([element(\"p\", \"empty\", SearchTexts.hint)]);\n    return true;\n  }",
-            js, StringComparison.Ordinal);
         int empty = js.IndexOf("if (text === \"\" && mark === \"\" && project === \"\" && category === \"\") {", StringComparison.Ordinal);
         int fetch = js.IndexOf("await authFetch(", StringComparison.Ordinal);
         Assert.True(empty >= 0 && empty < fetch);
@@ -173,7 +243,7 @@ public sealed partial class SearchWebAppTests
 
         Assert.Contains("document.getElementById(\"search-results\").replaceChildren(...nodes);", js, StringComparison.Ordinal);
         // The whole view is built only once, on the first show.
-        Assert.Single(ReplaceView().Matches(js));
+        Assert.Single(BoxReplace().Matches(js));
         Assert.Contains("if (searchField() === null) {\n    buildSearchView();", js, StringComparison.Ordinal);
     }
 
@@ -209,7 +279,7 @@ public sealed partial class SearchWebAppTests
     }
 
     [Fact]
-    public async Task AppCss_StylesTheSearchView_With16PxFieldsAndEightTabsInOneRow()
+    public async Task AppCss_StylesTheSearchBox_With16PxFieldsAndTheTabsInOneRow()
     {
         string css = await Fetch("/app.css");
 
@@ -256,4 +326,7 @@ public sealed partial class SearchWebAppTests
 
     [GeneratedRegex(@"main\.replaceChildren\(")]
     private static partial Regex ReplaceView();
+
+    [GeneratedRegex(@"box\.replaceChildren\(")]
+    private static partial Regex BoxReplace();
 }
