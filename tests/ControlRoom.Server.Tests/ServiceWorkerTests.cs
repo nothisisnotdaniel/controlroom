@@ -46,7 +46,7 @@ public sealed partial class ServiceWorkerTests
     {
         string js = await Fetch();
 
-        Assert.Contains("const CacheVersion = \"v16\";", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v17\";", js, StringComparison.Ordinal);
         Assert.Contains("  \"/edit.js\",\n", js, StringComparison.Ordinal);
         Assert.Contains("  \"/inbox.js\",\n", js, StringComparison.Ordinal);
         Assert.Contains("  \"/live.js\",\n", js, StringComparison.Ordinal);

@@ -163,8 +163,8 @@ public sealed partial class BacklogChangeApiTests
     [InlineData("approve", 4)]
     [InlineData("drop", 3)]
     [InlineData("drop", 7)]
-    [InlineData("up", 2)]
-    [InlineData("down", 7)]
+    [InlineData("place", 2)]
+    [InlineData("place", 4)]
     [InlineData("top", 3)]
     [InlineData("top", 4)]
     [InlineData("title", 2)]
@@ -355,9 +355,6 @@ public sealed partial class BacklogChangeApiTests
     }
 
     [Theory]
-    [InlineData("up", 7, 6, 4, "backlog: move line 8 up")]
-    [InlineData("up", 3, 2, 4, "backlog: move #2 up")]
-    [InlineData("down", 3, 5, 4, "backlog: move #2 down")]
     [InlineData("top", 5, 3, 5, "backlog: move #3 to top")]
     public async Task Move_ReordersItemLinesAndKeepsProse(string action, int line, int to, int prose, string message)
     {
@@ -371,6 +368,144 @@ public sealed partial class BacklogChangeApiTests
         Assert.Equal("Prose line.", lines[prose]);
         Assert.Equal(AlphaBacklog.Length, File.ReadAllText(repo.BacklogPath).Length);
         repo.AssertOneCommit(message, ["backlog.md"]);
+    }
+
+    [Theory]
+    [InlineData("up", 7)]
+    [InlineData("down", 3)]
+    [InlineData("up", 6)]
+    [InlineData("down", 5)]
+    public async Task UpAndDown_AreGone_Is400Invalid(string action, int line)
+    {
+        using Repo repo = Repo.Create();
+        using HttpClient client = repo.Factory.CreateTokenClient();
+        IReadOnlyList<string> before = repo.State();
+
+        using HttpResponseMessage response = await client.PostAsync(
+            Route, Json(new { project = "Alpha", version = repo.Version(), action, line }));
+
+        await AssertError(response, HttpStatusCode.BadRequest, "invalid");
+        Assert.Equal(before, repo.State());
+    }
+
+    [Theory]
+    [InlineData(7, 3, "before", "backlog: move line 8")]
+    [InlineData(3, 7, "after", "backlog: move #2")]
+    [InlineData(6, 5, "before", "backlog: move line 7")]
+    [InlineData(5, 6, "after", "backlog: move #3")]
+    public async Task Place_SwapsTheGroupInItsOwnLinesAndPushes(int line, int target, string where, string message)
+    {
+        using Repo repo = Repo.Create();
+        string remote = repo.Root.AddBareRemote(repo.Folder);
+        string[] source = AlphaBacklog.Split('\n');
+        string[] expected = [.. source];
+        (expected[line], expected[target]) = (source[target], source[line]);
+
+        JsonElement result = await repo.Change(new { action = "place", line, target, where });
+
+        Assert.Equal(Encoding.UTF8.GetBytes(string.Join("\n", expected)), File.ReadAllBytes(repo.BacklogPath));
+        repo.AssertOneCommit(message, ["backlog.md"]);
+        Assert.Equal(repo.Version(), result.GetProperty("version").GetString());
+        Assert.True(result.GetProperty("committed").GetBoolean());
+        Assert.True(result.GetProperty("pushed").GetBoolean());
+        Assert.Equal(
+            TempFactoryRoot.Git(repo.Folder, "rev-parse", "HEAD"),
+            TempFactoryRoot.Git(remote, "rev-parse", "refs/heads/develop"));
+    }
+
+    [Fact]
+    public async Task Place_KeepsCrlfLinesAndEveryOtherIndex()
+    {
+        const string Crlf = "# B\r\n- [ ] [#1](backlog/001-a.md) A\r\nProse\r\n- [x] Done\r\n- [ ] [#2](backlog/002-b.md) B\r\n"
+            + "- [ ] [#3](backlog/003-c.md) C\r\n";
+        using Repo repo = Repo.Create(Crlf);
+
+        await repo.Change(new { action = "place", line = 1, target = 5, where = "after" });
+
+        Assert.Equal(
+            Encoding.UTF8.GetBytes("# B\r\n- [ ] [#2](backlog/002-b.md) B\r\nProse\r\n- [x] Done\r\n"
+                + "- [ ] [#3](backlog/003-c.md) C\r\n- [ ] [#1](backlog/001-a.md) A\r\n"),
+            File.ReadAllBytes(repo.BacklogPath));
+        repo.AssertOneCommit("backlog: move #1", ["backlog.md"]);
+    }
+
+    public static TheoryData<string> InvalidPlaceBodies()
+    {
+        return
+        [
+            "{\"line\":7,\"where\":\"before\"}",
+            "{\"target\":3,\"where\":\"before\"}",
+            "{\"line\":7,\"target\":-1,\"where\":\"before\"}",
+            "{\"line\":-1,\"target\":3,\"where\":\"before\"}",
+            "{\"line\":7,\"target\":3.5,\"where\":\"before\"}",
+            "{\"line\":7,\"target\":\"3\",\"where\":\"before\"}",
+            "{\"line\":7,\"target\":99,\"where\":\"before\"}",
+            "{\"line\":99,\"target\":3,\"where\":\"before\"}",
+            "{\"line\":7,\"target\":4,\"where\":\"before\"}",
+            "{\"line\":4,\"target\":7,\"where\":\"before\"}",
+            "{\"line\":7,\"target\":5,\"where\":\"before\"}",
+            "{\"line\":5,\"target\":3,\"where\":\"after\"}",
+            "{\"line\":7,\"target\":2,\"where\":\"before\"}",
+            "{\"line\":2,\"target\":3,\"where\":\"before\"}",
+            "{\"line\":7,\"target\":7,\"where\":\"before\"}",
+            "{\"line\":7,\"target\":3}",
+            "{\"line\":7,\"target\":3,\"where\":\"top\"}",
+            "{\"line\":7,\"target\":3,\"where\":3}",
+            "{\"line\":3,\"target\":7,\"where\":\"before\"}",
+            "{\"line\":7,\"target\":3,\"where\":\"after\"}",
+        ];
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidPlaceBodies))]
+    public async Task Place_WithAnInvalidRequest_Is400InvalidAndWritesNothing(string fields)
+    {
+        using Repo repo = Repo.Create();
+        using HttpClient client = repo.Factory.CreateTokenClient();
+        IReadOnlyList<string> before = repo.State();
+        string body = "{\"project\":\"Alpha\",\"version\":\"" + repo.Version() + "\",\"action\":\"place\","
+            + fields[1..];
+
+        using HttpResponseMessage response = await client.PostAsync(
+            Route, new StringContent(body, Encoding.UTF8, "application/json"));
+
+        await AssertError(response, HttpStatusCode.BadRequest, "invalid");
+        Assert.Equal(before, repo.State());
+    }
+
+    [Theory]
+    [InlineData(4, 2)]
+    [InlineData(2, 6)]
+    [InlineData(6, 2)]
+    public async Task Place_OnAHandLine_Is400Invalid(int line, int target)
+    {
+        using Repo repo = Repo.Create(HandBacklog);
+        using HttpClient client = repo.Factory.CreateTokenClient();
+        IReadOnlyList<string> before = repo.State();
+
+        using HttpResponseMessage response = await client.PostAsync(Route, Json(new
+        {
+            project = "Alpha", version = repo.Version(), action = "place", line, target, where = "before",
+        }));
+
+        await AssertError(response, HttpStatusCode.BadRequest, "invalid");
+        Assert.Equal(before, repo.State());
+    }
+
+    [Fact]
+    public async Task Place_WithAStaleVersion_Is409ChangedAndWritesNothing()
+    {
+        using Repo repo = Repo.Create();
+        using HttpClient client = repo.Factory.CreateTokenClient();
+        IReadOnlyList<string> before = repo.State();
+
+        using HttpResponseMessage response = await client.PostAsync(Route, Json(new
+        {
+            project = "Alpha", version = new string('0', 64), action = "place", line = 7, target = 3, where = "before",
+        }));
+
+        await AssertError(response, HttpStatusCode.Conflict, "changed");
+        Assert.Equal(before, repo.State());
     }
 
     [Fact]

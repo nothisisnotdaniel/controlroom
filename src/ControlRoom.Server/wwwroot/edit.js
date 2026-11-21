@@ -1,6 +1,6 @@
 "use strict";
 
-// Backlog editing: per-project edit mode (approve, drop, move, edit title, add), the story editor and Add note. Every change
+// Backlog editing: per-project edit mode (approve, drop, move by drag or arrow keys, to top, edit title, add), the story editor and Add note. Every change
 // is one POST to /api/backlog/change through authFetch with the version the view loaded. Only fixed texts are shown;
 // server text never is. Uses element() and the views' reload functions from app.js at call time.
 
@@ -9,9 +9,9 @@ const EditTexts = {
   doneEditing: "Done",
   approve: "Approve",
   drop: "Drop",
-  up: "Up",
-  down: "Down",
   toTop: "To top",
+  move: "Move",
+  moveHint: "Use arrow keys to move within the group.",
   editTitle: "Edit title",
   save: "Save",
   cancel: "Cancel",
@@ -172,14 +172,275 @@ function editRow(projectName, version, entry) {
       }
     })));
   }
-  row.appendChild(named(editButton(EditTexts.up, null, () => send({ action: "up" }))));
-  row.appendChild(named(editButton(EditTexts.down, null, () => send({ action: "down" }))));
   row.appendChild(named(editButton(EditTexts.toTop, null, () => send({ action: "top" }))));
   if (number !== null) {
     row.appendChild(named(editButton(EditTexts.editTitle, null, () => openTitleForm(row, entry, send))));
   }
   row.addEventListener("click", (event) => event.stopPropagation());
   return row;
+}
+
+// Drag to reorder: a handle at the start of every [ ] and [?] row (edit mode only). A pointer drag (pointer events
+// only, captured on the handle) or ArrowUp/ArrowDown on the focused handle sends one "place" change; the item only
+// ever lands among the rows of its own group's list. No HTML5 drag and drop, no timers: auto-scroll is stepped by
+// requestAnimationFrame.
+const DragEdge = 48;
+const DragScrollStep = 12;
+let dragBusy = false;
+let dragState = null;
+let dragHintCount = 0;
+
+// The handle and its screen reader hint for one line, or null for a line that cannot be placed.
+function dragHandle(projectName, version, entry) {
+  const mark = asText(entry && entry.mark);
+  const line = asNumber(entry && entry.line);
+  if ((mark !== " " && mark !== "?") || line === null || version === "") {
+    return null;
+  }
+  const number = asNumber(entry.number);
+  const subject = number !== null ? "#" + number : titleText(entry.title);
+  const handle = element("button", "drag-handle edit-only", "≡");
+  handle.type = "button";
+  handle.setAttribute("aria-label", EditTexts.move + " " + subject);
+  dragHintCount += 1;
+  const hint = element("span", "visually-hidden drag-hint", EditTexts.moveHint);
+  hint.id = "drag-hint-" + dragHintCount;
+  handle.setAttribute("aria-describedby", hint.id);
+  handle.dataset.line = String(line);
+  if (number !== null) {
+    handle.dataset.number = String(number);
+  }
+  const place = { project: projectName, version: version };
+  // A tap or a drag on the handle never opens the story: its click is swallowed.
+  handle.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  handle.addEventListener("pointerdown", (event) => startDrag(event, handle, place));
+  handle.addEventListener("pointermove", (event) => moveDrag(event));
+  handle.addEventListener("pointerup", (event) => endDrag(event, true));
+  handle.addEventListener("pointercancel", (event) => endDrag(event, false));
+  handle.addEventListener("lostpointercapture", (event) => endDrag(event, false));
+  handle.addEventListener("keydown", (event) => keyMove(event, handle, place));
+  return [handle, hint];
+}
+
+// The rows of the handle's group, in file order: the list items of its own list that have a handle.
+function dragRows(list) {
+  return [...list.children].filter((row) => row.querySelector(":scope > .drag-handle") !== null);
+}
+
+function rowLine(row) {
+  return Number(row.querySelector(":scope > .drag-handle").dataset.line);
+}
+
+function startDrag(event, handle, place) {
+  if (dragBusy || changeBusy || !event.isPrimary || (event.pointerType === "mouse" && event.button !== 0)) {
+    return;
+  }
+  const row = handle.closest("li");
+  const list = row && row.parentElement;
+  if (!list) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  handle.setPointerCapture(event.pointerId);
+  const rows = dragRows(list);
+  const indicator = element("li", "drop-indicator");
+  indicator.setAttribute("aria-hidden", "true");
+  indicator.hidden = true;
+  list.classList.add("drag-list");
+  list.appendChild(indicator);
+  row.classList.add("dragging");
+  dragBusy = true;
+  dragState = {
+    pointerId: event.pointerId,
+    handle: handle,
+    place: place,
+    row: row,
+    list: list,
+    rows: rows,
+    original: rows.indexOf(row),
+    indicator: indicator,
+    x: event.clientX,
+    y: event.clientY,
+    drop: null,
+    frame: 0,
+  };
+  document.addEventListener("keydown", dragKey, true);
+  dragState.frame = requestAnimationFrame(dragFrame);
+  showDrop();
+}
+
+function moveDrag(event) {
+  if (dragState === null || event.pointerId !== dragState.pointerId) {
+    return;
+  }
+  event.preventDefault();
+  dragState.x = event.clientX;
+  dragState.y = event.clientY;
+  showDrop();
+}
+
+// One auto-scroll step per frame while the pointer is in the top or bottom 48 px of the viewport.
+function dragFrame() {
+  if (dragState === null) {
+    return;
+  }
+  let step = 0;
+  if (dragState.y < DragEdge) {
+    step = -DragScrollStep;
+  } else if (dragState.y > window.innerHeight - DragEdge) {
+    step = DragScrollStep;
+  }
+  if (step !== 0) {
+    window.scrollBy(0, step);
+    showDrop();
+  }
+  dragState.frame = requestAnimationFrame(dragFrame);
+}
+
+// Where the row would land now: the index among the other rows of the group, or null outside the list.
+function dropPlace() {
+  const state = dragState;
+  const box = state.list.getBoundingClientRect();
+  if (state.x < box.left || state.x > box.right || state.y < box.top || state.y > box.bottom) {
+    return null;
+  }
+  const others = state.rows.filter((row) => row !== state.row);
+  let index = 0;
+  for (const row of others) {
+    const rect = row.getBoundingClientRect();
+    if (rect.top + rect.height / 2 < state.y) {
+      index += 1;
+    }
+  }
+  return { index: index, others: others };
+}
+
+function showDrop() {
+  const state = dragState;
+  const drop = dropPlace();
+  state.drop = drop;
+  if (drop === null || drop.others.length === 0) {
+    state.indicator.hidden = true;
+    return;
+  }
+  const at = drop.index === state.original
+    ? state.row.getBoundingClientRect().top
+    : drop.index < drop.others.length
+      ? drop.others[drop.index].getBoundingClientRect().top
+      : drop.others[drop.others.length - 1].getBoundingClientRect().bottom;
+  state.indicator.style.top = Math.round(at - state.list.getBoundingClientRect().top) + "px";
+  state.indicator.hidden = false;
+}
+
+// Escape cancels a drag; nothing is sent.
+function dragKey(event) {
+  if (event.key === "Escape" && dragState !== null) {
+    event.preventDefault();
+    event.stopPropagation();
+    cancelDrag();
+  }
+}
+
+function cancelDrag() {
+  const state = dragState;
+  if (state === null) {
+    return;
+  }
+  dragState = null;
+  dragBusy = false;
+  cancelAnimationFrame(state.frame);
+  document.removeEventListener("keydown", dragKey, true);
+  state.indicator.remove();
+  state.list.classList.remove("drag-list");
+  state.row.classList.remove("dragging");
+  if (state.handle.hasPointerCapture(state.pointerId)) {
+    state.handle.releasePointerCapture(state.pointerId);
+  }
+  return state;
+}
+
+// A release inside the list at a new place sends one place change; anything else (the original place, outside the
+// list, pointercancel, a lost capture) only ends the drag.
+function endDrag(event, release) {
+  if (dragState === null || event.pointerId !== dragState.pointerId) {
+    return;
+  }
+  if (release) {
+    dragState.x = event.clientX;
+    dragState.y = event.clientY;
+    dragState.drop = dropPlace();
+  }
+  const state = cancelDrag();
+  const drop = state.drop;
+  if (!release || drop === null || drop.index === state.original || drop.others.length === 0) {
+    return;
+  }
+  const before = drop.index === 0;
+  const target = before ? drop.others[0] : drop.others[drop.index - 1];
+  sendPlace(state.place, rowLine(state.row), rowLine(target), before ? "before" : "after", null);
+}
+
+// ArrowUp / ArrowDown on the focused handle: before the previous or after the next item of the group, nothing at the
+// ends; focus comes back to this item's handle after the reload.
+function keyMove(event, handle, place) {
+  if (event.key !== "ArrowUp" && event.key !== "ArrowDown") {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  if (dragBusy || changeBusy) {
+    return;
+  }
+  const row = handle.closest("li");
+  const rows = row && row.parentElement ? dragRows(row.parentElement) : [];
+  const index = rows.indexOf(row);
+  const up = event.key === "ArrowUp";
+  const other = up ? index - 1 : index + 1;
+  if (index < 0 || other < 0 || other >= rows.length) {
+    return;
+  }
+  // Swapping with a neighbour keeps the group's lines, so the moved item lands on the neighbour's line.
+  const line = rowLine(row);
+  const target = rowLine(rows[other]);
+  const focus = { number: handle.dataset.number || null, line: target };
+  sendPlace(place, line, target, up ? "before" : "after", focus);
+}
+
+async function sendPlace(place, line, target, where, focus) {
+  const ok = await sendChange({
+    project: place.project,
+    version: place.version,
+    action: "place",
+    line: line,
+    target: target,
+    where: where,
+  });
+  if (!ok) {
+    return;
+  }
+  await load();
+  if (focus !== null) {
+    focusHandle(place.project, focus);
+  }
+}
+
+// The moved item's handle in the reloaded section: by number, else (an unnumbered line) by its new line.
+function focusHandle(projectName, focus) {
+  const section = [...document.querySelectorAll("#backlogs section.project")]
+    .find((node) => node.dataset.project === projectName);
+  if (!section) {
+    return;
+  }
+  const handle = [...section.querySelectorAll(".drag-handle")].find((node) => focus.number !== null
+    ? node.dataset.number === focus.number
+    : node.dataset.line === String(focus.line));
+  if (handle) {
+    handle.focus();
+  }
 }
 
 function openTitleForm(row, entry, send) {

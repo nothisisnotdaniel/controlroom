@@ -170,8 +170,13 @@ function renderNumberedLine(projectName, version, entry, number, position) {
   return item;
 }
 
-// The edit row (edit.js) of a line that is not done; shown only while the project is in edit mode.
+// The edit row (edit.js) of a line that is not done, and the drag handle (edit.js) at the start of a [ ] or [?]
+// line; both shown only while the project is in edit mode.
 function appendEditRow(item, projectName, version, entry) {
+  const handle = dragHandle(projectName, version, entry);
+  if (handle !== null) {
+    item.prepend(...handle);
+  }
   const row = editRow(projectName, version, entry);
   if (row !== null) {
     item.appendChild(row);

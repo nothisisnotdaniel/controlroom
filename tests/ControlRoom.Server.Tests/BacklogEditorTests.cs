@@ -69,32 +69,100 @@ public sealed class BacklogEditorTests
         Assert.Equal("#3", edit.Subject);
     }
 
-    [Fact]
-    public void MoveUpAndDown_SwapWithTheNearestItemAndKeepProse()
-    {
-        BacklogEdit up = BacklogEditor.Move(Text(Sample), 5, MoveDirection.Up)!;
-        string[] lines = up.Text.Lines.ToArray();
-        Assert.StartsWith("- [?] [#3]", lines[3], StringComparison.Ordinal);
-        Assert.Equal("Some prose stays here.", lines[4]);
-        Assert.StartsWith("- [ ] [#2]", lines[5], StringComparison.Ordinal);
+    private const string Mixed =
+        "# Backlog\r\n"                        // 0
+        + "- [ ] [#1](backlog/001-a.md) A\r\n"  // 1
+        + "- [?] [#2](backlog/002-p.md) P\n"    // 2
+        + "\r\n"                               // 3
+        + "- [ ] [#3](backlog/003-b.md) B\n"    // 4
+        + "- [x] [#4](backlog/004-d.md) D\n"    // 5
+        + "- [h] [#5](backlog/005-h.md) H\n"    // 6
+        + "Prose here.\r\n"                    // 7
+        + "- [ ] [#6](backlog/006-c.md) C\r\n"  // 8
+        + "- [?] Q old\n"                       // 9
+        + "- [ ] D old\n"                       // 10
+        + "End.";                               // 11
 
-        BacklogEdit down = BacklogEditor.Move(Text(Sample), 6, MoveDirection.Down)!;
-        lines = down.Text.Lines.ToArray();
-        Assert.Equal("- [?] Old proposal: no number", lines[6]);
-        Assert.Equal("  - [ ] Indented: not an item", lines[7]);
-        Assert.Equal("- [h] Hand task: for you", lines[8]);
-        Assert.Equal("line 7", down.Subject);
+    /// <summary>The <c>[ ]</c> group is lines 1, 4, 8, 10 (A, B, C, D); the <c>[?]</c> group is lines 2, 9.
+    /// <paramref name="order"/> is the expected group order as the source line indexes.</summary>
+    [Theory]
+    [InlineData(1, 8, false, "#1", new[] { 4, 8, 1, 10 })]   // first, forward, after
+    [InlineData(1, 10, false, "#1", new[] { 4, 8, 10, 1 })]  // first to last
+    [InlineData(1, 8, true, "#1", new[] { 4, 1, 8, 10 })]    // forward, before, over the done line
+    [InlineData(10, 1, true, "line 11", new[] { 10, 1, 4, 8 })] // last to first, unnumbered
+    [InlineData(8, 4, true, "#6", new[] { 1, 8, 4, 10 })]    // backward, before
+    [InlineData(10, 1, false, "line 11", new[] { 1, 10, 4, 8 })] // backward, after
+    [InlineData(4, 8, false, "#3", new[] { 1, 8, 4, 10 })]   // next, after
+    public void Place_ReordersTheOpenGroupInItsOwnIndexes(int line, int target, bool before, string subject, int[] order)
+    {
+        AssertPlaced(Mixed, line, target, before, subject, [1, 4, 8, 10], order);
+    }
+
+    [Theory]
+    [InlineData(9, 2, true, "line 10")]
+    [InlineData(2, 9, false, "#2")]
+    public void Place_ReordersTheApprovalGroup(int line, int target, bool before, string subject)
+    {
+        AssertPlaced(Mixed, line, target, before, subject, [2, 9], [9, 2]);
+    }
+
+    [Theory]
+    [InlineData(1, 2, true)]   // marks differ
+    [InlineData(2, 4, false)]  // marks differ
+    [InlineData(1, 1, true)]   // same line
+    [InlineData(1, 5, true)]   // done target
+    [InlineData(5, 1, true)]   // done line
+    [InlineData(6, 1, true)]   // [h] line
+    [InlineData(1, 6, false)]  // [h] target
+    [InlineData(1, 7, true)]   // prose
+    [InlineData(3, 1, true)]   // blank
+    [InlineData(1, 4, true)]   // no-op: already before
+    [InlineData(4, 1, false)]  // no-op: already after
+    [InlineData(10, 8, false)] // no-op at the end
+    [InlineData(-1, 1, true)]
+    [InlineData(1, 12, true)]
+    [InlineData(12, 1, true)]
+    public void Place_RefusesOtherLinesAndNoOps(int line, int target, bool before)
+    {
+        Assert.Null(BacklogEditor.Place(Text(Mixed), line, target, before));
     }
 
     [Fact]
     public void Move_ThatChangesNothingOrADoneLine_IsRefused()
     {
         string text = "Intro\n- [ ] A\nprose\n- [ ] B\n";
-        Assert.Null(BacklogEditor.Move(Text(text), 1, MoveDirection.Up));
-        Assert.Null(BacklogEditor.Move(Text(text), 3, MoveDirection.Down));
+        Assert.Null(BacklogEditor.Place(Text(text), 1, 3, true));
+        Assert.Null(BacklogEditor.Place(Text(text), 3, 1, false));
         Assert.Null(BacklogEditor.Move(Text(text), 1, MoveDirection.Top));
-        Assert.Null(BacklogEditor.Move(Text(text), 2, MoveDirection.Up));
-        Assert.Null(BacklogEditor.Move(Text(Sample), 2, MoveDirection.Down));
+        Assert.Null(BacklogEditor.Place(Text(text), 2, 1, true));
+        Assert.Null(BacklogEditor.Place(Text(Sample), 2, 3, true));
+    }
+
+    private static void AssertPlaced(
+        string source, int line, int target, bool before, string subject, int[] slots, int[] order)
+    {
+        EditableText text = Text(source);
+        BacklogEdit edit = BacklogEditor.Place(text, line, target, before)!;
+
+        Assert.Equal(subject, edit.Subject);
+        List<string> expected = [.. text.Lines];
+        for (int i = 0; i < slots.Length; i++)
+        {
+            expected[slots[i]] = text.Lines[order[i]];
+        }
+
+        Assert.Equal(expected, edit.Text.Lines);
+        for (int i = 0; i < text.Lines.Count; i++)
+        {
+            if (!slots.Contains(i))
+            {
+                Assert.Equal(text.Lines[i], edit.Text.Lines[i]);
+            }
+        }
+
+        byte[] bytes = edit.Text.ToBytes();
+        Assert.Equal(Encoding.UTF8.GetBytes(source).Length, bytes.Length);
+        Assert.Equal(Encoding.UTF8.GetBytes(string.Join("\n", expected)), bytes);
     }
 
     [Fact]

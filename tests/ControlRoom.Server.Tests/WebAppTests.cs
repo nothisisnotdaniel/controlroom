@@ -660,7 +660,7 @@ public sealed partial class WebAppTests
         Assert.Contains("project: projectName, version: version, line: line", js, StringComparison.Ordinal);
         Assert.Contains("storyVersion: storyVersion", js, StringComparison.Ordinal);
         Assert.Contains("version: found.version", js, StringComparison.Ordinal);
-        foreach (string action in new[] { "approve", "drop", "up", "down", "top", "title", "add", "story" })
+        foreach (string action in new[] { "approve", "drop", "top", "place", "title", "add", "story" })
         {
             Assert.Contains("action: \"" + action + "\"", js, StringComparison.Ordinal);
         }
@@ -677,7 +677,7 @@ public sealed partial class WebAppTests
 
         foreach (string label in new[]
                  {
-                     "approve: \"Approve\"", "drop: \"Drop\"", "up: \"Up\"", "down: \"Down\"",
+                     "approve: \"Approve\"", "drop: \"Drop\"", "move: \"Move\"",
                      "toTop: \"To top\"", "editTitle: \"Edit title\"", "editStory: \"Edit story\"",
                      "save: \"Save\"", "add: \"Add item\"",
                  })
