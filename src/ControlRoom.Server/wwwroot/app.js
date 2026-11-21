@@ -36,6 +36,10 @@ const StoryRoute = "#story/";
 // The project shown on Backlogs, kept on this device: only a project name, never the token.
 const BacklogProjectKey = "controlroom-backlog-project";
 
+// Each group's open or closed state per project, kept on this device as {"<project>":{"<group>":true|false}}
+// (true is open): only project names and group keys, never the token or backlog text.
+const BacklogGroupsKey = "controlroom-backlog-groups";
+
 // Readable project names of the last backlogs answer, in response order.
 let readableProjects = [];
 
@@ -186,16 +190,66 @@ function renderLines(projectName, version, entries) {
 
 function renderGroup(projectName, version, group, entries) {
   const heading = group.label + " (" + entries.length + ")";
-  if (group.collapsed) {
-    const details = element("details", "group");
-    details.appendChild(element("summary", null, heading));
-    details.appendChild(renderLines(projectName, version, entries));
-    return details;
+  const details = element("details", "group");
+  details.appendChild(element("summary", null, heading));
+  details.appendChild(renderLines(projectName, version, entries));
+  foldGroup(details, projectName, group.key);
+  return details;
+}
+
+// Without a stored state only Done (collapsed in Groups) starts closed; the plan's Waiting group starts open.
+function groupDefaultOpen(key) {
+  const group = Groups.find((entry) => entry.key === key);
+  return !(group && group.collapsed === true);
+}
+
+function isObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// The stored states as an object without a prototype; a failed read, invalid JSON or a non-object counts as
+// nothing stored.
+function storedGroupStates() {
+  let states;
+  try {
+    states = JSON.parse(localStorage.getItem(BacklogGroupsKey));
+  } catch {
+    return Object.create(null);
   }
-  const section = element("section", "group");
-  section.appendChild(element("h3", null, heading));
-  section.appendChild(renderLines(projectName, version, entries));
-  return section;
+  return Object.assign(Object.create(null), isObject(states) ? states : {});
+}
+
+// The stored state of one project's group (own properties only, booleans only), else the default.
+function groupOpen(projectName, key) {
+  const states = storedGroupStates();
+  const project = Object.hasOwn(states, projectName) ? states[projectName] : null;
+  const open = isObject(project) && Object.hasOwn(project, key) ? project[key] : null;
+  return typeof open === "boolean" ? open : groupDefaultOpen(key);
+}
+
+// Stores one project's group state and keeps every other stored entry.
+function storeGroupOpen(projectName, key, open) {
+  const states = storedGroupStates();
+  const old = Object.hasOwn(states, projectName) ? states[projectName] : null;
+  const project = Object.assign(Object.create(null), isObject(old) ? old : {});
+  project[key] = open;
+  states[projectName] = project;
+  try {
+    localStorage.setItem(BacklogGroupsKey, JSON.stringify(states));
+  } catch {
+    // Private mode or storage off: the group still folds for this page.
+  }
+}
+
+// Names the group, opens or closes it from the stored state (else the default) and stores each change by the user.
+function foldGroup(details, projectName, key) {
+  details.dataset.group = key;
+  details.open = groupOpen(projectName, key);
+  details.addEventListener("toggle", () => {
+    if (details.open !== groupOpen(projectName, key)) {
+      storeGroupOpen(projectName, key, details.open);
+    }
+  });
 }
 
 // A link "#N Title" to a story; the title is set as text.
@@ -251,8 +305,8 @@ function renderPlan(projectName, project) {
   plan.appendChild(next);
   const blocked = asList(project.blocked).filter((entry) => asNumber(entry && entry.number) !== null);
   if (blocked.length > 0) {
-    const group = element("section", "group waiting-group");
-    group.appendChild(element("h3", null, Texts.waiting + " (" + blocked.length + ")"));
+    const group = element("details", "group waiting-group");
+    group.appendChild(element("summary", null, Texts.waiting + " (" + blocked.length + ")"));
     const list = element("ul", "lines");
     for (const entry of blocked) {
       const row = element("li");
@@ -261,6 +315,7 @@ function renderPlan(projectName, project) {
       list.appendChild(row);
     }
     group.appendChild(list);
+    foldGroup(group, projectName, "waiting");
     plan.appendChild(group);
   }
   return plan;
@@ -461,9 +516,9 @@ async function load() {
 }
 
 // Live refresh (live.js): only the sections of the named projects, and those whose plan signature changed, are
-// replaced, each in place, so scroll, edit mode and an open Done group stay. A section with an open Add or title
-// form, or with focus inside, is left alone; its name is returned so the next check tries again. A failed request
-// returns every name.
+// replaced, each in place, so scroll, edit mode and every group's open or closed state stay. A section with an open
+// Add or title form, or with focus inside, is left alone; its name is returned so the next check tries again. A
+// failed request returns every name.
 async function refreshBacklogs(names) {
   let data;
   try {
@@ -551,14 +606,17 @@ function sectionBusy(section) {
     || section.contains(document.activeElement);
 }
 
-// The new section's collapsed groups (Done) keep the open state of the old ones.
+// Each group of the new section keeps the open state of the old section's group with the same name, even when
+// storage fails; a group that newly appears keeps its stored state or default.
 function keepOpenGroups(old, next) {
-  const before = old.querySelectorAll("details.group");
-  const after = next.querySelectorAll("details.group");
-  if (before.length === after.length) {
-    after.forEach((group, index) => {
-      group.open = before[index].open;
-    });
+  const before = new Map();
+  for (const group of old.querySelectorAll("details.group")) {
+    before.set(group.dataset.group, group.open);
+  }
+  for (const group of next.querySelectorAll("details.group")) {
+    if (before.has(group.dataset.group)) {
+      group.open = before.get(group.dataset.group);
+    }
   }
 }
 

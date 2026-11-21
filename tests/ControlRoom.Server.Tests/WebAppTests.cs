@@ -230,8 +230,8 @@ public sealed partial class WebAppTests
 
         Assert.Contains("element(\"details\", \"group\")", js, StringComparison.Ordinal);
         Assert.Contains("element(\"summary\", null, heading)", js, StringComparison.Ordinal);
-        Assert.DoesNotContain("details.open", js, StringComparison.Ordinal);
-        Assert.Contains("if (group.collapsed) {", js, StringComparison.Ordinal);
+        Assert.Contains("details.open = groupOpen(projectName, key);", js, StringComparison.Ordinal);
+        Assert.Contains("return !(group && group.collapsed === true);", js, StringComparison.Ordinal);
     }
 
     [Fact]
