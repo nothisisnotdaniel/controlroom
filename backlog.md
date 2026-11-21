@@ -78,37 +78,37 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#58](backlog/058-guard-the-release-workflow-s-github.md) Guard the release workflow's GITHUB_ENV writes
 - [?] [#59](backlog/059-behaviour-tests-for-the-web-app.md) Behaviour tests for the web app's JavaScript
 - [?] [#60](backlog/060-calmer-colour-for-non-urgent-job.md) Calmer colour for non-urgent job notes
-- [?] [#61](backlog/061-check-that-the-job-page-refreshes.md) Check that the job page refreshes in place
+- [h] [#61](backlog/061-check-that-the-job-page-refreshes.md) Check that the job page refreshes in place
 - [?] [#62](backlog/062-refresh-version-and-update-info-on.md) Refresh version and update info on live changes
-- [?] [#63](backlog/063-browser-check-of-the-live-update.md) Browser check of the live-update notice
+- [h] [#63](backlog/063-browser-check-of-the-live-update.md) Browser check of the live-update notice
 - [ ] [#32](backlog/032-show-the-live-status-line-on.md) Show the live status line on the job page
 - [ ] [#50](backlog/050-updater-port-check-when-another-user.md) Updater port check when another user holds the port
 - [?] [#66](backlog/066-cheaper-inbox-reads.md) Cheaper inbox reads
 - [?] [#67](backlog/067-retry-button-when-the-inbox-fails.md) Retry button when the inbox fails to load
-- [?] [#68](backlog/068-browser-check-of-the-approval-inbox.md) Browser check of the approval inbox
+- [h] [#68](backlog/068-browser-check-of-the-approval-inbox.md) Browser check of the approval inbox
 - [?] [#70](backlog/070-guard-updatechecker-startasync-after-dispose.md) Guard UpdateChecker.StartAsync after Dispose
 - [?] [#71](backlog/071-name-the-task-in-the-done.md) Name the task in the Done confirmation
 - [?] [#72](backlog/072-fill-the-search-project-filter-before.md) Fill the search project filter before the first search
-- [?] [#73](backlog/073-browser-check-of-the-search-view.md) Browser check of the Search view and five-link nav
+- [h] [#73](backlog/073-browser-check-of-the-search-view.md) Browser check of the Search view and five-link nav
 - [?] [#74](backlog/074-notice-when-a-live-search-refresh.md) Notice when a live search refresh fails
-- [?] [#75](backlog/075-browser-check-of-the-next-and.md) Browser check of the next and waiting view
-- [?] [#76](backlog/076-browser-check-of-add-note-on.md) Browser check of Add note on a story
+- [h] [#75](backlog/075-browser-check-of-the-next-and.md) Browser check of the next and waiting view
+- [h] [#76](backlog/076-browser-check-of-add-note-on.md) Browser check of Add note on a story
 - [?] [#77](backlog/077-refuse-invisible-unicode-format-characters-in.md) Refuse invisible Unicode format characters in written text
 - [?] [#78](backlog/078-character-counter-on-the-note-box.md) Character counter on the note box
 - [?] [#79](backlog/079-notes-section-end-ignores-headings-inside.md) Notes section end ignores headings inside code blocks
 - [?] [#81](backlog/081-escape-a-leading-in-captured-text.md) Escape a leading # in captured text
-- [?] [#82](backlog/082-browser-check-of-capture-and-the.md) Browser check of Capture and the two-row nav
-- [?] [#83](backlog/083-browser-check-of-approve-and-rework.md) Browser check of Approve and Rework on an escalated job
-- [?] [#84](backlog/084-browser-check-of-the-history-view.md) Browser check of the History view and seven-link nav
+- [h] [#82](backlog/082-browser-check-of-capture-and-the.md) Browser check of Capture and the two-row nav
+- [h] [#83](backlog/083-browser-check-of-approve-and-rework.md) Browser check of Approve and Rework on an escalated job
+- [h] [#84](backlog/084-browser-check-of-the-history-view.md) Browser check of the History view and seven-link nav
 - [ ] [#85](backlog/085-distinct-chart-colours-for-more-than.md) Distinct chart colours for more than six modes
 - [ ] [#86](backlog/086-add-the-empty-30-day-text.md) Add the empty 30-day text to the History spec
 - [?] [#87](backlog/087-cap-the-git-output-the-server.md) Cap the git output the server reads
 - [?] [#88](backlog/088-one-doctor-check-at-a-time.md) One doctor check at a time
-- [?] [#89](backlog/089-browser-check-of-the-health-view.md) Browser check of the Health view
+- [h] [#89](backlog/089-browser-check-of-the-health-view.md) Browser check of the Health view
 - [?] [#90](backlog/090-separate-the-parts-of-the-project.md) Separate the parts of the project status line
 - [?] [#91](backlog/091-tell-the-user-the-ci-link.md) Tell the user the CI link opens a new tab
 - [?] [#92](backlog/092-don-t-follow-a-symlinked-git.md) Don't follow a symlinked .git in ProjectGit
-- [?] [#93](backlog/093-browser-check-of-the-backlogs-status.md) Browser check of the Backlogs status line
+- [h] [#93](backlog/093-browser-check-of-the-backlogs-status.md) Browser check of the Backlogs status line
 - [x] [#94](backlog/094-edit-backlogs-while-a-job-runs.md) Edit backlogs while a job runs (after: factory#17) → 299-edit-backlog-during-jobs
 - [?] [#95](backlog/095-clean-up-the-backlog-branch-when.md) Clean up the backlog branch when its worktree cannot be made
 - [?] [#96](backlog/096-note-for-waiting-edits-when-the.md) Note for waiting edits when the backlog worktree cannot be read
@@ -124,17 +124,17 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#111](backlog/111-decide-what-the-updater-does-when.md) Decide what the updater does when rmdir of its lock fails
 - [?] [#112](backlog/112-decide-what-the-updater-does-when.md) Decide what the updater does when kill in cleanup fails
 - [x] [#113](backlog/113-place-the-auto-stop-line-from.md) Place the auto stop line from the backlog view (after: factory#21; #109) → 348-stop-line-ui
-- [?] [#114](backlog/114-browser-check-of-the-backlogs-project.md) Browser check of the Backlogs project picker at phone width
+- [h] [#114](backlog/114-browser-check-of-the-backlogs-project.md) Browser check of the Backlogs project picker at phone width
 - [?] [#115](backlog/115-scroll-to-the-top-when-the.md) Scroll to the top when the Backlogs project changes
 - [?] [#116](backlog/116-correct-the-project-picker-when-the.md) Correct the project picker when the chosen project disappears while focused
 - [ ] [#117](backlog/117-drop-the-dead-group-h3-selector.md) Drop the dead .group h3 selector
-- [?] [#118](backlog/118-browser-check-of-collapsible-backlog-groups.md) Browser check of collapsible backlog groups at phone width
+- [h] [#118](backlog/118-browser-check-of-collapsible-backlog-groups.md) Browser check of collapsible backlog groups at phone width
 - [?] [#119](backlog/119-one-position-per-item-in-open.md) One position per item in Open and Waiting
 - [?] [#120](backlog/120-refuse-a-target-field-on-backlog.md) Refuse a target field on backlog changes other than place
 - [?] [#121](backlog/121-announce-the-new-position-after-a.md) Announce the new position after a drag for screen readers
-- [?] [#122](backlog/122-try-drag-and-drop-by-hand.md) Try drag and drop by hand on iPhone and Mac
-- [?] [#123](backlog/123-browser-check-of-category-chips-at.md) Browser check of category chips at phone width and in dark mode
-- [?] [#124](backlog/124-check-the-stop-line-divider-on.md) Check the stop line divider on the iPhone in dark mode
+- [h] [#122](backlog/122-try-drag-and-drop-by-hand.md) Try drag and drop by hand on iPhone and Mac
+- [h] [#123](backlog/123-browser-check-of-category-chips-at.md) Browser check of category chips at phone width and in dark mode
+- [h] [#124](backlog/124-check-the-stop-line-divider-on.md) Check the stop line divider on the iPhone in dark mode
 - [x] [#125](backlog/125-status-chip-in-the-story-view.md) Status chip in the story view → 352-story-status-chip
 - [ ] [#64](backlog/064-keep-stale-story-marks-across-route.md) Keep stale story marks across route changes
 - [ ] [#65](backlog/065-refresh-the-inbox-count-right-after.md) Refresh the inbox count right after any backlog change
