@@ -578,6 +578,58 @@ main {
   color: var(--error);
 }
 
+/* Releases overview: under the status line, muted; the commit list is closed by default. */
+.project-release {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.project-release p {
+  margin: 0;
+}
+
+.project-release .release-next {
+  font-weight: 600;
+}
+
+.project-release .release-note {
+  font-size: 0.85rem;
+}
+
+.project-release .release-log summary {
+  padding: 4px 0;
+  cursor: pointer;
+  color: var(--link);
+}
+
+.project-release .release-commits {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-release .release-commit {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  border-top: 1px solid var(--line);
+}
+
+.project-release .release-sha {
+  flex: none;
+  font-family: ui-monospace, Menlo, monospace;
+}
+
+.project-release .release-subject {
+  min-width: 0;
+}
+
+.project-release a.release-subject {
+  color: var(--link);
+}
+
 /* Plan: the next item and the Waiting group, between the head and the groups. */
 .plan {
   margin: 0 0 4px;

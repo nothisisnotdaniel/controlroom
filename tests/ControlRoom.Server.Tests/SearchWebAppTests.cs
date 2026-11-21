@@ -27,14 +27,14 @@ public sealed partial class SearchWebAppTests
     {
         string html = await Fetch("/index.html");
         string[] scripts =
-            ["/token.js", "/board.js", "/act.js", "/push.js", "/edit.js", "/counts.js", "/search.js", "/capture.js", "/history.js", "/doctor.js", "/status.js", "/live.js", "/app.js"];
+            ["/token.js", "/board.js", "/act.js", "/push.js", "/edit.js", "/counts.js", "/search.js", "/capture.js", "/history.js", "/doctor.js", "/status.js", "/releases.js", "/live.js", "/app.js"];
 
         int[] positions = scripts
             .Select(script => html.IndexOf("<script src=\"" + script + "\" defer></script>", StringComparison.Ordinal))
             .ToArray();
         Assert.All(positions, position => Assert.True(position >= 0));
         Assert.Equal(positions.OrderBy(position => position), positions);
-        Assert.Equal(13, ScriptTag().Matches(html).Count);
+        Assert.Equal(14, ScriptTag().Matches(html).Count);
     }
 
     [Fact]
@@ -67,7 +67,7 @@ public sealed partial class SearchWebAppTests
             "  const fromSearch = location.hash === SearchRoute;\n  if (fromSearch) {\n    history.replaceState(null, \"\", BacklogsRoute);\n  }",
             app, StringComparison.Ordinal);
         Assert.Contains(
-            "  showStatus();\n  showSearch();\n  if (fromSearch) {\n    window.scrollTo(0, 0);\n    focusSearch();\n    return;\n  }\n  window.scrollTo(0, listScroll);",
+            "  showStatus();\n  showReleases();\n  showSearch();\n  if (fromSearch) {\n    window.scrollTo(0, 0);\n    focusSearch();\n    return;\n  }\n  window.scrollTo(0, listScroll);",
             app, StringComparison.Ordinal);
         Assert.Contains("function focusSearch() {\n  searchField().focus({ preventScroll: true });\n}", search,
             StringComparison.Ordinal);
@@ -272,8 +272,8 @@ public sealed partial class SearchWebAppTests
     {
         string js = await Fetch("/sw.js");
 
-        Assert.Contains("const CacheVersion = \"v20\";", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/counts.js\",\n  \"/search.js\",\n  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v21\";", js, StringComparison.Ordinal);
+        Assert.Contains("  \"/counts.js\",\n  \"/search.js\",\n  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/releases.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/search", js, StringComparison.Ordinal);
         Assert.Contains("if (url.pathname.startsWith(\"/api/\") || url.pathname === \"/health\") {\n    return false;", js,
             StringComparison.Ordinal);

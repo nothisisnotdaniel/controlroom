@@ -15,7 +15,7 @@ public sealed partial class StatusWebAppTests
 
         Assert.Contains(
             "  <script src=\"/doctor.js\" defer></script>\n  <script src=\"/status.js\" defer></script>\n"
-            + "  <script src=\"/live.js\" defer></script>\n  <script src=\"/app.js\" defer></script>",
+            + "  <script src=\"/releases.js\" defer></script>\n  <script src=\"/live.js\" defer></script>\n  <script src=\"/app.js\" defer></script>",
             html, StringComparison.Ordinal);
     }
 
@@ -114,12 +114,12 @@ public sealed partial class StatusWebAppTests
         string app = await Fetch("/app.js");
 
         Assert.Contains(
-            "  section.appendChild(statusLine(name));\n  section.appendChild(renderPlan(name, project));",
+            "  section.appendChild(statusLine(name));\n  section.appendChild(releaseBlock(name));\n  section.appendChild(renderPlan(name, project));",
             app, StringComparison.Ordinal);
         int unreadable = app.IndexOf("section.appendChild(element(\"p\", \"error\", Texts.unreadable));", StringComparison.Ordinal);
         int line = app.IndexOf("section.appendChild(statusLine(name));", StringComparison.Ordinal);
         Assert.True(unreadable >= 0 && line > unreadable);
-        Assert.Contains("  showStatus();\n  showSearch();\n  if (fromSearch) {\n    window.scrollTo(0, 0);\n    focusSearch();\n    return;\n  }\n  window.scrollTo(0, listScroll);\n}", app, StringComparison.Ordinal);
+        Assert.Contains("  showStatus();\n  showReleases();\n  showSearch();\n  if (fromSearch) {\n    window.scrollTo(0, 0);\n    focusSearch();\n    return;\n  }\n  window.scrollTo(0, listScroll);\n}", app, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -154,8 +154,8 @@ public sealed partial class StatusWebAppTests
     {
         string js = await Fetch("/sw.js");
 
-        Assert.Contains("const CacheVersion = \"v20\";", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/doctor.js\",\n  \"/status.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v21\";", js, StringComparison.Ordinal);
+        Assert.Contains("  \"/doctor.js\",\n  \"/status.js\",\n  \"/releases.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/status", js, StringComparison.Ordinal);
     }
 

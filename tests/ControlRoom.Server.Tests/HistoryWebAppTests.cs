@@ -20,13 +20,13 @@ public sealed partial class HistoryWebAppTests
     }
 
     [Fact]
-    public async Task IndexHtml_LoadsHistoryJsBetweenCaptureJsAndDoctorJs_ThirteenScripts()
+    public async Task IndexHtml_LoadsHistoryJsBetweenCaptureJsAndDoctorJs_FourteenScripts()
     {
         string html = await Fetch("/index.html");
         string[] scripts =
         [
             "/token.js", "/board.js", "/act.js", "/push.js", "/edit.js", "/counts.js", "/search.js",
-            "/capture.js", "/history.js", "/doctor.js", "/status.js", "/live.js", "/app.js",
+            "/capture.js", "/history.js", "/doctor.js", "/status.js", "/releases.js", "/live.js", "/app.js",
         ];
 
         int[] positions = scripts
@@ -34,7 +34,7 @@ public sealed partial class HistoryWebAppTests
             .ToArray();
         Assert.All(positions, position => Assert.True(position >= 0));
         Assert.Equal(positions.OrderBy(position => position), positions);
-        Assert.Equal(13, ScriptTag().Matches(html).Count);
+        Assert.Equal(14, ScriptTag().Matches(html).Count);
         Assert.Contains(
             "<script src=\"/capture.js\" defer></script>\n  <script src=\"/history.js\" defer></script>\n"
             + "  <script src=\"/doctor.js\" defer></script>", html, StringComparison.Ordinal);
@@ -295,7 +295,7 @@ public sealed partial class HistoryWebAppTests
     {
         string js = await Fetch("/sw.js");
 
-        Assert.Contains("const CacheVersion = \"v20\";", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v21\";", js, StringComparison.Ordinal);
         Assert.Contains("  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/history", js, StringComparison.Ordinal);
     }

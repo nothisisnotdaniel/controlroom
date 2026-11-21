@@ -14,7 +14,7 @@ internal sealed record GitResult(int ExitCode, string Output)
 /// (30 s, 60 s for push), no terminal prompt and no repo discovery above the project folder. Request text never
 /// becomes an argument; the only variable arguments are the commit message (built from a number and an action)
 /// and the file paths the server chose.</summary>
-internal static class ProjectGit
+internal static partial class ProjectGit
 {
     public const string Branch = "develop";
 
@@ -74,6 +74,134 @@ internal static class ProjectGit
             ? count
             : null;
     }
+
+    /// <summary>True when the text is a release tag: exactly <c>vX.Y.Z</c> with no leading zeros (so it never starts
+    /// with <c>-</c> and never holds <c>..</c>). Only such a tag ever becomes part of a git argument.</summary>
+    public static bool IsReleaseTag(string? text)
+    {
+        return text is not null && ReleaseTagPattern().IsMatch(text);
+    }
+
+    /// <summary>Every local tag as its short name and creator date (Unix seconds, <c>null</c> when git prints none)
+    /// from <c>git for-each-ref --format=%(refname:strip=2)%09%(creatordate:unix) refs/tags/</c> (read-only), or
+    /// <c>null</c> when the folder has no repo of its own or git fails or times out.</summary>
+    public static async Task<IReadOnlyList<(string Name, long? Unix)>?> Tags(string folder)
+    {
+        if (!HasOwnRepo(folder))
+        {
+            return null;
+        }
+
+        GitResult result = await Run(
+            folder, ["for-each-ref", "--format=%(refname:strip=2)%09%(creatordate:unix)", "refs/tags/"], Timeout);
+        if (!result.Ok)
+        {
+            return null;
+        }
+
+        List<(string Name, long? Unix)> tags = [];
+        foreach (string line in result.Output.Split('\n'))
+        {
+            int tab = line.IndexOf('\t', StringComparison.Ordinal);
+            if (tab <= 0)
+            {
+                continue;
+            }
+
+            long? unix = long.TryParse(
+                line[(tab + 1)..].Trim(), System.Globalization.NumberStyles.AllowLeadingSign,
+                System.Globalization.CultureInfo.InvariantCulture, out long seconds)
+                ? seconds
+                : null;
+            tags.Add((line[..tab], unix));
+        }
+
+        return tags;
+    }
+
+    /// <summary>The commits on local <c>develop</c> since the release tag (<c>git rev-list --count
+    /// refs/tags/&lt;tag&gt;..refs/heads/develop</c>), or all of <c>develop</c> when <paramref name="tag"/> is
+    /// <c>null</c>; <c>null</c> when the tag is no release tag, the folder has no repo of its own, <c>develop</c> is
+    /// missing or git fails or times out.</summary>
+    public static async Task<int?> CommitsSince(string folder, string? tag)
+    {
+        string? range = ReleaseRange(tag);
+        if (range is null || !HasOwnRepo(folder))
+        {
+            return null;
+        }
+
+        GitResult result = await Run(folder, ["rev-list", "--count", range], Timeout);
+        if (!result.Ok)
+        {
+            return null;
+        }
+
+        return int.TryParse(
+            result.Output.Trim(), System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out int count)
+            ? count
+            : null;
+    }
+
+    /// <summary>The first-parent commits on local <c>develop</c> since the release tag, newest first, as
+    /// <c>(abbreviated sha, subject)</c> from <c>git log --first-parent --format=%h%x1f%s --max-count=1000
+    /// &lt;range&gt;</c> (the range as in <see cref="CommitsSince"/>); <c>null</c> under the same rules.</summary>
+    public static async Task<IReadOnlyList<(string Sha, string Subject)>?> LogSince(string folder, string? tag)
+    {
+        string? range = ReleaseRange(tag);
+        if (range is null || !HasOwnRepo(folder))
+        {
+            return null;
+        }
+
+        GitResult result = await Run(
+            folder, ["log", "--first-parent", "--format=%h%x1f%s", "--max-count=" + MaxLog, range], Timeout);
+        if (!result.Ok)
+        {
+            return null;
+        }
+
+        List<(string Sha, string Subject)> rows = [];
+        foreach (string line in result.Output.Split('\n'))
+        {
+            int separator = line.IndexOf('\x1f', StringComparison.Ordinal);
+            if (separator <= 0)
+            {
+                continue;
+            }
+
+            rows.Add((line[..separator], line[(separator + 1)..]));
+        }
+
+        return rows;
+    }
+
+    /// <summary>The most rows <see cref="LogSince"/> asks git for.</summary>
+    public const int MaxLog = 1000;
+
+    /// <summary><c>refs/tags/&lt;tag&gt;..refs/heads/develop</c>, <c>refs/heads/develop</c> without a tag, or
+    /// <c>null</c> when the tag is no release tag.</summary>
+    private static string? ReleaseRange(string? tag)
+    {
+        if (tag is null)
+        {
+            return "refs/heads/" + Branch;
+        }
+
+        return IsReleaseTag(tag) ? "refs/tags/" + tag + "..refs/heads/" + Branch : null;
+    }
+
+    private static bool HasOwnRepo(string folder)
+    {
+        string dotGit = Path.Combine(folder, ".git");
+        return Directory.Exists(dotGit) || File.Exists(dotGit);
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(
+        @"\Av(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\z",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
+    private static partial System.Text.RegularExpressions.Regex ReleaseTagPattern();
 
     /// <summary>True when <c>git status --porcelain -- backlog.md backlog</c> prints nothing (a failed call counts
     /// as not clean).</summary>

@@ -524,6 +524,7 @@ function renderProject(project) {
     head.appendChild(editToggle(name, section));
   }
   section.appendChild(statusLine(name));
+  section.appendChild(releaseBlock(name));
   section.appendChild(renderPlan(name, project));
   let shown = 0;
   const stopLine = asNumber(project.stopLine);
@@ -1148,6 +1149,7 @@ function route() {
     listScroll = 0;
   }
   showStatus();
+  showReleases();
   showSearch();
   if (fromSearch) {
     window.scrollTo(0, 0);
