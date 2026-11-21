@@ -33,13 +33,31 @@ internal sealed record HistoryChartMode(string? Name, IReadOnlyList<long> Tokens
 /// <summary>The chart data: one row per mode, in the order of the mode totals.</summary>
 internal sealed record HistoryChart(IReadOnlyList<HistoryChartMode> Modes);
 
+/// <summary>One project or mode over every finished job, whatever its age; <c>Name</c> is <c>null</c> for jobs
+/// without one.</summary>
+internal sealed record HistoryLifetimeTotal(string? Name, HistoryWindow All);
+
+/// <summary>One project's lifetime totals per mode, over that project's finished jobs only.</summary>
+internal sealed record HistoryProjectModes(string? Name, IReadOnlyList<HistoryLifetimeTotal> Modes);
+
+/// <summary>The lifetime totals per project, per mode and per mode within each project (in project order).</summary>
+internal sealed record HistoryLifetime(
+    IReadOnlyList<HistoryLifetimeTotal> Projects,
+    IReadOnlyList<HistoryLifetimeTotal> Modes,
+    IReadOnlyList<HistoryProjectModes> ProjectModes);
+
 /// <summary>The <c>GET /api/history</c> response.</summary>
 internal sealed record HistoryResponse(
-    IReadOnlyList<HistoryJob> Jobs, IReadOnlyList<string> Days, HistoryTotals Totals, HistoryChart Chart);
+    IReadOnlyList<HistoryJob> Jobs,
+    IReadOnlyList<string> Days,
+    HistoryTotals Totals,
+    HistoryChart Chart,
+    HistoryLifetime Lifetime);
 
 /// <summary><c>GET /api/history</c>: the finished jobs (stage <c>done</c>, <c>needs-human</c> or <c>reverted</c>)
 /// from <see cref="JobReader.ReadAll"/>, newest first, with token totals per project and per mode for the last 7
-/// and 30 UTC days (from <see cref="TimeProvider"/>) and the daily tokens per mode. A job without token data counts
+/// and 30 UTC days (from <see cref="TimeProvider"/>), the daily tokens per mode and lifetime totals per project, per
+/// mode and per mode within each project. A job without token data counts
 /// as unknown, never as 0. Read-only, no parameters.</summary>
 internal static class HistoryEndpoint
 {
@@ -105,7 +123,40 @@ internal static class HistoryEndpoint
             .Select(mode => new HistoryChartMode(mode.Name, Daily(inWindow, mode.Name)))
             .ToList();
 
-        return new HistoryResponse(jobs, days, new HistoryTotals(projects, modes), new HistoryChart(chart));
+        return new HistoryResponse(
+            jobs,
+            days,
+            new HistoryTotals(projects, modes),
+            new HistoryChart(chart),
+            Lifetime(finished.Select(entry => entry.Job).ToList()));
+    }
+
+    /// <summary>The lifetime totals over every finished job, whatever its age or finish time.</summary>
+    private static HistoryLifetime Lifetime(List<JobSummary> finished)
+    {
+        List<HistoryLifetimeTotal> projects = AllTotals(finished, job => job.Project);
+        List<HistoryLifetimeTotal> modes = AllTotals(finished, job => job.Mode);
+        List<HistoryProjectModes> projectModes = projects
+            .Select(project => new HistoryProjectModes(
+                project.Name,
+                AllTotals(
+                    finished.Where(job => string.Equals(job.Project, project.Name, StringComparison.Ordinal)).ToList(),
+                    job => job.Mode)))
+            .ToList();
+        return new HistoryLifetime(projects, modes, projectModes);
+    }
+
+    /// <summary>One lifetime total per distinct name among <paramref name="jobs"/>, sorted ordinal with <c>null</c>
+    /// last.</summary>
+    private static List<HistoryLifetimeTotal> AllTotals(List<JobSummary> jobs, Func<JobSummary, string?> name)
+    {
+        List<string?> names = jobs.Select(name).Distinct().ToList();
+        names.Sort(CompareNames);
+        return names
+            .Select(current => new HistoryLifetimeTotal(
+                current,
+                Window(jobs.Where(job => string.Equals(name(job), current, StringComparison.Ordinal)))))
+            .ToList();
     }
 
     /// <summary>The outcome of a finished job, or <c>null</c> for a job in any other stage.</summary>
