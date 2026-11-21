@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 
 namespace ControlRoom.Server.Tests;
 
-/// <summary>Approve and Drop in the story bar of a <c>[?]</c> item (#105), checked in <c>edit.js</c>, <c>app.js</c>
+/// <summary>Approve and Drop in the story bar of a <c>[?]</c> item (#105; both leave the story since #128), checked in <c>edit.js</c>, <c>app.js</c>
 /// and <c>CLAUDE.md</c> as text (there is no JS test runtime yet, see #59). Tapping the buttons is checked by hand.</summary>
 public sealed partial class StoryDecisionWebAppTests
 {
@@ -88,22 +88,57 @@ public sealed partial class StoryDecisionWebAppTests
     }
 
     [Fact]
-    public async Task EditJs_ApproveReloadsTheStoryAndBothRefetchTheInbox()
+    public async Task EditJs_ApproveAndDropBothRefetchTheInboxAndLeaveTheStory()
     {
         string edit = await Fetch("/edit.js");
         string decide = Between(edit, "async function decideStory(target, number, action) {", "\n}\n");
 
-        Assert.Contains(
-            "if (!ok) {\n    return;\n  }\n  loadInbox();\n  if (action === \"approve\") {\n    loadStory(target);\n    return;\n  }\n  leaveDroppedStory();",
+        Assert.Contains("if (!ok) {\n    return;\n  }\n  loadInbox();\n  leaveDecidedStory();", decide,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("action === \"approve\"", decide, StringComparison.Ordinal);
+        Assert.DoesNotContain("leaveDroppedStory", edit, StringComparison.Ordinal);
+        string afterOk = decide[decide.IndexOf("if (!ok) {", StringComparison.Ordinal)..];
+        Assert.DoesNotContain("loadStory(target);", afterOk, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EditJs_AFailedDecisionStaysOnTheStory()
+    {
+        string edit = await Fetch("/edit.js");
+        string decide = Between(edit, "async function decideStory(target, number, action) {", "\n}\n");
+
+        int failed = decide.IndexOf("if (!ok) {\n    return;\n  }", StringComparison.Ordinal);
+        Assert.True(failed >= 0);
+        Assert.True(failed < decide.IndexOf("loadInbox();", StringComparison.Ordinal));
+        Assert.True(failed < decide.IndexOf("leaveDecidedStory();", StringComparison.Ordinal));
+        Assert.Single(LeaveCall().Matches(decide));
+        Assert.Contains("} catch {\n    if (!tokenViewShown()) {\n      showEditNotice(ChangeErrors.unreachable, true);\n    }\n    return;\n  }",
             decide, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task EditJs_DropLeavesTheStoryBackOrToTheInboxKeepingTheNotice()
+    public async Task InboxAndBacklogOpenTheStoryFromAList()
+    {
+        string app = await Fetch("/app.js");
+        string inbox = await Fetch("/inbox.js");
+        string open = Between(app, "function openStory(project, number) {", "\n}\n");
+
+        Assert.Contains("openedFromList = true;\n  location.hash = storyHash(project, number);", open,
+            StringComparison.Ordinal);
+        Assert.Contains("event.stopPropagation();\n      openStory(item.project, item.number);", inbox,
+            StringComparison.Ordinal);
+        Assert.Contains("return;\n      }\n      openStory(item.project, item.number);", inbox, StringComparison.Ordinal);
+        Assert.Contains(
+            "if (event.target instanceof Element && event.target.closest(\"a\")) {\n      openedFromList = true;\n      return;\n    }\n    openStory(projectName, number);",
+            app, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EditJs_ApproveAndDropLeaveTheStoryBackOrToTheInboxKeepingTheNotice()
     {
         string edit = await Fetch("/edit.js");
         string app = await Fetch("/app.js");
-        string leave = Between(edit, "function leaveDroppedStory() {", "\n}\n");
+        string leave = Between(edit, "function leaveDecidedStory() {", "\n}\n");
         string route = Between(app, "function route() {", "\n}\n");
 
         Assert.Contains(
@@ -140,6 +175,9 @@ public sealed partial class StoryDecisionWebAppTests
         Assert.Contains("Approve and Drop in the story bar of a `[?]` item only (`story-approve-button`", text,
             StringComparison.Ordinal);
         Assert.Contains("(`routeEditNotice`)", text, StringComparison.Ordinal);
+        Assert.Contains("after either succeeds the view goes `history.back()` or to `#inbox` (#128, `leaveDecidedStory`)", text,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Approve reloads the story", text, StringComparison.Ordinal);
     }
 
     private static string Between(string text, string start, string end)
@@ -173,6 +211,9 @@ public sealed partial class StoryDecisionWebAppTests
 
     [GeneratedRegex(@"\bconfirm\(")]
     private static partial Regex ConfirmCall();
+
+    [GeneratedRegex(@"\bleaveDecidedStory\(\)")]
+    private static partial Regex LeaveCall();
 
     [GeneratedRegex("\"/api/backlog/change\"")]
     private static partial Regex ChangeApi();

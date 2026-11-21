@@ -293,7 +293,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `story-drop-button`, group `approval` from `/api/backlogs`; a `Category` select (`label.story-category`,
     `select.story-category-select`, a disabled `No category` option only without one) while the item is not done, sending
     `action:"category"` through `sendChange`; version and line looked up again at the tap, through
-    `sendChange`, Drop after a confirm; Approve reloads the story, Drop goes `history.back()` or to `#inbox` keeping the
+    `sendChange`, Drop after a confirm;
+    after either succeeds the view goes `history.back()` or to `#inbox` (#128, `leaveDecidedStory`) keeping the
     notice for that route (`routeEditNotice`); both refetch the inbox count; hidden while a story form is open), fixed texts per error code), `board.js` (jobs board and job page (a read-only state section between the facts and the record tabs: stage and round, review rows per round with visible values, decision chip, CI and note; a board card of a `needs-human` job with a request shows `Approve sent` or `Rework sent`), `pollBoard` fetched by `live.js`; a live refresh of the job page is held back while `act.js` says the decision section is in use; the `ControlRoom <version>`
     line at the foot of Jobs and the update banner under its heading, each asked once per page load), `live.js` (the one `setInterval`: asks `/api/changes` every 5 s while visible, no token view and nothing
     pending, and at once on becoming visible; refetches only the board, the changed backlog sections (kept while a form

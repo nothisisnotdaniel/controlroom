@@ -985,7 +985,7 @@ function storyDecisionButtons(target, number) {
 }
 
 // Sends approve or drop with the version and line of the item as the server sees it at the tap, through sendChange.
-// Approve stays on the story (now open, so without the buttons); Drop leaves it, as its story file is gone.
+// After either one succeeds the view closes (#128); a failed one stays on the story with its error.
 async function decideStory(target, number, action) {
   if (changeBusy || storyFormOpen()) {
     return;
@@ -1009,15 +1009,11 @@ async function decideStory(target, number, action) {
     return;
   }
   loadInbox();
-  if (action === "approve") {
-    loadStory(target);
-    return;
-  }
-  leaveDroppedStory();
+  leaveDecidedStory();
 }
 
 // Back to where the story was opened from, else to the inbox; the outcome notice stays for that one route.
-function leaveDroppedStory() {
+function leaveDecidedStory() {
   keepEditNotice();
   if (openedFromList) {
     history.back();
