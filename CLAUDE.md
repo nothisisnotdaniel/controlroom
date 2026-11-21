@@ -216,7 +216,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     tokens}` with 30 daily known-token sums; unknown tokens never count as 0), `SearchEndpoint` (`GET /api/search?q=&mark=&project=&category=`: `{items, total, projects, unreadable}`, items
     `{project, number, mark, title, rest, story, match, category}`, `no-store`; `#N`/`Name#N` (name ignoring case), else every
     word (ordinal, ignore case) in title or rest, else in the story through `StoryReader.Read` (read only for an item that
-    passes the filters and missed on title, or for its category; at most once per item); `mark` (`open|approval|task|done`),
+    passes the filters and missed on title, for the `category` filter, or for a returned item's category; at most once per item); `mark` (`open|approval|task|done`),
     `project` (exact name) and `category` (one of the nine) filters; order
     number, title, story, filter, each by project then file line; at most 100 items; a repeated parameter, unknown mark,
     category or project, or `q` over 200 chars gives `400 {"error":"invalid"}`), `JobReader` (`factory/jobs/<id>/state.json` to a typed

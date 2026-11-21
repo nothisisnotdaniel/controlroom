@@ -535,8 +535,9 @@ internal static class BacklogChangeEndpoint
             file.Bytes);
     }
 
-    /// <summary>The checks <c>story</c>, <c>note</c> and <c>category</c> share: a numbered open item, its story path from the line, a
-    /// safe read and the <c>storyVersion</c> the client saw. <c>null</c> when all pass, else the refusal.</summary>
+    /// <summary>The checks <c>story</c>, <c>note</c> and <c>category</c> share: a numbered open item, its story
+    /// path from the line, a safe read and the <c>storyVersion</c> the client saw. <c>null</c> when all pass, else the
+    /// refusal.</summary>
     private static ChangePlan? OpenStory(
         ProjectFolder project,
         BacklogChangeRequest request,

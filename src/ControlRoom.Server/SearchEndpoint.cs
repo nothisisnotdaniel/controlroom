@@ -109,10 +109,10 @@ internal static partial class SearchEndpoint
     public static SearchResponse Build(IReadOnlyList<ProjectFolder> projects, SearchQuery query)
     {
         List<string> unreadable = [];
-        List<SearchItem> numbers = [];
-        List<SearchItem> titles = [];
-        List<SearchItem> stories = [];
-        List<SearchItem> filtered = [];
+        List<(SearchItem Item, StoryText Story)> numbers = [];
+        List<(SearchItem Item, StoryText Story)> titles = [];
+        List<(SearchItem Item, StoryText Story)> stories = [];
+        List<(SearchItem Item, StoryText Story)> filtered = [];
 
         bool hasFilter = query.Mark is not null || query.Project is not null || query.Category is not null;
         bool empty = query.Text.Length == 0;
@@ -149,8 +149,8 @@ internal static partial class SearchEndpoint
                     continue;
                 }
 
-                // The story is read at most once per item: for the category filter, the story match and the item's
-                // category alike.
+                // The story is read at most once per item, and only when needed: for the category filter, the story
+                // match or a returned item's category.
                 StoryText story = new(project, entry);
                 if (query.Category is not null && !string.Equals(story.Category, query.Category, StringComparison.Ordinal))
                 {
@@ -159,29 +159,30 @@ internal static partial class SearchEndpoint
 
                 if (empty)
                 {
-                    filtered.Add(ToItem(project, entry, mark, MatchFilter, story.Category));
+                    filtered.Add((ToItem(project, entry, mark, MatchFilter), story));
                 }
                 else if (number is not null)
                 {
                     if (entry.Number == number.Number)
                     {
-                        numbers.Add(ToItem(project, entry, mark, MatchNumber, story.Category));
+                        numbers.Add((ToItem(project, entry, mark, MatchNumber), story));
                     }
                 }
                 else if (words.All(word => Contains(entry.Title, word) || Contains(entry.Rest, word)))
                 {
-                    titles.Add(ToItem(project, entry, mark, MatchTitle, story.Category));
+                    titles.Add((ToItem(project, entry, mark, MatchTitle), story));
                 }
                 else if (StoryMatches(story, words))
                 {
-                    stories.Add(ToItem(project, entry, mark, MatchStory, story.Category));
+                    stories.Add((ToItem(project, entry, mark, MatchStory), story));
                 }
             }
         }
 
-        List<SearchItem> all = [.. numbers, .. titles, .. stories, .. filtered];
+        // The category is read only for the items that are returned (the story is kept from an earlier read).
+        List<(SearchItem Item, StoryText Story)> all = [.. numbers, .. titles, .. stories, .. filtered];
         return new SearchResponse(
-            all.Take(MaxItems).ToList(), all.Count, projects.Select(project => project.Name).ToList(), unreadable);
+            all.Take(MaxItems).Select(found => found.Item with { Category = found.Story.Category }).ToList(), all.Count, projects.Select(project => project.Name).ToList(), unreadable);
     }
 
     // Only a numbered line with a story link is read, and only through StoryReader (fenced to backlog/, no-follow,
@@ -198,7 +199,7 @@ internal static partial class SearchEndpoint
     }
 
     private static SearchItem ToItem(
-        ProjectFolder project, BacklogEntry entry, string mark, string match, string? category)
+        ProjectFolder project, BacklogEntry entry, string mark, string match)
     {
         return new SearchItem(
             project.Name,
@@ -208,7 +209,7 @@ internal static partial class SearchEndpoint
             entry.Rest,
             entry.Number is not null && entry.Story is not null,
             match,
-            category);
+            null);
     }
 
     private static string? Optional(IQueryCollection query, string name)
