@@ -28,6 +28,19 @@ public sealed partial class UpdaterScriptTests
     /// <summary>How often a run waits 15 min while a job runs before it ends <c>job_running</c>.</summary>
     private const int RetryWaits = 23;
 
+    /// <summary>The updater script and plist installed before each run (<c>0700</c>, <c>0644</c>).</summary>
+    private const string InstalledUpdater = "#!/bin/sh\n# installed updater\nexit 0\n";
+
+    private const string InstalledUpdaterPlist = "<plist>installed updater</plist>\n";
+
+    /// <summary>The <c>updater.sh</c> every release built by <c>AddRelease</c> carries unless a test picks another.</summary>
+    private const string ReleaseUpdater = "#!/bin/sh\n# release updater\nexit 0\n";
+
+    private const UnixFileMode ScriptMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+
+    private const UnixFileMode PlistMode =
+        UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead;
+
     /// <summary>What the fake <c>sleep</c> records when neither the lock nor a result file exists.</summary>
     private const string NothingHeld = "lock=no result=no";
 
@@ -37,7 +50,11 @@ public sealed partial class UpdaterScriptTests
         string agent = File.ReadAllText(Path.Combine(UpdaterHome.RepoFolder(), "scripts", "launch-agent.sh"));
         string updater = File.ReadAllText(UpdaterHome.ScriptPath());
         foreach (string name in new[]
-                 { "valid_tag", "latest_tag", "download", "check_and_extract", "fingerprint_file", "verify_signature" })
+                 {
+                     "valid_tag", "latest_tag", "download", "check_and_extract", "fingerprint_file", "verify_signature",
+                     "xml_escape", "updater_plist", "number_greater", "text_greater", "semver_newer", "channel_tag",
+                     "develop_tag",
+                 })
         {
             string expected = Function(agent, name);
             Assert.Equal(expected, Function(updater, name));
@@ -1638,7 +1655,9 @@ public sealed partial class UpdaterScriptTests
     {
         private static readonly TimeSpan ProcessTimeout = TimeSpan.FromSeconds(60);
 
-        /// <summary>Logs its arguments (also to <c>order.log</c>). <c>bootout</c> unloads the server, copies
+        /// <summary>Logs its arguments (also to <c>order.log</c>). Each <c>bootstrap</c> logs the second line of
+        /// <c>&lt;support&gt;/updater.sh</c> to <c>bootstrap-updater.log</c>, each <c>bootout</c> the number of staged
+        /// <c>.updater.*</c> files to <c>bootout-staged.log</c>. <c>bootout</c> unloads the server, copies
         /// <c>$HOME/linger</c> to <c>linger-left</c> and pops the first line of <c>bootstrap-fails-per-bootout</c> into
         /// <c>bootstrap-fails</c>. <c>bootstrap</c> fails (stderr, exit 5) while the <c>bootstrap-fails</c> counter is
         /// above 0 (counting it down), else loads the server. <c>print</c> shows the loaded server; after a bootout it
@@ -1647,6 +1666,11 @@ public sealed partial class UpdaterScriptTests
             "#!/bin/sh\n"
             + "printf '%s\\n' \"$*\" >> \"$HOME/calls.log\"\n"
             + "printf 'launchctl %s\\n' \"$*\" >> \"$HOME/order.log\"\n"
+            + "support=\"$HOME/Library/Application Support/ControlRoom\"\n"
+            + "case $1 in\n"
+            + "  bootstrap) sed -n 2p \"$support/updater.sh\" >> \"$HOME/bootstrap-updater.log\" ;;\n"
+            + "  bootout) ls -A \"$support\" | grep -c '^\\.updater\\.' >> \"$HOME/bootout-staged.log\" ;;\n"
+            + "esac\n"
             + "count() { if [ -f \"$HOME/$1\" ]; then cat \"$HOME/$1\"; else echo 0; fi; }\n"
             + "case $1 in\n"
             + "  bootstrap)\n"
@@ -1757,7 +1781,8 @@ public sealed partial class UpdaterScriptTests
         private static readonly string[] HarnessFiles =
             ["calls.log", "curl.log", "curl-stdin.log", "sleep.log", "lsof.log", "loaded", "redirect", "mv-fail",
                 "mv-fail-to", "lsof-out", "not-running", "list", "order.log", "linger", "linger-left", "bootstrap-fails",
-                "bootstrap-fails-per-bootout", "codesign.log", "codesign-exit", "codesign-fail-for", "sleep-state.log"];
+                "bootstrap-fails-per-bootout", "codesign.log", "codesign-exit", "codesign-fail-for", "sleep-state.log",
+                "bootstrap-updater.log", "bootout-staged.log"];
 
         private const string HooksFolder = "sleep-hooks";
 
@@ -1787,6 +1812,9 @@ public sealed partial class UpdaterScriptTests
             File.WriteAllText(System.IO.Path.Combine(Server, "health"), "{\"version\":\"" + installed[1..] + "\"}");
             Directory.CreateDirectory(System.IO.Path.GetDirectoryName(ServerPlist)!);
             File.WriteAllText(ServerPlist, "<plist/>\n");
+            WriteExecutable(UpdaterScript, InstalledUpdater);
+            File.WriteAllText(UpdaterPlist, InstalledUpdaterPlist);
+            File.SetUnixFileMode(UpdaterPlist, PlistMode);
             SetMarker(installed + "\n");
             SetSettings("{\"autoUpdate\":true}\n");
             WritePrivate(TokenFile, Token);
@@ -1817,6 +1845,17 @@ public sealed partial class UpdaterScriptTests
 
         public string ServerPlist =>
             System.IO.Path.Combine(Path, "Library", "LaunchAgents", "local.controlroom.server.plist");
+
+        public string UpdaterScript => System.IO.Path.Combine(Support, "updater.sh");
+
+        public string UpdaterScriptPrevious => System.IO.Path.Combine(Support, "updater.sh.previous");
+
+        public string UpdaterPlistPrevious => System.IO.Path.Combine(Support, "updater.plist.previous");
+
+        public string UpdaterPlist =>
+            System.IO.Path.Combine(Path, "Library", "LaunchAgents", "local.controlroom.updater.plist");
+
+        public string UpdaterLog => System.IO.Path.Combine(Path, "Library", "Logs", "ControlRoom", "updater.log");
 
         public string Domain { get; }
 
@@ -2055,6 +2094,18 @@ public sealed partial class UpdaterScriptTests
             return ReadLines("order.log");
         }
 
+        /// <summary>The second line of <c>updater.sh</c> at each bootstrap.</summary>
+        public IReadOnlyList<string> UpdaterAtBootstrap()
+        {
+            return ReadLines("bootstrap-updater.log");
+        }
+
+        /// <summary>How many staged <c>.updater.*</c> files the support folder held at each bootout.</summary>
+        public IReadOnlyList<string> StagedAtBootout()
+        {
+            return ReadLines("bootout-staged.log");
+        }
+
         /// <summary>What the fake <c>lsof</c> prints as the listening pids.</summary>
         public void SetListeners(string pids)
         {
@@ -2077,9 +2128,13 @@ public sealed partial class UpdaterScriptTests
         }
 
         /// <summary>Builds <c>release/controlroom-&lt;version&gt;-osx-arm64.tar.gz</c> (with a <c>health</c> file
-        /// holding <paramref name="health"/> as the version, or none) and <c>release/SHA256SUMS</c> with the real
-        /// <c>/usr/bin/tar</c>.</summary>
-        public void AddRelease(string version, string? health, bool badChecksum = false, bool symlinkEntry = false)
+        /// holding <paramref name="health"/> as the version, or none, and an <c>updater.sh</c> holding
+        /// <paramref name="updater"/> (<c>0755</c>), or none for <c>null</c>; <paramref name="updaterKind"/>
+        /// <c>folder</c> or <c>symlink</c> puts a folder or a symlink there instead) and <c>release/SHA256SUMS</c> with
+        /// the real <c>/usr/bin/tar</c>.</summary>
+        public void AddRelease(
+            string version, string? health, bool badChecksum = false, bool symlinkEntry = false,
+            string? updater = ReleaseUpdater, string updaterKind = "file")
         {
             string top = "controlroom-" + version + "-osx-arm64";
             string stage = System.IO.Path.Combine(Path, "stage-" + Guid.NewGuid().ToString("N"));
@@ -2099,6 +2154,22 @@ public sealed partial class UpdaterScriptTests
             if (symlinkEntry)
             {
                 File.CreateSymbolicLink(System.IO.Path.Combine(folder, "wwwroot", "link"), "/etc/hosts");
+            }
+
+            string updaterFile = System.IO.Path.Combine(folder, "updater.sh");
+            if (updaterKind == "folder")
+            {
+                Directory.CreateDirectory(updaterFile);
+            }
+            else if (updaterKind == "symlink")
+            {
+                File.CreateSymbolicLink(updaterFile, "/bin/sh");
+            }
+            else if (updater is not null)
+            {
+                File.WriteAllText(updaterFile, updater);
+                File.SetUnixFileMode(updaterFile, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                    | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
             }
 
             string release = System.IO.Path.Combine(Path, "release");

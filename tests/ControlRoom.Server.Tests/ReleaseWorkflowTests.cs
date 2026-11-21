@@ -158,6 +158,22 @@ public sealed partial class ReleaseWorkflowTests
     }
 
     [Fact]
+    public void Pack_CopiesTheUpdaterScriptIntoTheTopFolderBeforeTar()
+    {
+        string pack = Step(Workflow(), "Pack");
+        string copy = "cp scripts/updater.sh \"$RUNNER_TEMP/pack/$NAME/updater.sh\"\n";
+        string mode = "chmod 0755 \"$RUNNER_TEMP/pack/$NAME/updater.sh\"\n";
+        string tar = "tar -czf \"dist/$NAME.tar.gz\" -C \"$RUNNER_TEMP/pack\" \"$NAME\"";
+        int move = pack.IndexOf("mv \"$RUNNER_TEMP/publish\" \"$RUNNER_TEMP/pack/$NAME\"", StringComparison.Ordinal);
+        int copied = pack.IndexOf(copy, StringComparison.Ordinal);
+        int moded = pack.IndexOf(mode, StringComparison.Ordinal);
+        int packed = pack.IndexOf(tar, StringComparison.Ordinal);
+        Assert.True(move >= 0 && copied > move && moded > copied && packed > moded,
+            "the Pack step must copy scripts/updater.sh (0755) into the top folder after the move and before tar");
+        Assert.Single(Regex.Matches(pack, "cp scripts/updater\\.sh "));
+    }
+
+    [Fact]
     public void GithubEnv_HoldsOnlyReleaseNamesThatNoMsBuildPropertyReads()
     {
         string yaml = Workflow();
