@@ -139,8 +139,9 @@ public sealed class StoryStatusWebAppTests
         string chip = Between(css, ".category-chip,\n.status-chip {", "\n}\n");
         Assert.Contains("display: inline-block;", chip, StringComparison.Ordinal);
         Assert.Contains("white-space: nowrap;", chip, StringComparison.Ordinal);
-        Assert.Contains(".story-title + .status-chip {", css, StringComparison.Ordinal);
-        Assert.Contains(".story-title + .category-chip + .status-chip {", css, StringComparison.Ordinal);
+        Assert.Contains(".story-title + .category-chip {\n  margin: -4px 6px 12px 0;\n}", css, StringComparison.Ordinal);
+        Assert.Contains(".story-title + .status-chip,\n.story-title + .category-chip + .status-chip {\n  margin: -4px 0 12px;\n}",
+            css, StringComparison.Ordinal);
         foreach (string key in new[] { "done", "unapproved", "open", "user" })
         {
             foreach (string part in new[] { "bg", "fg" })

@@ -374,16 +374,15 @@ main {
   white-space: nowrap;
 }
 
+/* In the story header the gap sits after the category chip, so a status chip that wraps to the next line on a
+   narrow screen starts flush left. */
 .story-title + .category-chip {
-  margin: -4px 0 12px;
+  margin: -4px 6px 12px 0;
 }
 
-.story-title + .status-chip {
-  margin: -4px 0 12px;
-}
-
+.story-title + .status-chip,
 .story-title + .category-chip + .status-chip {
-  margin: -4px 0 12px 6px;
+  margin: -4px 0 12px;
 }
 
 .status-done {
