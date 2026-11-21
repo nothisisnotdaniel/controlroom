@@ -115,7 +115,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#105](backlog/105-approve-and-drop-buttons-in-the.md) Approve and Drop buttons in the story view of a [?] item → 335-story-approve-drop
 - [x] [#106](backlog/106-project-picker-on-backlogs.md) Project picker on Backlogs → 340-backlog-project-picker
 - [x] [#107](backlog/107-collapsible-backlog-groups.md) Collapsible backlog groups → 342-collapsible-groups
-- [ ] [#108](backlog/108-position-numbers-in-backlog-groups.md) Position numbers in backlog groups
+- [x] [#108](backlog/108-position-numbers-in-backlog-groups.md) Position numbers in backlog groups → 344-backlog-position-numbers
 - [ ] [#109](backlog/109-drag-and-drop-to-reorder-backlog.md) Drag and drop to reorder backlog items
 - [ ] [#110](backlog/110-category-chip-on-backlog-items-and.md) Category chip on backlog items and stories (after: factory#20)
 - [?] [#111](backlog/111-decide-what-the-updater-does-when.md) Decide what the updater does when rmdir of its lock fails
