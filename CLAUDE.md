@@ -30,7 +30,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     git runs read-only in the factory root itself: only `git status --porcelain --untracked-files=all -- factory/jobs`
     for `GET /api/doctor` (`ProjectGit.Run`, `GIT_OPTIONAL_LOCKS=0`). In a project repo `GET /api/status` runs only the
     read-only `git rev-list --count refs/heads/main..refs/heads/develop` (`ProjectGit.AheadOfMain`); it never runs `gh`
-    or calls the network. For edits while a job has the checkout on another branch, `BacklogWorktree` runs (fixed
+    or calls the network. `GET /api/releases` runs only the read-only `git for-each-ref
+    --format=%(refname:strip=2)%09%(creatordate:unix) refs/tags/` (`ProjectGit.Tags`), `git rev-list --count <range>`
+    (`CommitsSince`) and `git log --first-parent --format=%h%x1f%s --max-count=1000 <range>` (`LogSince`), `<range>`
+    `refs/tags/<tag>..refs/heads/develop` (or `refs/heads/develop` without a tag), the tag used only after it matches
+    `ProjectGit.IsReleaseTag` (`^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$`); no fetch, `gh` or network. For edits while a job has the checkout on another branch, `BacklogWorktree` runs (fixed
     arguments; the only variable one is the worktree path built from the token folder and a discovered project name)
     `rev-parse --verify --quiet refs/heads/backlog`, `branch backlog refs/heads/develop`, `worktree prune`,
     `worktree add -q <path> backlog`, `worktree list --porcelain`, `rev-list --count refs/heads/develop..refs/heads/backlog`
@@ -269,7 +273,15 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     any query parameter `400 invalid`; `ci` `{status, url, sha, time}` from the project's (exact name) highest-numbered
     job (ties by id descending) with `ci.status` `success|failure|timeout|skipped`, `url` only a plain
     `https://github.com/…` URL up to 500 chars, `sha` 7–40 lowercase hex sent as 7 chars, `time` the job's `Updated`;
-    `ahead` from `ProjectGit.AheadOfMain` or `null`),
+    `ahead` from `ProjectGit.AheadOfMain` or `null`), `ReleasesEndpoint` (`GET|HEAD /api/releases`:
+    `{projects:[{name, available, release, commits, log, suggested, bump}]}` in `ProjectFinder` order, `no-store`, any
+    query parameter `400 invalid`; `release` `{tag, date}` the highest-SemVer strict `vX.Y.Z` tag (`date` its creator date,
+    UTC) or `null`; `commits` the count since it (all of develop without one); `log` the newest 50 first-parent rows
+    `{sha (7 hex), subject (no control chars, at most 200), job (id of an exact `factory: merge <id>` with a
+    `JobReader.IdPattern` id, not `backlog`, else `null`)}`; `bump` over every merged job of the log (up to 1000): `minor`
+    when any is `feature` or has no category found (state title `#N …`, backlog item N through `BacklogSource`, its story's
+    `Category:`), else `patch`, `null` without merged jobs; `suggested` `X.(Y+1).0` / `X.Y.(Z+1)` from the tag (`0.0.0`
+    without), never major; no repo of its own, no `develop` or a failed git call gives `available:false` and nulls),
     `wwwroot/` (`index.html` (the header holds only `h1#top-title`; the five sections Jobs, Backlogs, Capture, History, Health are a bottom tab bar (no Search tab: search is at the top of Backlogs, #133; no Inbox or Tasks tab, #135)
     `nav.nav.tab-bar` after `p.live-notice`, each link an inline `svg.tab-icon` (`aria-hidden`, paths only) over a
     `span.tab-label`; the Jobs link holds the two count badges `span.nav-count.nav-count-running#running-count` and `span.nav-count.nav-count-blocked#blocked-count` (#138); the Backlogs link holds the two count badges `span.nav-count.nav-count-tasks#tasks-count` and `span.nav-count.nav-count-approval#approval-count`), `app.css` (the bar is fixed to the bottom on
@@ -308,11 +320,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     pending, and at once on becoming visible; refetches only the board, the changed backlog sections (kept while a form
     is open or focus is inside) and the open story (in place, never while Edit story or Add note is open); a failed check shows
     the fixed `Connection lost. Reconnecting…` notice under the header, or in the `board-status` line on the board;
-    script order `token.js`, `board.js`, `act.js`, `push.js`, `edit.js`, `counts.js`, `search.js`, `capture.js`, `history.js`, `doctor.js`, `status.js`, `live.js`, `app.js`; a changed
+    script order `token.js`, `board.js`, `act.js`, `push.js`, `edit.js`, `counts.js`, `search.js`, `capture.js`, `history.js`, `doctor.js`, `status.js`, `releases.js`, `live.js`, `app.js`; a changed
     `backlog` fingerprint (or a recovered connection) refetches the Backlogs counts; a changed `jobs` fingerprint (or a recovered connection) sets `jobCountsStale` and refetches the Jobs tab counts on every view (`refreshStaleJobCounts`, retried after a failure; skipped when `pollBoard` succeeded in the same check); a changed `backlog` or `stories` fingerprint re-runs the current search;
     a changed `jobs` fingerprint refetches the history while it is shown; a changed `jobs`, `backlog` or `stories`
     fingerprint refetches the health view while it is shown; a changed `jobs` or `backlog` fingerprint refetches the
-    status lines while Backlogs is shown), `act.js` (the "Your decision" section under the state section of a `needs-human` job page only: Approve (after a
+    status lines and the release blocks while Backlogs is shown), `act.js` (the "Your decision" section under the state section of a `needs-human` job page only: Approve (after a
     confirm), Rework with a note box (`maxlength` 1000) and Send (off while blank); with a pending request the fixed
     `Waiting for the next /factory session for <project>: <Approve|Rework> sent <local time>` text, the note as text and
     Cancel request; fixed texts per error code in `ActErrors`; `jobDecisionBusy` (a send in flight, or the note box has
@@ -347,7 +359,15 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     failed/timed out), the local time, then `N commits on develop not on main` / `develop is level with main` /
     `Git status unavailable`; a failed call shows only `Status unavailable.`; fetched on every Backlogs show and, while
     shown, after a changed `jobs` or `backlog` fingerprint; a refresh replaces only the lines, never one with focus;
-    fixed texts in `StatusTexts`), `push.js` (Notifications section on the
+    fixed texts in `StatusTexts`), `releases.js` (a `div.project-release` block per readable project on Backlogs, directly
+    after `div.project-status`: `Last release <tag> · <local date>` / `No release yet`, `N commits on develop since <tag>`
+    / `1 commit …` / `Nothing on develop since <tag>` (without a tag `N commits on develop`), `Next release: v<x> (new
+    features)|(fixes only)` / `No merged jobs to release`, the fixed `/factory release still checks for breaking changes`,
+    and a closed `details.release-log` `Commits (k)` (left out when the log is empty) with each row's sha and subject as
+    text, a row with a `job` linking `#job/<id>`; `Release info unavailable` for `available:false`, only `Releases
+    unavailable.` for a failed call; fetched on every Backlogs show and, while shown, after a changed `jobs` or `backlog`
+    fingerprint, older answers dropped by a request counter; a refresh replaces only the blocks, never one with focus,
+    and keeps an open commit list open (`releaseOpen`); fixed texts in `ReleaseTexts`), `push.js` (Notifications section on the
     board: state texts, Turn on (permission only from the tap), done and update switches, Send test, Turn off),
     `sw.js` (service worker: caches only the fixed app shell, never `/api/`; bump its cache version when the
     shell list changes; `push` shows a notification from fixed titles, `notificationclick` opens `#job/<id>`,

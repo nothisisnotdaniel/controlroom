@@ -17,7 +17,7 @@ public sealed partial class WebAppTests
         Assert.Contains("<meta name=\"color-scheme\" content=\"light dark\">", html, StringComparison.Ordinal);
         Assert.Contains("<script src=\"/app.js\" defer></script>", html, StringComparison.Ordinal);
         Assert.Contains("<link rel=\"stylesheet\" href=\"/app.css\">", html, StringComparison.Ordinal);
-        Assert.Equal(13, ScriptTag().Matches(html).Count);
+        Assert.Equal(14, ScriptTag().Matches(html).Count);
         Assert.DoesNotContain("<style", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("style=", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(" on", AttributeStarts(html), StringComparison.Ordinal);

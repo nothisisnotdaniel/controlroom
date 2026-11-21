@@ -3,10 +3,10 @@
 // Live updates: one timer asks /api/changes (metadata fingerprints) every PollInterval while the page is visible,
 // and only what changed is fetched again: the board (pollBoard in board.js), the backlog sections of changed
 // projects, the open story (app.js), the counts on the Backlogs and Jobs tabs (counts.js), the current search (search.js),
-// the history (history.js), the health view (doctor.js) and the project status lines (status.js) while shown. A
-// failed check shows one fixed connection notice. Loaded after status.js and before app.js; the functions of the
-// other scripts are only called at run time. Fingerprints are compared, never shown; only fixed texts are rendered,
-// with textContent.
+// the history (history.js), the health view (doctor.js), the project status lines (status.js) and the release blocks
+// (releases.js) while shown. A failed check shows one fixed connection notice. Loaded after releases.js and before
+// app.js; the functions of the other scripts are only called at run time. Fingerprints are compared, never shown;
+// only fixed texts are rendered, with textContent.
 
 const LiveTexts = {
   lost: "Connection lost. Reconnecting…",
@@ -34,6 +34,9 @@ let historyStale = false;
 let doctorStale = false;
 // The jobs or a backlog changed: the status lines on the Backlogs view (status.js) are fetched again while it is shown.
 let statusStale = false;
+// The jobs or a backlog changed: the release blocks on the Backlogs view (releases.js) are fetched again while it is
+// shown.
+let releasesStale = false;
 // The same for the current search (search.js), re-run while shown and on the next show while hidden.
 let searchChanged = false;
 const staleBacklogs = new Set();
@@ -138,6 +141,7 @@ function noteChanges(next, recovered) {
   // fetched once.
   if (recovered || statusInputsChanged(previous, next)) {
     statusStale = true;
+    releasesStale = true;
   }
   const names = new Set([...next.projects.keys(), ...(previous ? previous.projects.keys() : [])]);
   if (recovered) {
@@ -229,6 +233,7 @@ async function refreshShownViews() {
   await refreshStaleHistory();
   await refreshStaleDoctor();
   await refreshStaleStatus();
+  await refreshStaleReleases();
   await refreshStaleCounts();
   await refreshStaleJobCounts();
 }
@@ -298,6 +303,22 @@ async function refreshStaleStatus() {
   }
   if (!(await loadStatus())) {
     statusStale = true;
+  }
+}
+
+// A changed jobs or backlog fingerprint fetches the release blocks again while the Backlogs view is shown; while
+// hidden there is nothing to do, as showing it fetches them. A failed fetch, or a block left alone because it has
+// focus, is tried again on the next check.
+async function refreshStaleReleases() {
+  if (!releasesStale) {
+    return;
+  }
+  releasesStale = false;
+  if (document.getElementById("backlogs").hidden) {
+    return;
+  }
+  if (!(await loadReleases())) {
+    releasesStale = true;
   }
 }
 
