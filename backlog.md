@@ -30,7 +30,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#138](backlog/138-number-of-active-and-blocked-jobs.md) Active and blocked job counts on the Jobs tab → 373-jobs-tab-badges
 - [ ] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone (after: #139)
 - [ ] [#139](backlog/139-phone-start-spike.md) Phone start spike
-- [ ] [#13](backlog/013-releases-overview.md) Releases overview
+- [x] [#13](backlog/013-releases-overview.md) Releases overview → 375-releases-overview
 - [x] [#15](backlog/015-job-detail.md) Job detail (after: #2) → 248-job-detail-gaps
 - [x] [#16](backlog/016-live-updates.md) Live updates → 249-live-board-updates
 - [x] [#17](backlog/017-approval-inbox.md) Approval inbox (after: #4) → 251-approval-inbox
