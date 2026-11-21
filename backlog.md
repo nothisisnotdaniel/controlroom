@@ -146,3 +146,5 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#134](backlog/134-done-button-for-your-tasks-in.md) Done button for your tasks in the story view → 365-done-button-tasks
 - [x] [#135](backlog/135-leaner-bottom-bar-with-counts-on.md) Leaner bottom bar with counts on Backlogs → 362-leaner-bottom-bar
 - [x] [#137](backlog/137-updater-replaces-itself-with-each-release.md) Updater replaces itself with each release → 369-updater-self-update
+- [?] [#140](backlog/140-cap-the-tag-list-in-the.md) Cap the tag list in the releases overview
+- [?] [#141](backlog/141-loading-text-for-the-releases-block.md) Loading text for the releases block
