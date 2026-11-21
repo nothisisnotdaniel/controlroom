@@ -63,7 +63,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#47](backlog/047-automatic-updates.md) Automatic updates (after: #46) → 229-automatic-updates
 - [x] [#48](backlog/048-strict-semver-prerelease-identifiers-in-release.md) Strict SemVer prerelease identifiers in release tags → 270-strict-semver-prerelease
 - [?] [#49](backlog/049-verify-release-signatures-in-the-updater.md) Verify release signatures in the updater without gh
-- [ ] [#50](backlog/050-updater-port-check-when-another-user.md) Updater port check when another user holds the port
+- [ ] [#127](backlog/127-bottom-tab-bar-with-icons.md) Bottom tab bar with icons
 - [x] [#51](backlog/051-develop-prerelease-builds-and-an-opt.md) Develop prerelease builds and an opt-in develop update channel → 234-develop-prereleases-channel
 - [?] [#52](backlog/052-test-that-keeping-the-update-channel.md) Test that keeping the update channel starts no check
 - [?] [#53](backlog/053-keep-focus-on-the-channel-select.md) Keep focus on the channel select after saving
@@ -77,8 +77,8 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#61](backlog/061-check-that-the-job-page-refreshes.md) Check that the job page refreshes in place
 - [?] [#62](backlog/062-refresh-version-and-update-info-on.md) Refresh version and update info on live changes
 - [?] [#63](backlog/063-browser-check-of-the-live-update.md) Browser check of the live-update notice
+- [ ] [#50](backlog/050-updater-port-check-when-another-user.md) Updater port check when another user holds the port
 - [ ] [#64](backlog/064-keep-stale-story-marks-across-route.md) Keep stale story marks across route changes
-- [ ] [#65](backlog/065-refresh-the-inbox-count-right-after.md) Refresh the inbox count right after any backlog change
 - [?] [#66](backlog/066-cheaper-inbox-reads.md) Cheaper inbox reads
 - [?] [#67](backlog/067-retry-button-when-the-inbox-fails.md) Retry button when the inbox fails to load
 - [?] [#68](backlog/068-browser-check-of-the-approval-inbox.md) Browser check of the approval inbox
@@ -133,6 +133,6 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#123](backlog/123-browser-check-of-category-chips-at.md) Browser check of category chips at phone width and in dark mode
 - [?] [#124](backlog/124-check-the-stop-line-divider-on.md) Check the stop line divider on the iPhone in dark mode
 - [x] [#125](backlog/125-status-chip-in-the-story-view.md) Status chip in the story view → 352-story-status-chip
+- [ ] [#65](backlog/065-refresh-the-inbox-count-right-after.md) Refresh the inbox count right after any backlog change
 - [ ] [#126](backlog/126-backlog-position-in-the-story-view.md) Backlog position in the story view
-- [ ] [#127](backlog/127-bottom-tab-bar-with-icons.md) Bottom tab bar with icons
 - [x] [#128](backlog/128-approve-or-drop-goes-back-from.md) Approve or Drop goes back from the story view → 355-approve-goes-back
