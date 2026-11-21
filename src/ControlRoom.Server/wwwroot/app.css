@@ -55,6 +55,11 @@
   --status-open-fg: #0c4a6e;
   --status-user-bg: #f3e8ff;
   --status-user-fg: #581c87;
+  /* The two counts on the Backlogs tab: the user's [h] tasks and the unapproved [?] items. */
+  --count-tasks-bg: #6d28d9;
+  --count-tasks-fg: #ffffff;
+  --count-approval-bg: #c2410c;
+  --count-approval-fg: #ffffff;
   /* The bottom tab bar without the home indicator inset; at least the 44px tap target. */
   --tab-bar-height: 56px;
 }
@@ -116,6 +121,10 @@
     --status-open-fg: #bae6fd;
     --status-user-bg: #3b1d57;
     --status-user-fg: #e9d5ff;
+    --count-tasks-bg: #c4b5fd;
+    --count-tasks-fg: #1e1036;
+    --count-approval-bg: #fdba74;
+    --count-approval-fg: #3b1505;
   }
 }
 
@@ -726,7 +735,7 @@ main {
   white-space: pre;
 }
 
-/* Bottom tab bar: the six sections in one row on every view and width, an icon over a tiny label. */
+/* Bottom tab bar: the five sections in one row on every view and width, an icon over a tiny label. */
 .tab-bar {
   position: fixed;
   left: 0;
@@ -1652,102 +1661,31 @@ body:has(#edit-notice:not([hidden])) {
   color: var(--link);
 }
 
-/* Inbox: the waiting count as a badge on the tab icon, and one card row per proposal. */
+/* The Backlogs tab's two counts as badges on its icon (#135): the [h] tasks on the icon's left in violet, the [?]
+   unapproved items on its right in orange, so they differ by place as well as by colour. */
 .nav-count {
   position: absolute;
   top: 2px;
-  left: calc(50% + 4px);
   min-width: 1.4em;
   padding: 0 4px;
   border-radius: 999px;
-  background: var(--accent);
-  color: var(--primary-fg);
   font-size: 0.6875rem;
   font-weight: 600;
   line-height: 1.5;
   text-align: center;
-}
-
-.tab-bar a[aria-current="page"] .nav-count {
-  background: var(--link);
-  color: var(--bg);
   box-shadow: 0 0 0 2px var(--card);
 }
 
-.inbox-list {
-  background: var(--card);
-  border-radius: 12px;
-  padding: 4px 14px;
+.nav-count-tasks {
+  right: calc(50% + 6px);
+  background: var(--count-tasks-bg);
+  color: var(--count-tasks-fg);
 }
 
-.inbox-item {
-  overflow-wrap: anywhere;
-}
-
-.inbox-project {
-  display: block;
-  color: var(--muted);
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.inbox-head {
-  display: block;
-  font-weight: 700;
-}
-
-.inbox-job {
-  display: inline-block;
-  margin-top: 4px;
-  color: var(--link);
-  font-size: 0.95rem;
-}
-
-.inbox-unreadable {
-  margin: 0 0 12px;
-}
-
-/* Tasks: the ready count in the nav, a Ready now and a Waiting section, one card row per task. */
-.tasks-section {
-  margin: 0 0 20px;
-}
-
-.tasks-heading {
-  margin: 0 0 8px;
-  font-size: 1.05rem;
-}
-
-.tasks-list {
-  background: var(--card);
-  border-radius: 12px;
-  padding: 4px 14px;
-}
-
-.tasks-item {
-  overflow-wrap: anywhere;
-}
-
-.tasks-project {
-  display: block;
-  color: var(--muted);
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.tasks-head {
-  display: block;
-  font-weight: 700;
-}
-
-.tasks-after .dependency {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 0 8px;
-}
-
-.tasks-unreadable {
-  margin: 0 0 12px;
+.nav-count-approval {
+  left: calc(50% + 6px);
+  background: var(--count-approval-bg);
+  color: var(--count-approval-fg);
 }
 
 /* Search: at the top of the Backlogs (#133), a labelled field and three filters above one card list of results; long
@@ -1859,21 +1797,8 @@ body:has(#edit-notice:not([hidden])) {
   margin: 0 0 12px;
 }
 
-/* Capture: at the top of the Inbox, a project select and a large text field for a quick idea; 16px text keeps iOS
-   from zooming. */
-.capture {
-  margin: 0 0 20px;
-  padding: 4px 14px 12px;
-  background: var(--card);
-  border-radius: 12px;
-}
-
-.capture-title {
-  margin: 8px 0 0;
-  font-size: 1.05rem;
-  font-weight: 700;
-}
-
+/* Capture: its own view (#135), a project select and a large text field for a quick idea; 16px text keeps iOS from
+   zooming. */
 .capture-form {
   display: flex;
   flex-direction: column;

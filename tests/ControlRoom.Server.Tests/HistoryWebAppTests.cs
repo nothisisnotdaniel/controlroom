@@ -8,11 +8,11 @@ namespace ControlRoom.Server.Tests;
 public sealed partial class HistoryWebAppTests
 {
     [Fact]
-    public async Task IndexHtml_HasTheHistoryLinkAfterTasksAndTheHistoryView()
+    public async Task IndexHtml_HasTheHistoryLinkAfterCaptureAndTheHistoryView()
     {
         string html = await Fetch("/index.html");
 
-        int search = html.IndexOf("<a href=\"#tasks\" data-view=\"tasks\">", StringComparison.Ordinal);
+        int search = html.IndexOf("<a href=\"#capture\" data-view=\"capture\">", StringComparison.Ordinal);
         int history = html.IndexOf("<a href=\"#history\" data-view=\"history\">", StringComparison.Ordinal);
         int navEnd = html.IndexOf("</nav>", StringComparison.Ordinal);
         Assert.True(search >= 0 && history > search && history < navEnd);
@@ -25,7 +25,7 @@ public sealed partial class HistoryWebAppTests
         string html = await Fetch("/index.html");
         string[] scripts =
         [
-            "/token.js", "/board.js", "/act.js", "/push.js", "/edit.js", "/inbox.js", "/tasks.js", "/search.js",
+            "/token.js", "/board.js", "/act.js", "/push.js", "/edit.js", "/counts.js", "/search.js",
             "/capture.js", "/history.js", "/doctor.js", "/status.js", "/live.js", "/app.js",
         ];
 
@@ -34,7 +34,7 @@ public sealed partial class HistoryWebAppTests
             .ToArray();
         Assert.All(positions, position => Assert.True(position >= 0));
         Assert.Equal(positions.OrderBy(position => position), positions);
-        Assert.Equal(14, ScriptTag().Matches(html).Count);
+        Assert.Equal(13, ScriptTag().Matches(html).Count);
         Assert.Contains(
             "<script src=\"/capture.js\" defer></script>\n  <script src=\"/history.js\" defer></script>\n"
             + "  <script src=\"/doctor.js\" defer></script>", html, StringComparison.Ordinal);
@@ -47,9 +47,9 @@ public sealed partial class HistoryWebAppTests
         string js = await Fetch("/history.js");
 
         Assert.Contains(
-            "const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"history\", \"doctor\", \"job\", \"story\"];",
+            "const Views = [\"backlogs\", \"board\", \"capture\", \"history\", \"doctor\", \"job\", \"story\"];",
             app, StringComparison.Ordinal);
-        Assert.Contains("  history: \"History\", doctor: \"Health\" };", app, StringComparison.Ordinal);
+        Assert.Contains(" history: \"History\", doctor: \"Health\" };", app, StringComparison.Ordinal);
         Assert.Contains("  if (hash === HistoryRoute) {\n    return \"history\";\n  }", app, StringComparison.Ordinal);
         Assert.Contains("  if (next === \"history\") {\n    showHistory();\n    return;\n  }", app, StringComparison.Ordinal);
         Assert.Contains("const HistoryRoute = \"#history\";", js, StringComparison.Ordinal);
@@ -233,7 +233,7 @@ public sealed partial class HistoryWebAppTests
     {
         string js = await Fetch("/sw.js");
 
-        Assert.Contains("const CacheVersion = \"v18\";", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v19\";", js, StringComparison.Ordinal);
         Assert.Contains("  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/history", js, StringComparison.Ordinal);
     }

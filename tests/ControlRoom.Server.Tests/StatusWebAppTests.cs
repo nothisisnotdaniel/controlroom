@@ -154,7 +154,7 @@ public sealed partial class StatusWebAppTests
     {
         string js = await Fetch("/sw.js");
 
-        Assert.Contains("const CacheVersion = \"v18\";", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v19\";", js, StringComparison.Ordinal);
         Assert.Contains("  \"/doctor.js\",\n  \"/status.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/status", js, StringComparison.Ordinal);
     }

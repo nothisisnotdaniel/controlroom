@@ -19,8 +19,7 @@
   <script src="/act.js" defer></script>
   <script src="/push.js" defer></script>
   <script src="/edit.js" defer></script>
-  <script src="/inbox.js" defer></script>
-  <script src="/tasks.js" defer></script>
+  <script src="/counts.js" defer></script>
   <script src="/search.js" defer></script>
   <script src="/capture.js" defer></script>
   <script src="/history.js" defer></script>
@@ -42,16 +41,12 @@
     <a href="#backlogs" data-view="backlogs">
       <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
       <span class="tab-label">Backlogs</span>
+      <span class="nav-count nav-count-tasks" id="tasks-count" hidden></span>
+      <span class="nav-count nav-count-approval" id="approval-count" hidden></span>
     </a>
-    <a href="#inbox" data-view="inbox">
-      <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
-      <span class="tab-label">Inbox</span>
-      <span class="nav-count" id="inbox-count" hidden></span>
-    </a>
-    <a href="#tasks" data-view="tasks">
-      <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-      <span class="tab-label">Tasks</span>
-      <span class="nav-count" id="tasks-count" hidden></span>
+    <a href="#capture" data-view="capture">
+      <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM12 8v8M8 12h8"/></svg>
+      <span class="tab-label">Capture</span>
     </a>
     <a href="#history" data-view="history">
       <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM12 7v5l3 2"/></svg>
@@ -82,8 +77,7 @@
     <p class="app-version" id="app-version" hidden></p>
     <div class="auto-update" id="auto-update" hidden></div>
   </main>
-  <main id="inbox" hidden></main>
-  <main id="tasks" hidden></main>
+  <main id="capture" hidden></main>
   <main id="history" hidden></main>
   <main id="doctor" hidden></main>
   <main id="job" hidden></main>

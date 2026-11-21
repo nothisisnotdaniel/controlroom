@@ -15,7 +15,7 @@ public sealed partial class SearchWebAppTests
         int navEnd = html.IndexOf("</nav>", StringComparison.Ordinal);
         Assert.DoesNotContain("href=\"#search\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("data-view=\"search\"", html, StringComparison.Ordinal);
-        Assert.Equal(6, NavLink().Matches(html[..navEnd]).Count);
+        Assert.Equal(5, NavLink().Matches(html[..navEnd]).Count);
         Assert.DoesNotContain("<main id=\"search\"", html, StringComparison.Ordinal);
         Assert.Contains(
             "<main id=\"backlogs\">\n    <div class=\"backlog-search\" id=\"backlog-search\"></div>\n    <p class=\"status\">Loading…</p>",
@@ -23,18 +23,18 @@ public sealed partial class SearchWebAppTests
     }
 
     [Fact]
-    public async Task IndexHtml_LoadsSearchJsAfterTasksJsAndBeforeLiveJs_NineScripts()
+    public async Task IndexHtml_LoadsSearchJsAfterCountsJsAndBeforeLiveJs()
     {
         string html = await Fetch("/index.html");
         string[] scripts =
-            ["/token.js", "/board.js", "/act.js", "/push.js", "/edit.js", "/inbox.js", "/tasks.js", "/search.js", "/capture.js", "/history.js", "/doctor.js", "/status.js", "/live.js", "/app.js"];
+            ["/token.js", "/board.js", "/act.js", "/push.js", "/edit.js", "/counts.js", "/search.js", "/capture.js", "/history.js", "/doctor.js", "/status.js", "/live.js", "/app.js"];
 
         int[] positions = scripts
             .Select(script => html.IndexOf("<script src=\"" + script + "\" defer></script>", StringComparison.Ordinal))
             .ToArray();
         Assert.All(positions, position => Assert.True(position >= 0));
         Assert.Equal(positions.OrderBy(position => position), positions);
-        Assert.Equal(14, ScriptTag().Matches(html).Count);
+        Assert.Equal(13, ScriptTag().Matches(html).Count);
     }
 
     [Fact]
@@ -44,10 +44,10 @@ public sealed partial class SearchWebAppTests
         string search = await Fetch("/search.js");
 
         Assert.Contains(
-            "const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"history\", \"doctor\", \"job\", \"story\"];", app,
+            "const Views = [\"backlogs\", \"board\", \"capture\", \"history\", \"doctor\", \"job\", \"story\"];", app,
             StringComparison.Ordinal);
         Assert.Contains(
-            "const ViewTitles = { backlogs: \"Backlogs\", board: \"Jobs\", inbox: \"Inbox\", tasks: \"Tasks\",\n  history: \"History\", doctor: \"Health\" };",
+            "const ViewTitles = { backlogs: \"Backlogs\", board: \"Jobs\", capture: \"Capture\", history: \"History\", doctor: \"Health\" };",
             app, StringComparison.Ordinal);
         Assert.DoesNotContain("next === \"search\"", app, StringComparison.Ordinal);
         Assert.DoesNotContain("rememberSearchScroll", app + search, StringComparison.Ordinal);
@@ -256,7 +256,7 @@ public sealed partial class SearchWebAppTests
 
         Assert.Contains("staleStories.add(name);\n      searchChanged = true;\n    } else if (before.stories !== after.stories) {",
             live, StringComparison.Ordinal);
-        Assert.Contains("tasksStale = true;\n      searchChanged = true;\n    }\n", live, StringComparison.Ordinal);
+        Assert.Contains("staleStories.add(name);\n      searchChanged = true;\n    }\n", live, StringComparison.Ordinal);
         Assert.Contains("staleStories.add(name);\n    }\n    searchChanged = true;\n    return;", live, StringComparison.Ordinal);
         Assert.Contains("await refreshStaleSearch();", live, StringComparison.Ordinal);
         Assert.Contains("searchChanged = false;\n  if (!(await refreshSearch())) {\n    searchChanged = true;\n  }", live,
@@ -272,8 +272,8 @@ public sealed partial class SearchWebAppTests
     {
         string js = await Fetch("/sw.js");
 
-        Assert.Contains("const CacheVersion = \"v18\";", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/tasks.js\",\n  \"/search.js\",\n  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v19\";", js, StringComparison.Ordinal);
+        Assert.Contains("  \"/counts.js\",\n  \"/search.js\",\n  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/search", js, StringComparison.Ordinal);
         Assert.Contains("if (url.pathname.startsWith(\"/api/\") || url.pathname === \"/health\") {\n    return false;", js,
             StringComparison.Ordinal);

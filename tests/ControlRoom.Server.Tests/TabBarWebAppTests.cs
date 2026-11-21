@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 namespace ControlRoom.Server.Tests;
 
 /// <summary>Checks the bottom tab bar in <c>index.html</c>, <c>app.css</c>, <c>app.js</c> and <c>token.js</c> as
-/// text (there is no JS test runtime). The layout itself (all six tabs in one row at 375 px, the last item clear of
+/// text (there is no JS test runtime). The layout itself (all five tabs in one row at 375 px, the last item clear of
 /// the bar, light and dark mode, the home indicator inset in the installed web app) is checked by hand.</summary>
 public sealed partial class TabBarWebAppTests
 {
@@ -11,13 +11,12 @@ public sealed partial class TabBarWebAppTests
 
     private static readonly (string Href, string View, string Label)[] Tabs =
     [
-        ("#jobs", "board", "Jobs"), ("#backlogs", "backlogs", "Backlogs"), ("#inbox", "inbox", "Inbox"),
-        ("#tasks", "tasks", "Tasks"),
+        ("#jobs", "board", "Jobs"), ("#backlogs", "backlogs", "Backlogs"), ("#capture", "capture", "Capture"),
         ("#history", "history", "History"), ("#doctor", "doctor", "Health"),
     ];
 
     [Fact]
-    public async Task IndexHtml_HasOneTabBarAfterTheLiveNoticeOutsideTheHeaderWithTheSixLinksInOrder()
+    public async Task IndexHtml_HasOneTabBarAfterTheLiveNoticeOutsideTheHeaderWithTheFiveLinksInOrder()
     {
         string html = Normalize(await Fetch("/index.html"));
 
@@ -69,20 +68,35 @@ public sealed partial class TabBarWebAppTests
     }
 
     [Fact]
-    public async Task IndexHtml_InboxAndTasksTabsKeepTheirCountSpans()
+    public async Task IndexHtml_HasNoInboxOrTasksTabOrView()
     {
-        string[] bodies = LinkBodies(NavSlice(Normalize(await Fetch("/index.html"))));
+        string html = Normalize(await Fetch("/index.html"));
 
-        Assert.Contains("<span class=\"nav-count\" id=\"inbox-count\" hidden></span>", bodies[2], StringComparison.Ordinal);
-        Assert.Contains("<span class=\"nav-count\" id=\"tasks-count\" hidden></span>", bodies[3], StringComparison.Ordinal);
-        for (int i = 0; i < bodies.Length; i++)
+        foreach (string gone in new[] { "href=\"#inbox\"", "href=\"#tasks\"", "data-view=\"inbox\"", "data-view=\"tasks\"",
+                     "<main id=\"inbox\"", "<main id=\"tasks\"", "inbox-count" })
         {
-            Assert.Equal(i is 2 or 3 ? 1 : 0, Regex.Matches(bodies[i], "nav-count").Count);
+            Assert.DoesNotContain(gone, html, StringComparison.Ordinal);
         }
     }
 
     [Fact]
-    public async Task AppCss_PlacesTheCountAsABadgeOnTheIconAndStylesItInTheCurrentTab()
+    public async Task IndexHtml_OnlyTheBacklogsTabHasTheTwoHiddenCountBadges()
+    {
+        string[] bodies = LinkBodies(NavSlice(Normalize(await Fetch("/index.html"))));
+
+        Assert.Contains(
+            "<span class=\"tab-label\">Backlogs</span>\n"
+            + "      <span class=\"nav-count nav-count-tasks\" id=\"tasks-count\" hidden></span>\n"
+            + "      <span class=\"nav-count nav-count-approval\" id=\"approval-count\" hidden></span>\n",
+            bodies[1], StringComparison.Ordinal);
+        for (int i = 0; i < bodies.Length; i++)
+        {
+            Assert.Equal(i == 1 ? 2 : 0, Regex.Matches(bodies[i], "class=\"nav-count[ \"]").Count);
+        }
+    }
+
+    [Fact]
+    public async Task AppCss_PlacesTheTwoCountsOnTheIconApartInTheirOwnColours()
     {
         string css = Normalize(await Fetch("/app.css"));
 
@@ -90,10 +104,29 @@ public sealed partial class TabBarWebAppTests
         string badge = Block(css, ".nav-count {");
         Assert.Contains("  position: absolute;\n", badge, StringComparison.Ordinal);
         Assert.Contains("  top: ", badge, StringComparison.Ordinal);
-        Assert.Contains("  left: ", badge, StringComparison.Ordinal);
-        string current = Block(css, ".tab-bar a[aria-current=\"page\"] .nav-count {");
-        Assert.Contains("  background: var(--", current, StringComparison.Ordinal);
-        Assert.Contains("  color: var(--", current, StringComparison.Ordinal);
+        string tasks = Block(css, ".nav-count-tasks {");
+        string approval = Block(css, ".nav-count-approval {");
+        // Apart by place: the tasks badge is on the icon's left, the unapproved one on its right.
+        Assert.Contains("  right: calc(50% + ", tasks, StringComparison.Ordinal);
+        Assert.Contains("  left: calc(50% + ", approval, StringComparison.Ordinal);
+        Assert.Contains("  background: var(--count-tasks-bg);\n  color: var(--count-tasks-fg);\n", tasks, StringComparison.Ordinal);
+        Assert.Contains("  background: var(--count-approval-bg);\n  color: var(--count-approval-fg);\n", approval,
+            StringComparison.Ordinal);
+        // Apart by colour in light and in dark mode.
+        string light = Block(css, ":root {");
+        int dark = css.IndexOf("@media (prefers-color-scheme: dark) {\n  :root {", StringComparison.Ordinal);
+        Assert.True(dark >= 0);
+        string darkRoot = css[dark..(css.IndexOf("\n  }\n", dark, StringComparison.Ordinal) + 1)];
+        foreach (string scheme in new[] { light, darkRoot })
+        {
+            string tasksBg = Variable(scheme, "--count-tasks-bg");
+            string approvalBg = Variable(scheme, "--count-approval-bg");
+            Assert.NotEqual(tasksBg, approvalBg);
+            Assert.NotEqual(tasksBg, Variable(scheme, "--count-tasks-fg"));
+            Assert.NotEqual(approvalBg, Variable(scheme, "--count-approval-fg"));
+        }
+        Assert.NotEqual(Variable(light, "--count-tasks-bg"), Variable(darkRoot, "--count-tasks-bg"));
+        Assert.NotEqual(Variable(light, "--count-approval-bg"), Variable(darkRoot, "--count-approval-bg"));
     }
 
     [Fact]
@@ -131,7 +164,7 @@ public sealed partial class TabBarWebAppTests
     }
 
     [Fact]
-    public async Task AppCss_AllSixTabsFitInOneRowWithTinyLabelsUnderTheIcons()
+    public async Task AppCss_AllFiveTabsFitInOneRowWithTinyLabelsUnderTheIcons()
     {
         string css = Normalize(await Fetch("/app.css"));
 
@@ -237,6 +270,13 @@ public sealed partial class TabBarWebAppTests
         Match height = Regex.Match(Block(css, ":root {"), @"  --tab-bar-height: (?<px>\d+)px;\n");
         Assert.True(height.Success && int.Parse(height.Groups["px"].Value, System.Globalization.CultureInfo.InvariantCulture) >= 44);
         Assert.Contains("  min-height: var(--tab-bar-height);\n", Block(css, ".tab-bar {"), StringComparison.Ordinal);
+    }
+
+    private static string Variable(string block, string name)
+    {
+        Match match = Regex.Match(block, "\n\\s+" + Regex.Escape(name) + ": (?<value>#[0-9a-f]{6});\n");
+        Assert.True(match.Success, name + " not found");
+        return match.Groups["value"].Value;
     }
 
     private static string Normalize(string text) => text.Replace("\r\n", "\n", StringComparison.Ordinal);

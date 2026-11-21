@@ -1,15 +1,14 @@
 "use strict";
 
-// Capture, at the top of the Inbox view (#132; the old #capture link opens the Inbox): a quick idea from the phone
-// becomes a numbered [?] draft in the chosen project's backlog, with a draft story, through action "capture" of
-// /api/backlog/change. The draft waits in the Inbox, listed under the form, until it is rewritten and approved, so it
-// never runs by itself. The project list comes from /api/backlogs on every show (readable projects
-// only); the last used project is kept in localStorage. Loaded after search.js and before live.js and app.js; their
-// functions (element, asList, asText, fetchBacklogs, sendChange, loadInbox) are only called at run time. Only
-// fixed texts and project names through textContent are shown, never server error text.
+// Capture, a tab with its own view again (#135): a quick idea from the phone becomes a numbered [?] draft in the
+// chosen project's backlog, with a draft story, through action "capture" of /api/backlog/change. The draft waits for
+// approval in the backlog (counted on the Backlogs tab) until it is rewritten and approved, so it never runs by
+// itself. The project list comes from /api/backlogs on every show (readable projects only); the last used project is
+// kept in localStorage. Loaded after search.js and before live.js and app.js; their functions (element, asList,
+// asText, fetchBacklogs, sendChange) are only called at run time; sendChange refreshes the counts. Only fixed texts
+// and project names through textContent are shown, never server error text.
 
 const CaptureTexts = {
-  title: "Capture",
   projectLabel: "Project",
   ideaLabel: "Idea",
   hint: "Saved as a draft at the end of the backlog. Rewrite and approve it later.",
@@ -17,7 +16,7 @@ const CaptureTexts = {
   loading: "Loading projects…",
   noProjects: "No backlog can be written to right now.",
   failed: "Can't load the projects right now.",
-  saved: "Saved as a draft. It waits in the Inbox.",
+  saved: "Saved as a draft. It waits for approval in the backlog.",
 };
 
 const CaptureRoute = "#capture";
@@ -73,9 +72,7 @@ function updateCaptureSave() {
 
 // The form, built once on the first show; the text stays while the user goes elsewhere and comes back.
 function buildCaptureView() {
-  const main = document.getElementById("inbox-capture");
-  const title = element("h2", "capture-title", CaptureTexts.title);
-  title.id = "capture-title";
+  const main = document.getElementById("capture");
   const form = element("form", "capture-form");
   form.noValidate = true;
 
@@ -123,7 +120,7 @@ function buildCaptureView() {
     event.preventDefault();
     saveCapture();
   });
-  main.replaceChildren(title, form, status);
+  main.replaceChildren(form, status);
 }
 
 // Fills the project list with the readable projects; the stored one (or the one chosen before) is selected while it
@@ -217,7 +214,6 @@ async function saveCapture() {
     storeCaptureProject(project);
     area.value = "";
     showCaptureStatus(CaptureTexts.saved, "capture-saved");
-    loadInbox();
   }
   updateCaptureSave();
 }
