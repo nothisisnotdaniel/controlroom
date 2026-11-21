@@ -1165,11 +1165,13 @@ function registerServiceWorker() {
   navigator.serviceWorker.register("/sw.js").catch(() => undefined);
 }
 
-// After Save: show the current view again and reload its data, the backlogs and the counts on the Backlogs tab.
+// After Save: show the current view again and reload its data, the backlogs and the counts on the Backlogs and Jobs
+// tabs.
 onTokenSaved(() => {
   route();
   load();
   loadBacklogCounts();
+  loadJobCounts();
 });
 if (!hasToken()) {
   showTokenView(false);
@@ -1178,5 +1180,6 @@ window.addEventListener("hashchange", route);
 route();
 load();
 loadBacklogCounts();
+loadJobCounts();
 startLiveChecks();
 registerServiceWorker();

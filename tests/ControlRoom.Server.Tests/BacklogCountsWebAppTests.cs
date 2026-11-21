@@ -78,8 +78,8 @@ public sealed class BacklogCountsWebAppTests
         string edit = await Fetch("/edit.js");
         string live = await Fetch("/live.js");
 
-        Assert.Contains("onTokenSaved(() => {\n  route();\n  load();\n  loadBacklogCounts();\n});", app, StringComparison.Ordinal);
-        Assert.Contains("load();\nloadBacklogCounts();\nstartLiveChecks();", app, StringComparison.Ordinal);
+        Assert.Contains("onTokenSaved(() => {\n  route();\n  load();\n  loadBacklogCounts();\n  loadJobCounts();\n});", app, StringComparison.Ordinal);
+        Assert.Contains("load();\nloadBacklogCounts();\nloadJobCounts();\nstartLiveChecks();", app, StringComparison.Ordinal);
         string send = FunctionBody(edit, "async function sendChange(body) {");
         int committed = send.IndexOf("data.committed === true", StringComparison.Ordinal);
         int reload = send.IndexOf("loadBacklogCounts();\n    return true;", StringComparison.Ordinal);
@@ -88,7 +88,7 @@ public sealed class BacklogCountsWebAppTests
 
         Assert.Contains("      boardStale = true;\n      countsStale = true;\n      staleBacklogs.add(name);", live, StringComparison.Ordinal);
         Assert.Contains("    jobStale = true;\n    countsStale = true;\n", live, StringComparison.Ordinal);
-        Assert.Contains("  await refreshStaleCounts();\n}", live, StringComparison.Ordinal);
+        Assert.Contains("  await refreshStaleCounts();\n  await refreshStaleJobCounts();\n}", live, StringComparison.Ordinal);
         string refresh = FunctionBody(live, "async function refreshStaleCounts() {");
         Assert.Contains("if (!(await loadBacklogCounts())) {\n    countsStale = true;\n  }", refresh, StringComparison.Ordinal);
         foreach (string js in new[] { app, edit, live })

@@ -80,10 +80,15 @@ public sealed partial class TabBarWebAppTests
     }
 
     [Fact]
-    public async Task IndexHtml_OnlyTheBacklogsTabHasTheTwoHiddenCountBadges()
+    public async Task IndexHtml_OnlyTheJobsAndBacklogsTabsHaveTheirTwoHiddenCountBadges()
     {
         string[] bodies = LinkBodies(NavSlice(Normalize(await Fetch("/index.html"))));
 
+        Assert.Contains(
+            "<span class=\"tab-label\">Jobs</span>\n"
+            + "      <span class=\"nav-count nav-count-running\" id=\"running-count\" hidden></span>\n"
+            + "      <span class=\"nav-count nav-count-blocked\" id=\"blocked-count\" hidden></span>\n",
+            bodies[0], StringComparison.Ordinal);
         Assert.Contains(
             "<span class=\"tab-label\">Backlogs</span>\n"
             + "      <span class=\"nav-count nav-count-tasks\" id=\"tasks-count\" hidden></span>\n"
@@ -91,7 +96,7 @@ public sealed partial class TabBarWebAppTests
             bodies[1], StringComparison.Ordinal);
         for (int i = 0; i < bodies.Length; i++)
         {
-            Assert.Equal(i == 1 ? 2 : 0, Regex.Matches(bodies[i], "class=\"nav-count[ \"]").Count);
+            Assert.Equal(i <= 1 ? 2 : 0, Regex.Matches(bodies[i], "class=\"nav-count[ \"]").Count);
         }
     }
 
