@@ -127,3 +127,6 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#117](backlog/117-drop-the-dead-group-h3-selector.md) Drop the dead .group h3 selector
 - [?] [#118](backlog/118-browser-check-of-collapsible-backlog-groups.md) Browser check of collapsible backlog groups at phone width
 - [?] [#119](backlog/119-one-position-per-item-in-open.md) One position per item in Open and Waiting
+- [?] [#120](backlog/120-refuse-a-target-field-on-backlog.md) Refuse a target field on backlog changes other than place
+- [?] [#121](backlog/121-announce-the-new-position-after-a.md) Announce the new position after a drag for screen readers
+- [?] [#122](backlog/122-try-drag-and-drop-by-hand.md) Try drag and drop by hand on iPhone and Mac
