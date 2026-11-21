@@ -133,3 +133,6 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#123](backlog/123-browser-check-of-category-chips-at.md) Browser check of category chips at phone width and in dark mode
 - [?] [#124](backlog/124-check-the-stop-line-divider-on.md) Check the stop line divider on the iPhone in dark mode
 - [x] [#125](backlog/125-status-chip-in-the-story-view.md) Status chip in the story view → 352-story-status-chip
+- [ ] [#126](backlog/126-backlog-position-in-the-story-view.md) Backlog position in the story view
+- [ ] [#127](backlog/127-bottom-tab-bar-with-icons.md) Bottom tab bar with icons
+- [ ] [#128](backlog/128-approve-or-drop-goes-back-from.md) Approve or Drop goes back from the story view
