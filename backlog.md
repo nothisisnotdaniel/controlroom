@@ -137,3 +137,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#65](backlog/065-refresh-the-inbox-count-right-after.md) Refresh the inbox count right after any backlog change
 - [x] [#128](backlog/128-approve-or-drop-goes-back-from.md) Approve or Drop goes back from the story view → 355-approve-goes-back
 - [x] [#129](backlog/129-jobs-view-without-your-tasks.md) Jobs view without your tasks → 358-jobs-view-only-jobs
+- [h] [#130](backlog/130-check-the-bottom-tab-bar-on.md) Check the bottom tab bar on the iPhone
