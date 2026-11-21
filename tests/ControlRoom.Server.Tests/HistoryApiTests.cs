@@ -43,7 +43,8 @@ public sealed class HistoryApiTests
 
         using JsonDocument json = await Get(root);
 
-        Assert.Equal(["jobs", "days", "totals", "chart"], json.RootElement.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(
+            ["jobs", "days", "totals", "chart", "lifetime"], json.RootElement.EnumerateObject().Select(p => p.Name));
         JsonElement[] jobs = json.RootElement.GetProperty("jobs").EnumerateArray().ToArray();
         Assert.Equal(
             ["5-reverted", "4-escalated", "3-approved", "2-findings", "1-merged"],
@@ -205,6 +206,151 @@ public sealed class HistoryApiTests
         AssertWindow(modes[1].GetProperty("last7"), 1, 5, 0);
         AssertWindow(modes[1].GetProperty("last30"), 2, 5, 1);
         AssertWindow(modes[2].GetProperty("last30"), 1, 11, 0);
+    }
+
+    [Fact]
+    public async Task History_LifetimeCountsEveryFinishedJobWhateverItsAgeAndSortsNamesWithNullLast()
+    {
+        using TempFactoryRoot root = new();
+        root.AddJob("1-a", State("beta", "done", "quality", "2026-11-19T01:00:00Z", 5));
+        root.AddJob("2-a", State("Alpha", "needs-human", "premium", "2026-11-18T01:00:00Z", 7));
+        root.AddJob("3-a", State("Alpha", "reverted", "quality", "2026-11-01T01:00:00Z", 11));
+        root.AddJob("4-a", State("Old", "done", "budget", "2025-03-01T01:00:00Z", 13));
+        root.AddJob("5-a", State("Never", "done", "light", null, 17));
+        root.AddJob("6-a", State(null, "done", null, "2026-10-01T01:00:00Z", 19));
+        root.AddJob("7-a", State("Busy", "build", "fast", "2026-11-19T01:00:00Z", 99));
+        root.AddJob("8-a", State("Alpha", "review", "quality", "2026-11-19T01:00:00Z", 99));
+
+        using JsonDocument json = await Get(root);
+
+        Assert.Equal(
+            ["jobs", "days", "totals", "chart", "lifetime"], json.RootElement.EnumerateObject().Select(p => p.Name));
+        JsonElement totals = json.RootElement.GetProperty("totals");
+        Assert.Equal(["projects", "modes"], totals.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(["name", "last7", "last30"],
+            totals.GetProperty("projects")[0].EnumerateObject().Select(p => p.Name));
+
+        JsonElement lifetime = json.RootElement.GetProperty("lifetime");
+        Assert.Equal(["projects", "modes", "projectModes"], lifetime.EnumerateObject().Select(p => p.Name));
+
+        JsonElement[] projects = lifetime.GetProperty("projects").EnumerateArray().ToArray();
+        Assert.Equal(["Alpha", "Never", "Old", "beta", null], projects.Select(p => p.GetProperty("name").GetString()));
+        Assert.All(projects, p => Assert.Equal(["name", "all"], p.EnumerateObject().Select(f => f.Name)));
+        Assert.Equal(["jobs", "tokens", "unknown"], projects[0].GetProperty("all").EnumerateObject().Select(p => p.Name));
+        AssertWindow(projects[0].GetProperty("all"), 2, 18, 0);
+        AssertWindow(projects[1].GetProperty("all"), 1, 17, 0);
+        AssertWindow(projects[2].GetProperty("all"), 1, 13, 0);
+        AssertWindow(projects[3].GetProperty("all"), 1, 5, 0);
+        AssertWindow(projects[4].GetProperty("all"), 1, 19, 0);
+
+        JsonElement[] modes = lifetime.GetProperty("modes").EnumerateArray().ToArray();
+        Assert.Equal(["budget", "light", "premium", "quality", null],
+            modes.Select(p => p.GetProperty("name").GetString()));
+        AssertWindow(modes[0].GetProperty("all"), 1, 13, 0);
+        AssertWindow(modes[1].GetProperty("all"), 1, 17, 0);
+        AssertWindow(modes[2].GetProperty("all"), 1, 7, 0);
+        AssertWindow(modes[3].GetProperty("all"), 2, 16, 0);
+        AssertWindow(modes[4].GetProperty("all"), 1, 19, 0);
+        Assert.Equal(6, projects.Sum(p => p.GetProperty("all").GetProperty("jobs").GetInt32()));
+    }
+
+    [Fact]
+    public async Task History_LifetimeCountsUnknownTokensApartNeverAsZero()
+    {
+        using TempFactoryRoot root = new();
+        root.AddJob("1-a", State("Alpha", "done", "quality", "2026-11-19T01:00:00Z", 5));
+        root.AddJob("2-a", State("Alpha", "done", "quality", "2024-01-01T01:00:00Z", null));
+        root.AddJob("3-a", State("Alpha", "needs-human", "premium", null, null));
+        root.AddJob("4-a", State("Beta", "done", "premium", "2026-01-01T01:00:00Z", 0));
+        root.AddJob("5-a", State("Beta", "done", "premium", "2026-01-02T01:00:00Z", null));
+
+        using JsonDocument json = await Get(root);
+        JsonElement lifetime = json.RootElement.GetProperty("lifetime");
+
+        JsonElement[] projects = lifetime.GetProperty("projects").EnumerateArray().ToArray();
+        AssertWindow(projects[0].GetProperty("all"), 3, 5, 2);
+        AssertWindow(projects[1].GetProperty("all"), 2, 0, 1);
+        JsonElement[] modes = lifetime.GetProperty("modes").EnumerateArray().ToArray();
+        Assert.Equal(["premium", "quality"], modes.Select(p => p.GetProperty("name").GetString()));
+        AssertWindow(modes[0].GetProperty("all"), 3, 0, 2);
+        AssertWindow(modes[1].GetProperty("all"), 2, 5, 1);
+    }
+
+    [Fact]
+    public async Task History_LifetimeTokensSaturateAtLongMaxValue()
+    {
+        using TempFactoryRoot root = new();
+        root.AddJob("1-a", State("Alpha", "done", "quality", "2026-11-19T01:00:00Z", long.MaxValue - 10));
+        root.AddJob("2-a", State("Alpha", "done", "quality", "2020-11-19T01:00:00Z", long.MaxValue - 20));
+
+        using JsonDocument json = await Get(root);
+        JsonElement lifetime = json.RootElement.GetProperty("lifetime");
+
+        AssertWindow(lifetime.GetProperty("projects")[0].GetProperty("all"), 2, long.MaxValue, 0);
+        AssertWindow(lifetime.GetProperty("modes")[0].GetProperty("all"), 2, long.MaxValue, 0);
+        AssertWindow(lifetime.GetProperty("projectModes")[0].GetProperty("modes")[0].GetProperty("all"),
+            2, long.MaxValue, 0);
+    }
+
+    [Fact]
+    public async Task History_LifetimeProjectModesFollowTheProjectsAndAddUpToTheirJobs()
+    {
+        using TempFactoryRoot root = new();
+        root.AddJob("1-a", State("Beta", "done", "quality", "2026-11-19T01:00:00Z", 1));
+        root.AddJob("2-a", State("Alpha", "done", "quality", "2026-11-18T01:00:00Z", 2));
+        root.AddJob("3-a", State("Alpha", "done", "premium", "2025-11-18T01:00:00Z", 4));
+        root.AddJob("4-a", State("Alpha", "done", "quality", null, null));
+        root.AddJob("5-a", State("Beta", "reverted", "budget", "2026-01-18T01:00:00Z", 8));
+        root.AddJob("6-a", State(null, "done", null, "2026-01-18T01:00:00Z", 16));
+        root.AddJob("7-a", State("Alpha", "build", "light", "2026-11-19T01:00:00Z", 32));
+
+        using JsonDocument json = await Get(root);
+        JsonElement lifetime = json.RootElement.GetProperty("lifetime");
+        JsonElement[] projects = lifetime.GetProperty("projects").EnumerateArray().ToArray();
+        JsonElement[] projectModes = lifetime.GetProperty("projectModes").EnumerateArray().ToArray();
+
+        Assert.Equal(
+            projects.Select(p => p.GetProperty("name").GetString()),
+            projectModes.Select(p => p.GetProperty("name").GetString()));
+        Assert.All(projectModes, p => Assert.Equal(["name", "modes"], p.EnumerateObject().Select(f => f.Name)));
+
+        JsonElement[] alpha = projectModes[0].GetProperty("modes").EnumerateArray().ToArray();
+        Assert.Equal(["premium", "quality"], alpha.Select(p => p.GetProperty("name").GetString()));
+        Assert.Equal(["name", "all"], alpha[0].EnumerateObject().Select(f => f.Name));
+        AssertWindow(alpha[0].GetProperty("all"), 1, 4, 0);
+        AssertWindow(alpha[1].GetProperty("all"), 2, 2, 1);
+
+        JsonElement[] beta = projectModes[1].GetProperty("modes").EnumerateArray().ToArray();
+        Assert.Equal(["budget", "quality"], beta.Select(p => p.GetProperty("name").GetString()));
+        AssertWindow(beta[0].GetProperty("all"), 1, 8, 0);
+        AssertWindow(beta[1].GetProperty("all"), 1, 1, 0);
+
+        Assert.Equal(JsonValueKind.Null, projectModes[2].GetProperty("name").ValueKind);
+        JsonElement none = Assert.Single(projectModes[2].GetProperty("modes").EnumerateArray());
+        Assert.Equal(JsonValueKind.Null, none.GetProperty("name").ValueKind);
+        AssertWindow(none.GetProperty("all"), 1, 16, 0);
+
+        for (int index = 0; index < projects.Length; index++)
+        {
+            Assert.Equal(
+                projects[index].GetProperty("all").GetProperty("jobs").GetInt32(),
+                projectModes[index].GetProperty("modes").EnumerateArray()
+                    .Sum(mode => mode.GetProperty("all").GetProperty("jobs").GetInt32()));
+        }
+    }
+
+    [Fact]
+    public async Task History_LifetimeIsEmptyWithoutFinishedJobs()
+    {
+        using TempFactoryRoot root = new();
+        root.AddJob("1-a", State("Alpha", "build", "quality", "2026-11-19T01:00:00Z", 5));
+
+        using JsonDocument json = await Get(root);
+        JsonElement lifetime = json.RootElement.GetProperty("lifetime");
+
+        Assert.Empty(lifetime.GetProperty("projects").EnumerateArray());
+        Assert.Empty(lifetime.GetProperty("modes").EnumerateArray());
+        Assert.Empty(lifetime.GetProperty("projectModes").EnumerateArray());
     }
 
     [Fact]

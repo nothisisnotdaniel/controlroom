@@ -218,12 +218,15 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `{project, version, line, number, title, rest, story, after}` split into `ready` and `waiting` by `BacklogWaiting`
     (`after` only the unmet dependencies, `project` always set), plus `unreadable` names, `no-store`; project order, then
     file order), `HistoryEndpoint` (`GET /api/history`, read-only, `no-store`, no parameters: `{jobs, days, totals,
-    chart}` from `JobReader.ReadAll` and `TimeProvider` (UTC); `jobs` only stages `done`/`needs-human`/`reverted` as
+    chart, lifetime}` from `JobReader.ReadAll` and `TimeProvider` (UTC); `jobs` only stages `done`/`needs-human`/`reverted` as
     `{id, project, title, mode, path, round, outcome, tokens, finished}` (`outcome` `merged`, `findings` (decision
     `FINDINGS`), `escalated`, `reverted`; `finished` the `Updated` time or `null`), newest first then id descending,
     `null` last; `days` the 30 UTC dates ending today; `totals.projects`/`totals.modes` `{name, last7, last30}` with
     `{jobs, tokens, unknown}` (only names with a job in the 30 days, ordinal, `null` last); `chart.modes` `{name,
-    tokens}` with 30 daily known-token sums; unknown tokens never count as 0), `SearchEndpoint` (`GET /api/search?q=&mark=&project=&category=`: `{items, total, projects, unreadable}`, items
+    tokens}` with 30 daily known-token sums; `lifetime` `{projects, modes, projectModes}` over every finished job
+    whatever its age (also with `finished` `null`): `projects`/`modes` `{name, all}` with `{jobs, tokens, unknown}` (every
+    name, ordinal, `null` last), `projectModes` `{name, modes}` one per lifetime project in that order with that project's
+    mode rows; unknown tokens never count as 0, token sums saturate at `long.MaxValue`), `SearchEndpoint` (`GET /api/search?q=&mark=&project=&category=`: `{items, total, projects, unreadable}`, items
     `{project, number, mark, title, rest, story, match, category}`, `no-store`; `#N`/`Name#N` (name ignoring case), else every
     word (ordinal, ignore case) in title or rest, else in the story through `StoryReader.Read` (read only for an item that
     passes the filters and missed on title, for the `category` filter, or for a returned item's category; at most once per item); `mark` (`open|approval|task|done`),
@@ -327,9 +330,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     (`maxlength` 2000) and Save (off while blank or `changeBusy`); Save fetches the version, sends `action:"capture"`
     through `sendChange`, then clears the text and shows the fixed saved text (`sendChange` refreshes the counts); fixed texts in
     `CaptureTexts`), `history.js` (the `#history` view, read-only: `Last 7 days` and `Last 30 days` tables for projects
-    and modes (`formatTokens`, `+ k unknown`), a stacked bar chart per day built with `createElementNS` (`role="img"`,
+    and modes (`formatTokens`, `+ k unknown`), an `All time` block (`#history-all`, from `lifetime`, after the 30-day
+    block or the `noRecent` text and before the chart; hidden when `lifetime` is empty or malformed), a stacked bar chart per day built with `createElementNS` (`role="img"`,
     text `aria-label`, legend with each mode's 30-day total), then the job list (title links `#job/<id>`, outcome badge,
-    tokens or `unknown`) with a `Project` select that filters only the list on the client (kept in `localStorage`
+    tokens or `unknown`) with a `Project` select that filters the list and the All time block (that project's row and its `projectModes`
+    modes) on the client without a fetch, never the 7/30-day tables or the chart (kept in `localStorage`
     `controlroom-history-project`); fetched on every show; fixed texts in `HistoryTexts`), `doctor.js` (the `#doctor`
     view, nav `Health` with no count, read-only: one section per non-empty list (`Stuck jobs`, `Uncommitted job
     records`, `Merged leftover branches`, `Story problems`), each with the fixed text of what `/factory doctor` would

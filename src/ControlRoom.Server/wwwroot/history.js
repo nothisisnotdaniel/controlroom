@@ -1,7 +1,8 @@
 "use strict";
 
 // History: the finished factory jobs from /api/history, newest first, with token totals per project and per mode for
-// the last 7 and 30 days and a daily chart of tokens per mode. Read-only. A job without token data is "unknown",
+// the last 7 and 30 days, an All time block (filtered by the Project select) and a daily chart of tokens per mode.
+// Read-only. A job without token data is "unknown",
 // never 0. Loaded after capture.js and before live.js and app.js; their functions (element, asList, asText,
 // asNumber, titleText, jobHash, formatTokens, authFetch) are only called at run time. Every text is set with
 // textContent and the chart is built with createElementNS, never from markup.
@@ -14,6 +15,7 @@ const HistoryTexts = {
   noRecent: "No finished jobs in the last 30 days.",
   last7: "Last 7 days",
   last30: "Last 30 days",
+  allTime: "All time",
   projects: "Projects",
   modes: "Modes",
   name: "Name",
@@ -87,6 +89,26 @@ function readHistoryTotals(list) {
   }));
 }
 
+function readHistoryLifetimeTotals(list) {
+  return asList(list).map((item) => ({
+    name: asNameOrNull(item && item.name),
+    all: readHistoryWindow(item && item.all),
+  }));
+}
+
+// The lifetime totals; a missing or malformed lifetime gives empty lists, so the rest of the view still shows.
+function readHistoryLifetime(value) {
+  const lifetime = value && typeof value === "object" ? value : {};
+  return {
+    projects: readHistoryLifetimeTotals(lifetime.projects),
+    modes: readHistoryLifetimeTotals(lifetime.modes),
+    projectModes: asList(lifetime.projectModes).map((item) => ({
+      name: asNameOrNull(item && item.name),
+      modes: readHistoryLifetimeTotals(item && item.modes),
+    })),
+  };
+}
+
 // The response with only well-formed fields, or null when it has another shape.
 function readHistory(data) {
   if (!data || !Array.isArray(data.jobs) || !Array.isArray(data.days) || !data.totals || !data.chart) {
@@ -120,6 +142,7 @@ function readHistory(data) {
     projects: readHistoryTotals(data.totals.projects),
     modes: readHistoryTotals(data.totals.modes),
     chart: chart,
+    lifetime: readHistoryLifetime(data.lifetime),
   };
 }
 
@@ -155,6 +178,7 @@ function buildHistoryView() {
   select.id = "history-project";
   select.addEventListener("change", () => {
     storeHistoryProject(select.value);
+    renderHistoryAll();
     renderHistoryList();
   });
   const rows = element("div", "history-rows");
@@ -219,18 +243,56 @@ function renderHistory() {
   }
   showHistoryStatus("", "status");
   const nodes = [];
-  if (data.projects.length === 0 && data.modes.length === 0) {
+  const all = element("div", "history-all");
+  all.id = "history-all-block";
+  const recent = data.projects.length > 0 || data.modes.length > 0;
+  if (!recent) {
     nodes.push(element("p", "empty history-recent", HistoryTexts.noRecent));
   } else {
     nodes.push(renderHistoryWindow("history-last7", HistoryTexts.last7, data, "last7"));
     nodes.push(renderHistoryWindow("history-last30", HistoryTexts.last30, data, "last30"));
+  }
+  nodes.push(all);
+  if (recent) {
     nodes.push(renderHistoryChart(data));
   }
   summary.replaceChildren(...nodes);
   summary.hidden = false;
   list.hidden = false;
   fillHistoryProjects(data.jobs);
+  renderHistoryAll();
   renderHistoryList();
+}
+
+// The lifetime lists for the chosen project: its own row and its projectModes entry, or every row for All projects.
+function historyLifetimeFor(lifetime, chosen) {
+  if (chosen === "") {
+    return { projects: lifetime.projects, modes: lifetime.modes };
+  }
+  const entry = lifetime.projectModes.find((item) => item.name === chosen);
+  return {
+    projects: lifetime.projects.filter((item) => item.name === chosen),
+    modes: entry ? entry.modes : [],
+  };
+}
+
+// The All time block, re-rendered from the stored answer when the Project select changes; hidden without lifetime
+// data.
+function renderHistoryAll() {
+  const all = document.getElementById("history-all-block");
+  if (!all || historyData === null) {
+    return;
+  }
+  const lifetime = historyData.lifetime;
+  if (lifetime.projects.length === 0 && lifetime.modes.length === 0) {
+    all.replaceChildren();
+    all.hidden = true;
+    return;
+  }
+  const chosen = document.getElementById("history-project").value;
+  const shown = historyLifetimeFor(lifetime, chosen);
+  all.replaceChildren(renderHistoryWindow("history-all", HistoryTexts.allTime, shown, "all"));
+  all.hidden = false;
 }
 
 // One window: a projects table and a modes table.
@@ -370,7 +432,7 @@ function fillHistoryProjects(jobs) {
   select.value = names.includes(wanted) ? wanted : "";
 }
 
-// The list for the chosen project, filtered here; the totals and chart always show every project.
+// The list for the chosen project, filtered here; the 7/30-day totals and chart always show every project.
 function renderHistoryList() {
   const rows = document.getElementById("history-rows");
   if (historyData === null) {
