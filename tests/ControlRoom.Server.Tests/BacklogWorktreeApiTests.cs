@@ -109,6 +109,29 @@ public sealed class BacklogWorktreeApiTests
     }
 
     [Fact]
+    public async Task Place_OnAJobBranch_CommitsOnBacklogAndIsNotPushed()
+    {
+        using Setup setup = Setup.Create(withRemote: true);
+        Snapshot before = setup.Checkout();
+        using JsonDocument first = await setup.Change(new { action = "approve", line = 5 });
+        string version = first.RootElement.GetProperty("version").GetString()!;
+
+        using JsonDocument result = await setup.Change(
+            new { action = "place", line = 5, target = 3, where = "before" }, version);
+
+        Assert.True(result.RootElement.GetProperty("committed").GetBoolean());
+        Assert.False(result.RootElement.GetProperty("pushed").GetBoolean());
+        Assert.Equal(Sha(File.ReadAllBytes(setup.WorktreeBacklog)), result.RootElement.GetProperty("version").GetString());
+        string[] lines = File.ReadAllText(setup.WorktreeBacklog).Split('\n');
+        Assert.StartsWith("- [ ] [#3]", lines[3], StringComparison.Ordinal);
+        Assert.Equal("Prose line.", lines[4]);
+        Assert.StartsWith("- [ ] [#2]", lines[5], StringComparison.Ordinal);
+        setup.AssertBacklogCommits(2, "backlog: move #3", ["backlog.md"]);
+        Assert.Equal(before, setup.Checkout());
+        Assert.Equal("", TempFactoryRoot.Git(setup.Remote!, "for-each-ref", "refs/heads/backlog"));
+    }
+
+    [Fact]
     public async Task StaleVersionAndBadLine_OnAJobBranch_AreRefusedWithoutACommit()
     {
         using Setup setup = Setup.Create();
@@ -132,7 +155,7 @@ public sealed class BacklogWorktreeApiTests
         string version = first.RootElement.GetProperty("version").GetString()!;
         File.AppendAllText(setup.WorktreeBacklog, "- [ ] Uncommitted\n");
 
-        using HttpResponseMessage response = await setup.Post(new { action = "up", line = 5 }, version);
+        using HttpResponseMessage response = await setup.Post(new { action = "top", line = 5 }, version);
 
         await AssertError(response, HttpStatusCode.Conflict, "dirty");
         Assert.Equal("1", setup.BacklogAhead());

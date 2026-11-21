@@ -1050,6 +1050,74 @@ a.card:focus-visible {
   border-color: var(--danger);
 }
 
+/* Drag to reorder (edit.js). Only the handle stops the page from scrolling under a finger. */
+.drag-handle {
+  float: left;
+  min-width: 44px;
+  min-height: 44px;
+  margin: -4px 8px 0 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--muted);
+  font: inherit;
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.drag-handle:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.edit-busy .drag-handle {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+/* The row holds its floated handle; colours come from the light and dark variables above. */
+.project.editing .lines li {
+  display: flow-root;
+}
+
+.lines.drag-list {
+  position: relative;
+}
+
+.lines li.dragging {
+  opacity: 0.55;
+  background: var(--card);
+}
+
+.lines li.dragging .drag-handle {
+  cursor: grabbing;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.lines li.drop-indicator {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  margin-top: -2px;
+  padding: 0;
+  border: none;
+  border-top: 4px solid var(--accent);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.lines li.drop-indicator[hidden] {
+  display: none;
+}
+
 .edit-row {
   display: flex;
   flex-wrap: wrap;

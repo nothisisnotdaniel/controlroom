@@ -179,8 +179,9 @@ function noteChanges(next, recovered) {
   }
 }
 
+// While a drag is in progress (dragBusy in edit.js) no section is replaced; the stale names wait for the next check.
 async function refreshStaleBacklogs() {
-  if (backlogsRefreshing || staleBacklogs.size === 0 || document.getElementById("backlogs").hidden) {
+  if (dragBusy || backlogsRefreshing || staleBacklogs.size === 0 || document.getElementById("backlogs").hidden) {
     return;
   }
   backlogsRefreshing = true;

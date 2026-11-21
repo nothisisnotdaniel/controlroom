@@ -26,7 +26,9 @@ internal sealed record BacklogChangeRequest(
     string? StoryVersion,
     string? Markdown,
     string? Note = null,
-    string? Text = null);
+    string? Text = null,
+    int? Target = null,
+    bool? Before = null);
 
 /// <summary>The <c>200</c> response of a change.</summary>
 internal sealed record BacklogChangeResponse(
@@ -85,7 +87,7 @@ internal static class BacklogChangeEndpoint
     private static readonly HashSet<string> Fields = new(StringComparer.Ordinal)
     {
         "project", "version", "action", "line", "where", "title", "what", "why", "story", "storyVersion", "markdown", "note",
-        "text",
+        "text", "target",
     };
 
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
@@ -258,19 +260,18 @@ internal static class BacklogChangeEndpoint
                 return edit is null ? InvalidPlan() : BacklogOnly(edit, "done", backlogPath, file);
             }
 
-            case "up":
-            case "down":
             case "top":
             {
-                MoveDirection direction = request.Action switch
-                {
-                    "up" => MoveDirection.Up,
-                    "down" => MoveDirection.Down,
-                    _ => MoveDirection.Top,
-                };
-                BacklogEdit? edit = BacklogEditor.Move(text, line, direction);
-                string verb = direction == MoveDirection.Top ? "to top" : request.Action;
-                return edit is null ? InvalidPlan() : BacklogOnly(edit, "move", backlogPath, file, " " + verb);
+                BacklogEdit? edit = BacklogEditor.Move(text, line, MoveDirection.Top);
+                return edit is null ? InvalidPlan() : BacklogOnly(edit, "move", backlogPath, file, " to top");
+            }
+
+            case "place":
+            {
+                BacklogEdit? edit = request.Target is int target && request.Before is bool before
+                    ? BacklogEditor.Place(text, line, target, before)
+                    : null;
+                return edit is null ? InvalidPlan() : BacklogOnly(edit, "move", backlogPath, file);
             }
 
             case "drop":
@@ -588,15 +589,9 @@ internal static class BacklogChangeEndpoint
             return null;
         }
 
-        int? line = null;
-        if (fields.TryGetValue("line", out JsonElement lineValue))
+        if (!TryIndex(fields, "line", out int? line) || !TryIndex(fields, "target", out int? target))
         {
-            if (lineValue.ValueKind != JsonValueKind.Number || !lineValue.TryGetInt32(out int number) || number < 0)
-            {
-                return null;
-            }
-
-            line = number;
+            return null;
         }
 
         BacklogChangeRequest request = new(
@@ -606,10 +601,21 @@ internal static class BacklogChangeEndpoint
             case "approve":
             case "drop":
             case "done":
-            case "up":
-            case "down":
             case "top":
                 return line is null ? null : request;
+            case "place":
+            {
+                bool? before = where switch
+                {
+                    "before" => true,
+                    "after" => false,
+                    _ => null,
+                };
+                return line is null || target is null || before is null || line == target
+                    ? null
+                    : request with { Target = target, Before = before };
+            }
+
             case "add":
             {
                 string? clean = BacklogEditor.CleanTitle(title);
@@ -667,6 +673,25 @@ internal static class BacklogChangeEndpoint
     private static bool IsBlockText(string? text)
     {
         return text is not null && text.Trim().Length > 0 && BacklogEditor.IsStoryText(text);
+    }
+
+    /// <summary>A missing field is <c>null</c> and fine; a field that is there must be a JSON integer from 0 to
+    /// <see cref="int.MaxValue"/>.</summary>
+    private static bool TryIndex(Dictionary<string, JsonElement> fields, string name, out int? value)
+    {
+        value = null;
+        if (!fields.TryGetValue(name, out JsonElement element))
+        {
+            return true;
+        }
+
+        if (element.ValueKind != JsonValueKind.Number || !element.TryGetInt32(out int number) || number < 0)
+        {
+            return false;
+        }
+
+        value = number;
+        return true;
     }
 
     /// <summary>A missing field is <c>null</c> and fine; a field that is there must be a JSON string.</summary>

@@ -82,11 +82,9 @@ internal enum AddPosition
     Bottom,
 }
 
-/// <summary>Which way <c>up</c>, <c>down</c> and <c>top</c> move a line.</summary>
+/// <summary>Where <c>top</c> moves a line.</summary>
 internal enum MoveDirection
 {
-    Up,
-    Down,
     Top,
 }
 
@@ -151,43 +149,71 @@ internal static partial class BacklogEditor
         return new BacklogEdit(text.With(lines), Subject(text, line));
     }
 
-    /// <summary>Moves an open line: <c>Up</c> and <c>Down</c> swap it with the nearest item line above or below,
-    /// <c>Top</c> puts it before the first item that is not done. Prose lines stay where they are.</summary>
+    /// <summary>Moves an open line: <c>Top</c> puts it before the first item that is not done. Prose lines stay
+    /// where they are.</summary>
     public static BacklogEdit? Move(EditableText text, int line, MoveDirection direction)
     {
-        if (!IsOpenItem(text, line))
+        if (!IsOpenItem(text, line) || direction != MoveDirection.Top)
+        {
+            return null;
+        }
+
+        int first = FirstOpenItem(text);
+        if (first < 0 || first >= line)
         {
             return null;
         }
 
         List<string> lines = [.. text.Lines];
-        if (direction == MoveDirection.Top)
-        {
-            int first = FirstOpenItem(text);
-            if (first < 0 || first >= line)
-            {
-                return null;
-            }
+        string moved = lines[line];
+        lines.RemoveAt(line);
+        lines.Insert(first, moved);
+        return new BacklogEdit(text.With(lines), Subject(text, line));
+    }
 
-            string moved = lines[line];
-            lines.RemoveAt(line);
-            lines.Insert(first, moved);
-            return new BacklogEdit(text.With(lines), Subject(text, line));
-        }
-
-        int step = direction == MoveDirection.Up ? -1 : 1;
-        int other = line + step;
-        while (other >= 0 && other < lines.Count && !BacklogParser.IsItem(EditableText.Content(lines[other])))
-        {
-            other += step;
-        }
-
-        if (other < 0 || other >= lines.Count)
+    /// <summary>Reorders one group (the lines marked <c>[ ]</c>, or the lines marked <c>[?]</c>): the line
+    /// <paramref name="line"/> goes directly before (<paramref name="before"/>) or after <paramref name="target"/> in
+    /// the group's order, and the group's lines are written back into the indexes the group occupied. Every other
+    /// line keeps its index and bytes. <c>null</c> when either line is not a <c>[ ]</c> or <c>[?]</c> item, the marks
+    /// differ, the lines are the same or nothing changes.</summary>
+    public static BacklogEdit? Place(EditableText text, int line, int target, bool before)
+    {
+        if (line == target || !IsPlaceable(text, line) || !IsPlaceable(text, target))
         {
             return null;
         }
 
-        (lines[line], lines[other]) = (lines[other], lines[line]);
+        char mark = EditableText.Content(text.Lines[line])[3];
+        if (EditableText.Content(text.Lines[target])[3] != mark)
+        {
+            return null;
+        }
+
+        List<int> slots = [];
+        for (int i = 0; i < text.Lines.Count; i++)
+        {
+            if (IsMark(text, i, mark))
+            {
+                slots.Add(i);
+            }
+        }
+
+        List<int> order = [.. slots];
+        order.Remove(line);
+        int at = order.IndexOf(target) + (before ? 0 : 1);
+        order.Insert(at, line);
+
+        List<string> lines = [.. text.Lines];
+        for (int i = 0; i < slots.Count; i++)
+        {
+            lines[slots[i]] = text.Lines[order[i]];
+        }
+
+        if (lines.SequenceEqual(text.Lines, StringComparer.Ordinal))
+        {
+            return null;
+        }
+
         return new BacklogEdit(text.With(lines), Subject(text, line));
     }
 
@@ -609,6 +635,11 @@ internal static partial class BacklogEditor
 
         string content = EditableText.Content(text.Lines[line]);
         return BacklogParser.IsItem(content) && content[3] == mark;
+    }
+
+    private static bool IsPlaceable(EditableText text, int line)
+    {
+        return IsMark(text, line, ' ') || IsMark(text, line, '?');
     }
 
     private static List<int> ItemRows(EditableText text)

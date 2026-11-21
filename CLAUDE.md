@@ -52,7 +52,10 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     own; any failure gives `500 {"error":"worktree_failed"}` before a write), committed on `backlog`, never pushed
     (`pushed:false`, no warning); `job.py` merges `backlog` into develop between jobs. The checkout is never touched
     then. A project folder without its own repo gives `409 {"error":"not_develop"}` before every other check. The actions are approve,
-    drop, up/down/top, add, title, story, `done` (only a `[h]` line becomes `[x]`) and `note` (on a numbered open
+    drop, `top`, `place` (body `line`, `target` (integers >= 0) and `where` `before|after`: both lines are of one group,
+    the `[ ]` lines or the `[?]` lines, and differ; the line goes directly before or after `target` in the group's
+    order and the group's lines are written back into the indexes the group occupied, every other line keeps its
+    index and bytes; a no-op is `invalid`; committed as `backlog: move #N` or `backlog: move line K`), add, title, story, `done` (only a `[h]` line becomes `[x]`) and `note` (on a numbered open
     item, with `storyVersion`: the note is cleaned to one line (whitespace runs to one space, trimmed), at most 1000
     characters, no control characters and no `Proposed by job`; dated `- YYYY-MM-DD: <note>` from the `TimeProvider`
     local date and appended under the story's first `## Notes` (after its last non-blank line, a blank line first
@@ -183,7 +186,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     dependency is unmet, the first one not blocked is next, spikes too), `BacklogsEndpoint` (`GET /api/backlogs`, with
     `waiting`, `line` and the file `version`, and per project `pending` (true when read from the worktree), `next` (`{number, title, story, spike}` or `null`),
     `stopped` (a blocked line has a missing dependency) and `blocked` (`[{number, title, story, after:[{project, number,
-    missing}]}]`, only unmet dependencies); `null`, `false`, `[]` when unreadable), `BacklogEditor` (`EditableText` lines that keep their bytes; approve, drop, done, move, title
+    missing}]}]`, only unmet dependencies); `null`, `false`, `[]` when unreadable), `BacklogEditor` (`EditableText` lines that keep their bytes; approve, drop, done, move (top), place, title
     and add edits (`Add` takes the mark), `CleanNote` and `AppendNote`, `CleanCapture`, `CaptureTitle` and `RenderDraft`, slug, next number and story template like `job.py`), `ProjectGit` (fixed-argument git calls
     with timeouts and `GIT_TERMINAL_PROMPT=0`), `BacklogWorktree` (the `backlog` branch worktree at
     `<token folder>/worktrees/<project>`: `Ensure`, `Pending` (`backlog` has commits develop lacks and the folder
@@ -256,7 +259,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     readable project without storing it), kept on a live refresh and set by a story link into a readable project; every group (Open, Waiting for approval, For you,
     Done and Waiting) folds as a `details.group` named in `data-group`, only Done closed by default, each state per project in
     `controlroom-backlog-groups` and copied by name on a live refresh; every row of every group starts with its 1-based place in
-    that group (`positionElement`: `span.position` with a `span.visually-hidden` `position ` for screen readers)), story), `edit.js` (per-project edit mode, the Add form, Edit story and Add note (`add-note-button` in the story bar; only
+    that group (`positionElement`: `span.position` with a `span.visually-hidden` `position ` for screen readers)), story), `edit.js` (per-project edit mode; a `button.drag-handle` (`≡`, `Move #N`, arrow-key hint) at the start of every
+    `[ ]` and `[?]` row, prepended by `appendEditRow`: pointer events only (captured on the handle, the only element with
+    `touch-action: none`), a `.drop-indicator` among the rows of the row's own list, auto-scroll in the 48 px edges by
+    `requestAnimationFrame`, one `place` per drop or ArrowUp/ArrowDown, Escape and `pointercancel` send nothing, focus back
+    on the handle after a key move; `dragBusy` holds back live.js's section refresh; the Add form, Edit story and Add note (`add-note-button` in the story bar; only
     one of the two forms open at a time), Approve and Drop in the story bar of a `[?]` item only (`story-approve-button`,
     `story-drop-button`, group `approval` from `/api/backlogs`; version and line looked up again at the tap, through
     `sendChange`, Drop after a confirm; Approve reloads the story, Drop goes `history.back()` or to `#inbox` keeping the
