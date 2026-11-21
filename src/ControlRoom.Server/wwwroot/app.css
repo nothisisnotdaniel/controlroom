@@ -63,7 +63,7 @@
   /* The two counts on the Jobs tab: running jobs and jobs blocked on the user (needs-human, red). */
   --count-running-bg: #0f766e;
   --count-running-fg: #ffffff;
-  --count-blocked-bg: #b91c1c;
+  --count-blocked-bg: #991b1b;
   --count-blocked-fg: #ffffff;
   /* The bottom tab bar without the home indicator inset; at least the 44px tap target. */
   --tab-bar-height: 56px;
@@ -132,7 +132,7 @@
     --count-approval-fg: #3b1505;
     --count-running-bg: #5eead4;
     --count-running-fg: #042f2e;
-    --count-blocked-bg: #fca5a5;
+    --count-blocked-bg: #f87171;
     --count-blocked-fg: #450a0a;
   }
 }
