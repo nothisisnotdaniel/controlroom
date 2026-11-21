@@ -152,4 +152,56 @@ public sealed class BacklogParserTests
         Assert.Equal("→ 1-x", entry.Rest);
         Assert.EndsWith("B", entry.Title, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Parse_StopLine_IsTheIndexOfTheFirstExactStopLineAndNoEntry()
+    {
+        string text =
+            "# Backlog\n"                                   // 0
+            + "- [ ] [#1](backlog/001-a.md) One\n"          // 1
+            + "- [STOP] Auto stops here\n"                  // 2
+            + "- [stop] auto stops here\n"                  // 3
+            + "- [stop] Auto stops here now\n"              // 4
+            + " - [stop] Auto stops here\n"                 // 5
+            + "- [stop] Auto stops here\r\n"                // 6
+            + "- [?] [#2](backlog/002-a.md) Two\n"          // 7
+            + "- [stop] Auto stops here\n"                  // 8
+            + "- [h] [#3](backlog/003-a.md) Three\n"        // 9
+            + "- [x] [#4](backlog/004-a.md) Four\n"         // 10
+            + "- [ ] [#5](backlog/005-a.md) Five\n";        // 11
+
+        Backlog backlog = BacklogParser.Parse(text.Split('\n'));
+
+        Assert.Equal(6, backlog.StopLine);
+        Assert.Equal([1, 11], backlog.Open.Select(entry => entry.Line));
+        Assert.Equal([7], backlog.Approval.Select(entry => entry.Line));
+        Assert.Equal([9], backlog.User.Select(entry => entry.Line));
+        Assert.Equal([10], backlog.Done.Select(entry => entry.Line));
+        Assert.DoesNotContain(backlog.All, entry => entry.Title.Contains("stops", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Theory]
+    [InlineData("- [stop] Auto stops here", true)]
+    [InlineData("- [stop] Auto stops here\r", true)]
+    [InlineData("- [stop] Auto stops here\r\n", true)]
+    [InlineData("- [stop] Auto stops here\n", true)]
+    [InlineData("- [STOP] Auto stops here", false)]
+    [InlineData("- [stop] auto stops here", false)]
+    [InlineData("- [stop] Auto stops here.", false)]
+    [InlineData("- [stop] Auto stops here ", false)]
+    [InlineData("  - [stop] Auto stops here", false)]
+    [InlineData("- [stop]", false)]
+    [InlineData("", false)]
+    public void IsStopLine_IsAnExactMatchAfterTheLineEnd(string line, bool expected)
+    {
+        Assert.Equal(expected, BacklogParser.IsStopLine(line));
+    }
+
+    [Fact]
+    public void Parse_WithoutAStopLine_StopLineIsNull()
+    {
+        Assert.Null(BacklogParser.Parse(TempFactoryRoot.NormalBacklog.Split('\n')).StopLine);
+        Assert.Null(BacklogParser.Parse(["- [STOP] Auto stops here", "- [stop] Auto stops"]).StopLine);
+        Assert.Null(Backlog.Empty.StopLine);
+    }
 }

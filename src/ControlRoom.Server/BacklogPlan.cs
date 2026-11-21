@@ -2,8 +2,9 @@ using System.Text.RegularExpressions;
 
 namespace ControlRoom.Server;
 
-/// <summary>The item <c>/factory next</c> would take now; <c>Spike</c> when the title has the word <c>spike</c>.</summary>
-internal sealed record PlanItem(int Number, string Title, string? Story, bool Spike);
+/// <summary>The item <c>/factory next</c> would take now; <c>Spike</c> when the title has the word <c>spike</c>;
+/// <c>BelowStop</c> when its line is after the backlog's stop line, so <c>/factory auto</c> stops before it.</summary>
+internal sealed record PlanItem(int Number, string Title, string? Story, bool Spike, bool BelowStop = false);
 
 /// <summary>One unmet dependency of a blocked item. <c>Project</c> is always set (the item's own project for
 /// <c>#N</c>); <c>Missing</c> when it names no existing item.</summary>
@@ -21,7 +22,8 @@ internal sealed record ProjectPlan(PlanItem? Next, bool Stopped, IReadOnlyList<B
 
 /// <summary>The rule of <c>job.py next</c>: only numbered <c>[ ]</c> lines count, in file order; a line is blocked
 /// while a dependency is unmet (<see cref="BacklogWaiting"/>); the first line that is not blocked is next. Spikes
-/// count too.</summary>
+/// count too. The stop line is ignored here (like <c>job.py next</c> without <c>--no-spikes</c>); it only sets
+/// <see cref="PlanItem.BelowStop"/>.</summary>
 internal static partial class BacklogPlan
 {
     public static ProjectPlan For(Backlog? backlog, string projectName, BacklogWaiting waiting)
@@ -52,7 +54,8 @@ internal static partial class BacklogPlan
             }
             else if (next is null)
             {
-                next = new PlanItem(number, entry.Title, entry.Story, IsSpike(entry.Title));
+                next = new PlanItem(
+                    number, entry.Title, entry.Story, IsSpike(entry.Title), backlog.StopLine is int stop && entry.Line > stop);
             }
         }
 

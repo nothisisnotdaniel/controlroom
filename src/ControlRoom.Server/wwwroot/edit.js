@@ -1,6 +1,7 @@
 "use strict";
 
-// Backlog editing: per-project edit mode (approve, drop, move by drag or arrow keys, to top, edit title, add), the story editor, Add note and the story's Category select. Every change
+// Backlog editing: per-project edit mode (approve, drop, move by drag or arrow keys, to top, edit title, add, the auto
+// stop line), the story editor, Add note and the story's Category select. Every change
 // is one POST to /api/backlog/change through authFetch with the version the view loaded. Only fixed texts are shown;
 // server text never is. Uses element() and the views' reload functions from app.js at call time.
 
@@ -32,6 +33,11 @@ const EditTexts = {
   noCategory: "No category",
   dismiss: "Close",
   confirmDrop: "Drop this proposal? Its line and story file are removed in one commit.",
+  moveStop: "Move stop line",
+  removeStop: "Remove stop line",
+  stopAfter: "Stop after this",
+  addStop: "Add stop line",
+  confirmRemoveStop: "Remove the stop line? Auto then runs on through the whole Open list.",
   saved: "Saved.",
   savedPushed: "Saved and pushed.",
 };
@@ -46,6 +52,7 @@ const ChangeErrors = {
   write_failed: "Can't write the file. Nothing was changed.",
   push_failed: "Committed, but the push failed.",
   worktree_failed: "Could not prepare the backlog branch. Nothing was changed.",
+  stop_line: "This backlog has more than one stop line, or one with other text. Fix backlog.md first.",
   unreachable: "Can't reach the server. Reload to see whether the change was saved.",
   notEditable: "This story can't be edited.",
   failed: "The change failed. Reload to see whether it was saved.",
@@ -384,6 +391,10 @@ function endDrag(event, release) {
   }
   const before = drop.index === 0;
   const target = before ? drop.others[0] : drop.others[drop.index - 1];
+  if (state.place.stop === true) {
+    sendStopMove(state.place, rowLine(state.row), rowLine(target), before ? "before" : "after", null);
+    return;
+  }
   sendPlace(state.place, rowLine(state.row), rowLine(target), before ? "before" : "after", null);
 }
 
@@ -409,6 +420,10 @@ function keyMove(event, handle, place) {
   // Swapping with a neighbour keeps the group's lines, so the moved item lands on the neighbour's line.
   const line = rowLine(row);
   const target = rowLine(rows[other]);
+  if (place.stop === true) {
+    sendStopMove(place, line, target, up ? "before" : "after", { stop: true });
+    return;
+  }
   const focus = { number: handle.dataset.number || null, line: target };
   sendPlace(place, line, target, up ? "before" : "after", focus);
 }
@@ -431,11 +446,38 @@ async function sendPlace(place, line, target, where, focus) {
   }
 }
 
-// The moved item's handle in the reloaded section: by number, else (an unnumbered line) by its new line.
+// The stop line moved by a drop or an arrow key: one stop_move, then the reload; the stop text is the server's.
+async function sendStopMove(place, line, target, where, focus) {
+  const ok = await sendChange({
+    project: place.project,
+    version: place.version,
+    action: "stop_move",
+    line: line,
+    target: target,
+    where: where,
+  });
+  if (!ok) {
+    return;
+  }
+  await load();
+  if (focus !== null) {
+    focusHandle(place.project, focus);
+  }
+}
+
+// The moved item's handle in the reloaded section: by number, else (an unnumbered line) by its new line; the stop
+// line's own handle for a moved stop line.
 function focusHandle(projectName, focus) {
   const section = [...document.querySelectorAll("#backlogs section.project")]
     .find((node) => node.dataset.project === projectName);
   if (!section) {
+    return;
+  }
+  if (focus.stop === true) {
+    const stop = section.querySelector(".stop-line > .drag-handle");
+    if (stop) {
+      stop.focus();
+    }
     return;
   }
   const handle = [...section.querySelectorAll(".drag-handle")].find((node) => focus.number !== null
@@ -444,6 +486,71 @@ function focusHandle(projectName, focus) {
   if (handle) {
     handle.focus();
   }
+}
+
+// The stop line's edit controls (edit mode only): a handle like an item's (drag or ArrowUp/ArrowDown sends one
+// stop_move to the neighbouring item row; Escape and pointercancel send nothing) and Remove after a confirm.
+function appendStopEdit(item, projectName, version, line) {
+  if (version === "") {
+    return;
+  }
+  const handle = element("button", "drag-handle edit-only", "≡");
+  handle.type = "button";
+  handle.setAttribute("aria-label", EditTexts.moveStop);
+  dragHintCount += 1;
+  const hint = element("span", "visually-hidden drag-hint", EditTexts.moveHint);
+  hint.id = "drag-hint-" + dragHintCount;
+  handle.setAttribute("aria-describedby", hint.id);
+  handle.dataset.line = String(line);
+  const place = { project: projectName, version: version, stop: true };
+  handle.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  handle.addEventListener("pointerdown", (event) => startDrag(event, handle, place));
+  handle.addEventListener("pointermove", (event) => moveDrag(event));
+  handle.addEventListener("pointerup", (event) => endDrag(event, true));
+  handle.addEventListener("pointercancel", (event) => endDrag(event, false));
+  handle.addEventListener("lostpointercapture", (event) => endDrag(event, false));
+  handle.addEventListener("keydown", (event) => keyMove(event, handle, place));
+  item.prepend(handle, hint);
+  const row = element("div", "edit-row edit-only");
+  row.appendChild(editButton(EditTexts.removeStop, "edit-danger stop-remove-button", () => {
+    if (confirm(EditTexts.confirmRemoveStop)) {
+      changeAndReload({ project: projectName, version: version, action: "stop_remove", line: line });
+    }
+  }));
+  item.appendChild(row);
+}
+
+// Stop after this, in the edit row of a [ ] row while the backlog has no stop line: the line goes directly after it.
+function appendStopAfter(item, projectName, version, entry) {
+  const line = asNumber(entry && entry.line);
+  const row = item ? item.querySelector(":scope > .edit-row") : null;
+  if (asText(entry && entry.mark) !== " " || line === null || version === "" || row === null) {
+    return;
+  }
+  const number = asNumber(entry.number);
+  const subject = number !== null ? "#" + number : titleText(entry.title);
+  const button = editButton(EditTexts.stopAfter, "stop-after-button", () => {
+    changeAndReload({ project: projectName, version: version, action: "stop_add", line: line });
+  });
+  button.setAttribute("aria-label", EditTexts.stopAfter + " " + subject);
+  row.appendChild(button);
+}
+
+// Add stop line under the Open list while the backlog has none: the line goes after the first [ ] row. null when
+// there is no [ ] row.
+function addStopButton(projectName, version, entries) {
+  const first = entries.find((entry) => asText(entry && entry.mark) === " " && asNumber(entry.line) !== null);
+  if (version === "" || first === undefined) {
+    return null;
+  }
+  const row = element("div", "edit-row edit-only stop-add-row");
+  row.appendChild(editButton(EditTexts.addStop, "stop-add-button", () => {
+    changeAndReload({ project: projectName, version: version, action: "stop_add", line: first.line });
+  }));
+  return row;
 }
 
 function openTitleForm(row, entry, send) {

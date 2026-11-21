@@ -535,6 +535,43 @@ main {
   color: var(--pending-fg);
 }
 
+/* "Auto stops before #N" after the Next item, in the waiting colours (light and dark variables above). */
+.plan .next-stop {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--waiting-bg);
+  color: var(--waiting-fg);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+/* The auto stop line in the Open list: a dashed rule above its fixed label. In edit mode its handle floats at the
+   start like an item's (44 px) and its edit row follows. */
+.lines li.stop-line {
+  padding: 10px 0;
+  border-top: 2px dashed var(--waiting-fg);
+}
+
+/* Not the drop indicator: a drop below a last-row divider must still show the accent drop line. */
+.lines li.stop-line + li:not(.drop-indicator) {
+  border-top: 2px dashed var(--waiting-fg);
+}
+
+.stop-line-label {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--waiting-bg);
+  color: var(--waiting-fg);
+  font-weight: 600;
+}
+
+.project.editing .stop-line-label {
+  margin-top: 6px;
+}
+
 .dependency-missing {
   font-weight: 600;
   color: var(--fg);

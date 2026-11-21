@@ -131,4 +131,24 @@ public sealed class BacklogPlanTests
                 dependency.Project + "#" + dependency.Number + (dependency.Missing ? "!" : ""))) + "]"));
         return "next=" + next + (plan.Stopped ? "; stopped" : "") + "; blocked=" + blocked;
     }
+
+    [Theory]
+    [InlineData("- [ ] [#1](backlog/001-a.md) One\n- [stop] Auto stops here\n- [ ] [#2](backlog/002-a.md) Two\n", 1, false)]
+    [InlineData("- [stop] Auto stops here\n- [ ] [#1](backlog/001-a.md) One\n", 1, true)]
+    [InlineData(
+        "- [ ] [#1](backlog/001-a.md) One (after: #3)\n- [stop] Auto stops here\n- [ ] [#2](backlog/002-a.md) Two\n"
+        + "- [ ] [#3](backlog/003-a.md) Three\n",
+        2, true)]
+    [InlineData("- [ ] [#1](backlog/001-a.md) One\n- [ ] [#2](backlog/002-a.md) Two\n", 1, false)]
+    [InlineData("- [ ] [#1](backlog/001-a.md) One\n- [STOP] Auto stops here\n", 1, false)]
+    public void Plan_NextIgnoresTheStopLineAndSaysWhetherItIsBelowIt(string alphaBacklog, int next, bool belowStop)
+    {
+        Backlog alpha = Parse(alphaBacklog);
+        BacklogWaiting waiting = BacklogWaiting.From([("Alpha", alpha)]);
+
+        ProjectPlan plan = BacklogPlan.For(alpha, "Alpha", waiting);
+
+        Assert.Equal(next, plan.Next!.Number);
+        Assert.Equal(belowStop, plan.Next.BelowStop);
+    }
 }

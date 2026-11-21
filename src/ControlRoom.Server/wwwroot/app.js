@@ -21,6 +21,8 @@ const Texts = {
   pending: "Edits wait for the running job and go into develop after it.",
   project: "Project",
   position: "position ",
+  stopLine: "Auto stops here",
+  stopsBefore: "Auto stops before #",
 };
 
 const Groups = [
@@ -234,6 +236,39 @@ function renderGroup(projectName, version, group, entries) {
   return details;
 }
 
+// The auto stop line as a divider of the Open list: a fixed text, no position number (the rows keep theirs). The
+// separator role is on the label, so the edit controls next to it (edit.js) stay reachable for screen readers.
+function renderStopLine(projectName, version, line) {
+  const item = element("li", "stop-line");
+  item.dataset.line = String(line);
+  const label = element("span", "stop-line-label", Texts.stopLine);
+  label.setAttribute("role", "separator");
+  label.setAttribute("aria-label", Texts.stopLine);
+  item.appendChild(label);
+  appendStopEdit(item, projectName, version, line);
+  return item;
+}
+
+// Puts the divider before the first Open row whose line is after the stop line, else at the end of the list. Without
+// a stop line, the edit controls that add one (edit.js): Stop after this on every [ ] row and Add stop line.
+function placeStopLine(details, projectName, version, stopLine, entries) {
+  const list = details.querySelector(":scope > .lines");
+  const rows = [...list.children];
+  if (stopLine !== null) {
+    const below = entries.findIndex((entry) => {
+      const line = asNumber(entry && entry.line);
+      return line !== null && line > stopLine;
+    });
+    list.insertBefore(renderStopLine(projectName, version, stopLine), below < 0 ? null : rows[below]);
+    return;
+  }
+  entries.forEach((entry, index) => appendStopAfter(rows[index], projectName, version, entry));
+  const add = addStopButton(projectName, version, entries);
+  if (add !== null) {
+    details.appendChild(add);
+  }
+}
+
 // Without a stored state only Done (collapsed in Groups) starts closed; the plan's Waiting group starts open.
 function groupDefaultOpen(key) {
   const group = Groups.find((entry) => entry.key === key);
@@ -336,6 +371,10 @@ function renderPlan(projectName, project) {
     if (item.spike === true) {
       next.appendChild(element("span", "badge badge-spike", Texts.spike));
     }
+    // Auto (/factory auto) takes no item below the stop line, so it stops before this one.
+    if (item.belowStop === true) {
+      next.appendChild(element("span", "next-stop", Texts.stopsBefore + number));
+    }
   } else {
     next.textContent = Texts.nothingReady;
   }
@@ -367,7 +406,8 @@ function planSignature(project) {
   if (!project || project.readable !== true) {
     return "";
   }
-  return JSON.stringify([project.next || null, project.stopped === true, asList(project.blocked)]);
+  const stop = asNumber(project.stopLine);
+  return JSON.stringify([project.next || null, project.stopped === true, asList(project.blocked), stop]);
 }
 
 function renderProject(project) {
@@ -394,10 +434,15 @@ function renderProject(project) {
   section.appendChild(statusLine(name));
   section.appendChild(renderPlan(name, project));
   let shown = 0;
+  const stopLine = asNumber(project.stopLine);
   for (const group of Groups) {
     const entries = asList(project[group.key]);
-    if (entries.length > 0) {
+    const open = group.key === "open";
+    if (entries.length > 0 || (open && stopLine !== null)) {
       section.appendChild(renderGroup(name, version, group, entries));
+      if (open) {
+        placeStopLine(section.lastElementChild, name, version, stopLine, entries);
+      }
       shown += 1;
     }
   }

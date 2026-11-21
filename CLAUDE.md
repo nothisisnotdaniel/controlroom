@@ -55,7 +55,15 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     drop, `top`, `place` (body `line`, `target` (integers >= 0) and `where` `before|after`: both lines are of one group,
     the `[ ]` lines or the `[?]` lines, and differ; the line goes directly before or after `target` in the group's
     order and the group's lines are written back into the indexes the group occupied, every other line keeps its
-    index and bytes; a no-op is `invalid`; committed as `backlog: move #N` or `backlog: move line K`), add, title, story, `done` (only a `[h]` line becomes `[x]`) and `note` (on a numbered open
+    index and bytes; a no-op is `invalid`; committed as `backlog: move #N` or `backlog: move line K`; with a stop line
+    the `[ ]` group includes it, so `target` may be its index, and `top` goes before the first item that is not done or
+    the stop line, whichever comes first), the stop line actions (the line is exactly `- [stop] Auto stops here`, the
+    text fixed by the server; the first exact one counts, as in `job.py`): `stop_add` (body `line`, a `[ ]` line; the
+    stop line goes directly after it with the file's line ending; `invalid` when the file has one), `stop_move` (body
+    `line` the stop line, `target` a `[ ]` line, `where` `before|after`; written back like `place`; a no-op is
+    `invalid`) and `stop_remove` (body `line` the stop line), each committed as `backlog: stop line`; a file with a
+    second exact stop line or a line starting with `- [stop]` (any case) that is not exact gives every `stop_*`
+    `409 {"error":"stop_line"}` before other plan checks, add, title, story, `done` (only a `[h]` line becomes `[x]`) and `note` (on a numbered open
     item, with `storyVersion`: the note is cleaned to one line (whitespace runs to one space, trimmed), at most 1000
     characters, no control characters and no `Proposed by job`; dated `- YYYY-MM-DD: <note>` from the `TimeProvider`
     local date and appended under the story's first `## Notes` (after its last non-blank line, a blank line first
@@ -63,6 +71,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `backlog: note on #N`) and `capture` (body `text`, cleaned like a note but up to 2000 characters; the title is the
     text cut at the last space at or before character 60 (else at 60), trailing `.,;:!?` and spaces removed, and must
     pass the title rule; with the `add` checks a `- [?] [#N](backlog/NNN-slug.md) <title>` line goes after the last item
+    (and after the stop line, like `add` bottom; `add` top never goes below it, as `job.py add`)
     and a draft story (`## What` the text, a fixed `## Why`, `## Notes` with `- YYYY-MM-DD: Draft from ControlRoom`) is
     created; committed as `backlog: capture #N`) and `category` (body `category`, exactly one of the nine `StoryCategory`
     names, with `storyVersion` and the `note` checks on a numbered item that is not done: the story's first counting
@@ -183,21 +192,22 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `ProjectFinder` (project discovery), `SafeFileReader` (no-follow, regular-file, size-capped text or bytes read, SHA-256 version),
     `SafeFileWriter` (temp file in the same folder, then rename; refuses a symlinked target or folder),
     `BacklogReader` (safe `backlog.md` read), `BacklogParser` (lines to entries, old and numbered `[#N](…)`
-    format), `BacklogWaiting` (the Ready/Waiting rule: a dependency is met only by a done line of the named, or the
+    format; `StopLineText`, `IsStopLine` and `Backlog.StopLine`, the first exact stop line's index, never an entry), `BacklogWaiting` (the Ready/Waiting rule: a dependency is met only by a done line of the named, or the
     same, project; a name matches exactly, else the single project equal ignoring case; unknown counts as unmet;
     `IsMissing`: unknown project or no line with that number in a readable backlog, never for an unreadable one or
     `factory`), `BacklogPlan` (the rule of `job.py next`: numbered `[ ]` lines in file order, blocked while a
-    dependency is unmet, the first one not blocked is next, spikes too), `BacklogsEndpoint` (`GET /api/backlogs`, with
-    `waiting`, `line`, `category` (from each numbered line's story, read once through `StoryReader`, else `null`) and the file `version`, and per project `pending` (true when read from the worktree), `next` (`{number, title, story, spike}` or `null`),
+    dependency is unmet, the first one not blocked is next, spikes too; the stop line is ignored, `belowStop` says
+    the next item is after it), `BacklogsEndpoint` (`GET /api/backlogs`, with
+    `waiting`, `line`, `category` (from each numbered line's story, read once through `StoryReader`, else `null`) and the file `version`, and per project `pending` (true when read from the worktree), `next` (`{number, title, story, spike, belowStop}` or `null`), `stopLine` (0-based index or `null`),
     `stopped` (a blocked line has a missing dependency) and `blocked` (`[{number, title, story, after:[{project, number,
     missing}]}]`, only unmet dependencies); `null`, `false`, `[]` when unreadable), `BacklogEditor` (`EditableText` lines that keep their bytes; approve, drop, done, move (top), place, title
-    and add edits (`Add` takes the mark), `CleanNote` and `AppendNote`, `CleanCapture`, `CaptureTitle` and `RenderDraft`, slug, next number and story template like `job.py`), `ProjectGit` (fixed-argument git calls
+    and add edits (`Add` takes the mark), `StopAdd`, `StopMove`, `StopRemove`, `StopLine` and `HasStopLineProblem`, `CleanNote` and `AppendNote`, `CleanCapture`, `CaptureTitle` and `RenderDraft`, slug, next number and story template like `job.py`), `ProjectGit` (fixed-argument git calls
     with timeouts and `GIT_TERMINAL_PROMPT=0`), `BacklogWorktree` (the `backlog` branch worktree at
     `<token folder>/worktrees/<project>`: `Ensure`, `Pending` (`backlog` has commits develop lacks and the folder
     exists), `Exists` (no git)) and `BacklogSource` (where `backlog.md` and stories are read: the worktree while the
     checkout is not on `develop` and `Pending`, else the project; used by `GET /api/backlogs`, `/api/story`,
     `/api/inbox`, `/api/tasks` and `/api/search`), `BacklogChangeEndpoint` (`POST /api/backlog/change`: request
-    checks, `not_develop` (no repo)/`worktree_failed`/`dirty`/`changed`, write, commit, push (develop only); `done` commits `backlog: done #N`, `note` commits `backlog: note on #N`, `capture` commits `backlog: capture #N`), `StoryReader` (fenced read of
+    checks, `not_develop` (no repo)/`worktree_failed`/`dirty`/`changed`, write, commit, push (develop only); `done` commits `backlog: done #N`, `note` commits `backlog: note on #N`, `capture` commits `backlog: capture #N`, `stop_*` commit `backlog: stop line`), `StoryReader` (fenced read of
     `<project>/backlog/NNN-slug.md`), `StoryCategory` (the story's `Category: <name>` line like `job.py with_category`:
     the nine names in `job.py` order, `Parse` (first `Category:` line before the first `## `, else `null`) and `Set`), `StoryMarkdown` (Markdown to a JSON block tree, no HTML),
     `StoryEndpoint` (`GET /api/story?project=&number=`, with `markdown`,
@@ -258,20 +268,27 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `ahead` from `ProjectGit.AheadOfMain` or `null`),
     `wwwroot/` (`index.html`, `app.css`, `token.js` (stored token under
     `controlroom-token`, `authFetch` for every `/api/` call, the token view), `app.js` (routing, backlogs (each readable project's `div.plan` between the head and the groups: `Next:` item
-    with a `Spike` badge, `Nothing ready to run.` or the fixed stopped text, and a `Waiting (k)` group with `Waits for`
-    links, a missing one as text plus `No such item`; the plan's signature in `data-plan`, and a live refresh also
+    with a `Spike` badge and `span.next-stop` `Auto stops before #N` when `next.belowStop`, `Nothing ready to run.` or the fixed stopped text, and a `Waiting (k)` group with `Waits for`
+    links, a missing one as text plus `No such item`; the plan's signature (with `stopLine`) in `data-plan`, and a live refresh also
     replaces a section whose signature changed; a `Project` select (`div.backlog-picker`, `select#backlog-project`, readable
     projects only, no All) shows one section at a time, the choice in `controlroom-backlog-project` (falls back to the first
     readable project without storing it), kept on a live refresh and set by a story link into a readable project; every group (Open, Waiting for approval, For you,
     Done and Waiting) folds as a `details.group` named in `data-group`, only Done closed by default, each state per project in
     `controlroom-backlog-groups` and copied by name on a live refresh; every row of every group starts with its 1-based place in
-    that group (`positionElement`: `span.position` with a `span.visually-hidden` `position ` for screen readers); a numbered
+    that group (`positionElement`: `span.position` with a `span.visually-hidden` `position ` for screen readers); the
+    stop line is `li.stop-line` (`data-line`, a `span.stop-line-label` `Auto stops here` with `role="separator"`, no
+    position) in the Open list before the first row whose line is after it, else at the end, and Open shows with only
+    the divider when it has no rows (`renderStopLine`, `placeStopLine`); a numbered
     row with a category shows `categoryChip` (`span.category-chip.category-<name>`, text only, class only from the fixed
     `Categories` list) after the title), story (the same chip under the title)), `edit.js` (per-project edit mode; a `button.drag-handle` (`≡`, `Move #N`, arrow-key hint) at the start of every
     `[ ]` and `[?]` row, prepended by `appendEditRow`: pointer events only (captured on the handle, the only element with
     `touch-action: none`), a `.drop-indicator` among the rows of the row's own list, auto-scroll in the 48 px edges by
     `requestAnimationFrame`, one `place` per drop or ArrowUp/ArrowDown, Escape and `pointercancel` send nothing, focus back
-    on the handle after a key move; `dragBusy` holds back live.js's section refresh; the Add form, Edit story and Add note (`add-note-button` in the story bar; only
+    on the handle after a key move; `dragBusy` holds back live.js's section refresh; the stop line divider gets the
+    same kind of handle (`Move stop line`, `place.stop`) and is one of the Open rows while an item is dragged (its
+    `data-line` is a `place` target); its drag or arrow key sends one `stop_move` (`sendStopMove`, focus back on its
+    handle); `Remove stop line` after a confirm; without a stop line every `[ ]` row's edit row has `Stop after this`
+    and the Open group `Add stop line` (after its first `[ ]` row), all through `sendChange`; the Add form, Edit story and Add note (`add-note-button` in the story bar; only
     one of the two forms open at a time), Approve and Drop in the story bar of a `[?]` item only (`story-approve-button`,
     `story-drop-button`, group `approval` from `/api/backlogs`; a `Category` select (`label.story-category`,
     `select.story-category-select`, a disabled `No category` option only without one) while the item is not done, sending

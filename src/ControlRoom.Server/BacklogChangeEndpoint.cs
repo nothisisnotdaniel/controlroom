@@ -85,6 +85,8 @@ internal static class BacklogChangeEndpoint
 
     public const string WorktreeFailed = "worktree_failed";
 
+    public const string StopLineProblem = "stop_line";
+
     private static readonly HashSet<string> Fields = new(StringComparer.Ordinal)
     {
         "project", "version", "action", "line", "where", "title", "what", "why", "story", "storyVersion", "markdown", "note",
@@ -275,6 +277,10 @@ internal static class BacklogChangeEndpoint
                 return edit is null ? InvalidPlan() : BacklogOnly(edit, "move", backlogPath, file);
             }
 
+            case "stop_add":
+            case "stop_move":
+            case "stop_remove":
+                return PlanStop(request, text, line, backlogPath, file);
             case "drop":
                 return PlanDrop(project, text, line, backlogPath, file);
             case "add":
@@ -292,6 +298,35 @@ internal static class BacklogChangeEndpoint
             default:
                 return InvalidPlan();
         }
+    }
+
+    /// <summary>Adds, moves or removes the stop line; its text is fixed here, never taken from the request. A file
+    /// with a second exact stop line or one with other text is refused as <c>409 stop_line</c> before anything else,
+    /// so the server never edits a file where it and <c>job.py</c> could disagree about the stop line.</summary>
+    private static ChangePlan PlanStop(
+        BacklogChangeRequest request, EditableText text, int line, string backlogPath, BacklogFile file)
+    {
+        if (BacklogEditor.HasStopLineProblem(text))
+        {
+            return ChangePlan.Refused(StatusCodes.Status409Conflict, StopLineProblem);
+        }
+
+        BacklogEdit? edit = request.Action switch
+        {
+            "stop_add" => BacklogEditor.StopAdd(text, line),
+            "stop_move" => request.Target is int target && request.Before is bool before
+                ? BacklogEditor.StopMove(text, line, target, before)
+                : null,
+            _ => BacklogEditor.StopRemove(text, line),
+        };
+        if (edit is null)
+        {
+            return InvalidPlan();
+        }
+
+        byte[] bytes = edit.Text.ToBytes();
+        return new ChangePlan(
+            [new(BacklogReader.FileName, backlogPath, bytes, file.Bytes)], "backlog: " + edit.Subject, bytes);
     }
 
     private static ChangePlan PlanDrop(
@@ -642,8 +677,11 @@ internal static class BacklogChangeEndpoint
             case "drop":
             case "done":
             case "top":
+            case "stop_add":
+            case "stop_remove":
                 return line is null ? null : request;
             case "place":
+            case "stop_move":
             {
                 bool? before = where switch
                 {

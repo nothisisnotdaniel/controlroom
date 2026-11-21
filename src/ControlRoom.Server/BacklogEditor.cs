@@ -109,6 +109,11 @@ internal static partial class BacklogEditor
 
     private const string ProposedByJob = "Proposed by job";
 
+    private const string StopPrefix = "- [stop]";
+
+    /// <summary>The subject of every stop line change: its commit message is <c>backlog: stop line</c>.</summary>
+    public const string StopSubject = "stop line";
+
     public static BacklogEdit? Approve(EditableText text, int line)
     {
         if (!IsMark(text, line, '?'))
@@ -149,8 +154,8 @@ internal static partial class BacklogEditor
         return new BacklogEdit(text.With(lines), Subject(text, line));
     }
 
-    /// <summary>Moves an open line: <c>Top</c> puts it before the first item that is not done. Prose lines stay
-    /// where they are.</summary>
+    /// <summary>Moves an open line: <c>Top</c> puts it before the first item that is not done, or before the stop
+    /// line when that comes first. Prose lines stay where they are.</summary>
     public static BacklogEdit? Move(EditableText text, int line, MoveDirection direction)
     {
         if (!IsOpenItem(text, line) || direction != MoveDirection.Top)
@@ -159,6 +164,11 @@ internal static partial class BacklogEditor
         }
 
         int first = FirstOpenItem(text);
+        if (StopLine(text) is int stop && (first < 0 || stop < first))
+        {
+            first = stop;
+        }
+
         if (first < 0 || first >= line)
         {
             return null;
@@ -171,50 +181,108 @@ internal static partial class BacklogEditor
         return new BacklogEdit(text.With(lines), Subject(text, line));
     }
 
-    /// <summary>Reorders one group (the lines marked <c>[ ]</c>, or the lines marked <c>[?]</c>): the line
-    /// <paramref name="line"/> goes directly before (<paramref name="before"/>) or after <paramref name="target"/> in
-    /// the group's order, and the group's lines are written back into the indexes the group occupied. Every other
-    /// line keeps its index and bytes. <c>null</c> when either line is not a <c>[ ]</c> or <c>[?]</c> item, the marks
-    /// differ, the lines are the same or nothing changes.</summary>
+    /// <summary>Reorders one group (the lines marked <c>[ ]</c> together with the stop line, or the lines marked
+    /// <c>[?]</c>): the line <paramref name="line"/> goes directly before (<paramref name="before"/>) or after
+    /// <paramref name="target"/> in the group's order, and the group's lines are written back into the indexes the
+    /// group occupied. Every other line keeps its index and bytes. A <c>[ ]</c> line may take the stop line as
+    /// <paramref name="target"/>. <c>null</c> when either line is not of the group, the marks differ, the lines are
+    /// the same or nothing changes.</summary>
     public static BacklogEdit? Place(EditableText text, int line, int target, bool before)
     {
-        if (line == target || !IsPlaceable(text, line) || !IsPlaceable(text, target))
+        if (line == target || !IsPlaceable(text, line))
         {
             return null;
         }
 
         char mark = EditableText.Content(text.Lines[line])[3];
-        if (EditableText.Content(text.Lines[target])[3] != mark)
+        int? stop = mark == ' ' ? StopLine(text) : null;
+        bool targetOk = target == stop
+            || (IsPlaceable(text, target) && EditableText.Content(text.Lines[target])[3] == mark);
+        if (!targetOk)
         {
             return null;
         }
 
-        List<int> slots = [];
+        EditableText? placed = Reorder(text, GroupSlots(text, mark, stop), line, target, before);
+        return placed is null ? null : new BacklogEdit(placed, Subject(text, line));
+    }
+
+    /// <summary>Puts the stop line (<see cref="BacklogParser.StopLineText"/>) directly after the <c>[ ]</c> line
+    /// <paramref name="line"/>, ending like the file's first line. <c>null</c> when <paramref name="line"/> is not a
+    /// <c>[ ]</c> line or the file already has a stop line.</summary>
+    public static BacklogEdit? StopAdd(EditableText text, int line)
+    {
+        if (!IsMark(text, line, ' ') || StopLine(text) is not null)
+        {
+            return null;
+        }
+
+        List<string> lines = [.. text.Lines];
+        lines.Insert(line + 1, BacklogParser.StopLineText + Ending(text));
+        return new BacklogEdit(text.With(lines), StopSubject);
+    }
+
+    /// <summary>Moves the stop line <paramref name="line"/> (the first exact one) directly before or after the
+    /// <c>[ ]</c> line <paramref name="target"/>, like <see cref="Place"/>: the stop line and the <c>[ ]</c> lines are
+    /// written back into the indexes they occupied. <c>null</c> for any other line or target, or a no-op.</summary>
+    public static BacklogEdit? StopMove(EditableText text, int line, int target, bool before)
+    {
+        if (StopLine(text) != line || !IsMark(text, target, ' '))
+        {
+            return null;
+        }
+
+        EditableText? moved = Reorder(text, GroupSlots(text, ' ', line), line, target, before);
+        return moved is null ? null : new BacklogEdit(moved, StopSubject);
+    }
+
+    /// <summary>Removes the stop line <paramref name="line"/>, which must be the first exact one.</summary>
+    public static BacklogEdit? StopRemove(EditableText text, int line)
+    {
+        if (StopLine(text) != line)
+        {
+            return null;
+        }
+
+        List<string> lines = [.. text.Lines];
+        lines.RemoveAt(line);
+        return new BacklogEdit(text.With(lines), StopSubject);
+    }
+
+    /// <summary>The index of the first exact stop line, or <c>null</c> (like <c>job.py stop_row</c>).</summary>
+    public static int? StopLine(EditableText text)
+    {
         for (int i = 0; i < text.Lines.Count; i++)
         {
-            if (IsMark(text, i, mark))
+            if (BacklogParser.IsStopLine(text.Lines[i]))
             {
-                slots.Add(i);
+                return i;
             }
         }
 
-        List<int> order = [.. slots];
-        order.Remove(line);
-        int at = order.IndexOf(target) + (before ? 0 : 1);
-        order.Insert(at, line);
+        return null;
+    }
 
-        List<string> lines = [.. text.Lines];
-        for (int i = 0; i < slots.Count; i++)
+    /// <summary>True when the file has a second exact stop line, or a line that starts with <c>- [stop]</c> (ignoring
+    /// case) but is not the exact stop line: the cases <c>job.py doctor</c> reports, where the server and
+    /// <c>job.py</c> could disagree about the stop line.</summary>
+    public static bool HasStopLineProblem(EditableText text)
+    {
+        int exact = 0;
+        foreach (string line in text.Lines)
         {
-            lines[slots[i]] = text.Lines[order[i]];
+            string content = EditableText.Content(line);
+            if (BacklogParser.IsStopLine(content))
+            {
+                exact += 1;
+            }
+            else if (content.ToLowerInvariant().StartsWith(StopPrefix, StringComparison.Ordinal))
+            {
+                return true;
+            }
         }
 
-        if (lines.SequenceEqual(text.Lines, StringComparer.Ordinal))
-        {
-            return null;
-        }
-
-        return new BacklogEdit(text.With(lines), Subject(text, line));
+        return exact > 1;
     }
 
     /// <summary>Replaces the title of an open numbered line, keeping the link and the tail. <paramref name="title"/>
@@ -247,7 +315,8 @@ internal static partial class BacklogEditor
 
     /// <summary>Inserts <c>- [m] [#N](backlog/NNN-slug.md) Title</c> with the mark <paramref name="mark"/>
     /// (<c>" "</c> for <c>add</c>, <c>"?"</c> for <c>capture</c>): <c>Top</c> before the first item that is not
-    /// done, <c>Bottom</c> after the last item line (at the end when there is none).</summary>
+    /// done, <c>Bottom</c> after the last item line (at the end when there is none). With a stop line, <c>Top</c> is
+    /// never below it and <c>Bottom</c> never above it (like <c>job.py add</c>).</summary>
     public static BacklogEdit Add(EditableText text, int number, string title, AddPosition where, string mark = " ")
     {
         List<int> items = ItemRows(text);
@@ -258,7 +327,12 @@ internal static partial class BacklogEditor
             at = end;
         }
 
-        string ending = text.Lines.Count > 0 && text.Lines[0].EndsWith('\r') ? "\r" : "";
+        if (StopLine(text) is int stop)
+        {
+            at = where == AddPosition.Top ? Math.Min(at, stop) : Math.Max(at, stop + 1);
+        }
+
+        string ending = Ending(text);
         List<string> lines = [.. text.Lines];
         lines.Insert(at, "- [" + mark + "] [#" + number.ToString(CultureInfo.InvariantCulture) + "](" + StoryPath(number, title)
             + ") " + LineTitle(title) + ending);
@@ -640,6 +714,47 @@ internal static partial class BacklogEditor
     private static bool IsPlaceable(EditableText text, int line)
     {
         return IsMark(text, line, ' ') || IsMark(text, line, '?');
+    }
+
+    /// <summary>The indexes of a group in file order: the lines marked <paramref name="mark"/>, plus
+    /// <paramref name="stop"/> when it is set.</summary>
+    private static List<int> GroupSlots(EditableText text, char mark, int? stop)
+    {
+        List<int> slots = [];
+        for (int i = 0; i < text.Lines.Count; i++)
+        {
+            if (IsMark(text, i, mark) || i == stop)
+            {
+                slots.Add(i);
+            }
+        }
+
+        return slots;
+    }
+
+    /// <summary>Moves <paramref name="line"/> directly before or after <paramref name="target"/> in the order of
+    /// <paramref name="slots"/> and writes the lines back into those indexes. <c>null</c> when nothing changes.</summary>
+    private static EditableText? Reorder(EditableText text, List<int> slots, int line, int target, bool before)
+    {
+        List<int> order = [.. slots];
+        order.Remove(line);
+        int at = order.IndexOf(target) + (before ? 0 : 1);
+        order.Insert(at, line);
+
+        List<string> lines = [.. text.Lines];
+        for (int i = 0; i < slots.Count; i++)
+        {
+            lines[slots[i]] = text.Lines[order[i]];
+        }
+
+        return lines.SequenceEqual(text.Lines, StringComparer.Ordinal) ? null : text.With(lines);
+    }
+
+    /// <summary>The line end new lines get: <c>\r</c> when the file's first line ends with it (CRLF), else
+    /// nothing.</summary>
+    private static string Ending(EditableText text)
+    {
+        return text.Lines.Count > 0 && text.Lines[0].EndsWith('\r') ? "\r" : "";
     }
 
     private static List<int> ItemRows(EditableText text)

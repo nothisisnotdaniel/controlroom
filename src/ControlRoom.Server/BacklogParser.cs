@@ -53,7 +53,9 @@ internal sealed record BacklogEntry(
     }
 }
 
-/// <summary>A backlog's lines grouped by mark, each group in file order.</summary>
+/// <summary>A backlog's lines grouped by mark, each group in file order. <c>StopLine</c> is the 0-based index of the
+/// first exact stop line (<see cref="BacklogParser.StopLineText"/>), or <c>null</c> without one; it is no entry of
+/// any group.</summary>
 internal sealed record Backlog(
     IReadOnlyList<BacklogEntry> Open,
     IReadOnlyList<BacklogEntry> Approval,
@@ -61,6 +63,8 @@ internal sealed record Backlog(
     IReadOnlyList<BacklogEntry> Done)
 {
     public static readonly Backlog Empty = new([], [], [], []);
+
+    public int? StopLine { get; init; }
 
     /// <summary>Every entry, open, approval, user and done in that order.</summary>
     public IEnumerable<BacklogEntry> All => Open.Concat(Approval).Concat(User).Concat(Done);
@@ -72,6 +76,15 @@ internal static partial class BacklogParser
 {
     private const string Separator = ": ";
 
+    /// <summary>The auto stop line, exactly as <c>job.py</c> writes and reads it (<c>STOP_LINE</c>).</summary>
+    public const string StopLineText = "- [stop] Auto stops here";
+
+    /// <summary>True for the exact stop line once its line end is stripped (like <c>job.py is_stop</c>).</summary>
+    public static bool IsStopLine(string content)
+    {
+        return string.Equals(content.TrimEnd('\r', '\n'), StopLineText, StringComparison.Ordinal);
+    }
+
     public static Backlog Parse(IEnumerable<string> lines)
     {
         List<BacklogEntry> open = [];
@@ -80,8 +93,14 @@ internal static partial class BacklogParser
         List<BacklogEntry> done = [];
 
         int index = 0;
+        int? stopLine = null;
         foreach (string line in lines)
         {
+            if (stopLine is null && IsStopLine(line))
+            {
+                stopLine = index;
+            }
+
             List<BacklogEntry>? group = GroupFor(line, open, approval, user, done);
             if (group is not null)
             {
@@ -92,7 +111,7 @@ internal static partial class BacklogParser
             index += 1;
         }
 
-        return new Backlog(open, approval, user, done);
+        return new Backlog(open, approval, user, done) { StopLine = stopLine };
     }
 
     /// <summary>Parses the text after the mark: a numbered line when it starts with a well-formed
