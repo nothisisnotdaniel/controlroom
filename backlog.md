@@ -24,7 +24,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#98](backlog/098-updater-waits-for-launchd-before-starting.md) Updater waits for launchd before starting the new server → 300-updater-launchd-wait
 - [x] [#100](backlog/100-sign-release-builds-with-a-stable.md) Sign release builds with a stable identity → 301-sign-release-builds
 - [x] [#102](backlog/102-fix-the-release-sign-step-on.md) Fix the release Sign step on the macOS runner → 333-fix-release-signing
-- [h] [#101](backlog/101-set-up-the-release-signing-certificate.md) Set up the release signing certificate (after: #100)
+- [x] [#101](backlog/101-set-up-the-release-signing-certificate.md) Set up the release signing certificate (after: #100)
 - [x] [#99](backlog/099-updater-checks-soon-after-install-and.md) Updater checks soon after install and retries after a skipped run → 337-updater-early-checks
 - [?] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone
 - [?] [#13](backlog/013-releases-overview.md) Releases overview
@@ -45,7 +45,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#29](backlog/029-drop-the-hand-written-equality-on.md) Drop the hand-written equality on BacklogEntry
 - [?] [#30](backlog/030-cap-the-bytes-read-per-board.md) Cap the bytes read per board and job response
 - [?] [#31](backlog/031-show-pending-reviewer-chips-with-a.md) Show pending reviewer chips with a text marker
-- [?] [#32](backlog/032-show-the-live-status-line-on.md) Show the live status line on the job page
+- [ ] [#32](backlog/032-show-the-live-status-line-on.md) Show the live status line on the job page
 - [?] [#33](backlog/033-refuse-a-token-folder-others-can.md) Refuse a token folder others can write to
 - [?] [#34](backlog/034-check-the-token-file-s-mode.md) Check the token file's mode and owner on the open handle
 - [?] [#35](backlog/035-keep-the-token-in-memory-when.md) Keep the token in memory when localStorage is unavailable
@@ -63,7 +63,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#47](backlog/047-automatic-updates.md) Automatic updates (after: #46) → 229-automatic-updates
 - [x] [#48](backlog/048-strict-semver-prerelease-identifiers-in-release.md) Strict SemVer prerelease identifiers in release tags → 270-strict-semver-prerelease
 - [?] [#49](backlog/049-verify-release-signatures-in-the-updater.md) Verify release signatures in the updater without gh
-- [?] [#50](backlog/050-updater-port-check-when-another-user.md) Updater port check when another user holds the port
+- [ ] [#50](backlog/050-updater-port-check-when-another-user.md) Updater port check when another user holds the port
 - [x] [#51](backlog/051-develop-prerelease-builds-and-an-opt.md) Develop prerelease builds and an opt-in develop update channel → 234-develop-prereleases-channel
 - [?] [#52](backlog/052-test-that-keeping-the-update-channel.md) Test that keeping the update channel starts no check
 - [?] [#53](backlog/053-keep-focus-on-the-channel-select.md) Keep focus on the channel select after saving
@@ -77,8 +77,8 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#61](backlog/061-check-that-the-job-page-refreshes.md) Check that the job page refreshes in place
 - [?] [#62](backlog/062-refresh-version-and-update-info-on.md) Refresh version and update info on live changes
 - [?] [#63](backlog/063-browser-check-of-the-live-update.md) Browser check of the live-update notice
-- [?] [#64](backlog/064-keep-stale-story-marks-across-route.md) Keep stale story marks across route changes
-- [?] [#65](backlog/065-refresh-the-inbox-count-right-after.md) Refresh the inbox count right after any backlog change
+- [ ] [#64](backlog/064-keep-stale-story-marks-across-route.md) Keep stale story marks across route changes
+- [ ] [#65](backlog/065-refresh-the-inbox-count-right-after.md) Refresh the inbox count right after any backlog change
 - [?] [#66](backlog/066-cheaper-inbox-reads.md) Cheaper inbox reads
 - [?] [#67](backlog/067-retry-button-when-the-inbox-fails.md) Retry button when the inbox fails to load
 - [?] [#68](backlog/068-browser-check-of-the-approval-inbox.md) Browser check of the approval inbox
