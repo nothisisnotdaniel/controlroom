@@ -130,3 +130,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#120](backlog/120-refuse-a-target-field-on-backlog.md) Refuse a target field on backlog changes other than place
 - [?] [#121](backlog/121-announce-the-new-position-after-a.md) Announce the new position after a drag for screen readers
 - [?] [#122](backlog/122-try-drag-and-drop-by-hand.md) Try drag and drop by hand on iPhone and Mac
+- [?] [#123](backlog/123-browser-check-of-category-chips-at.md) Browser check of category chips at phone width and in dark mode
