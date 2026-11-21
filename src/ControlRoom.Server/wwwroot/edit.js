@@ -1,7 +1,7 @@
 "use strict";
 
 // Backlog editing: per-project edit mode (approve, drop, move by drag or arrow keys, to top, edit title, add, the auto
-// stop line), the story editor, Add note and the story's Category select. Every change
+// stop line), the story editor, Add note, the story's Category select and Done of a [h] story. Every change
 // is one POST to /api/backlog/change through authFetch with the version the view loaded. Only fixed texts are shown;
 // server text never is. Uses element() and the views' reload functions from app.js at call time.
 
@@ -10,6 +10,7 @@ const EditTexts = {
   doneEditing: "Done",
   approve: "Approve",
   drop: "Drop",
+  markDone: "Done",
   toTop: "To top",
   move: "Move",
   moveHint: "Use arrow keys to move within the group.",
@@ -744,12 +745,12 @@ function storyFormOpen() {
   return document.querySelector("#story .edit-story-form, #story .add-note-form") !== null;
 }
 
-// Shows or hides the story bar buttons, so Edit story and Add note are never open at once and Approve and Drop are
-// never tapped while one of them is open.
+// Shows or hides the story bar buttons, so Edit story and Add note are never open at once and Approve, Drop and Done
+// are never tapped while one of them is open.
 function showStoryButtons(visible) {
   for (const button of document.querySelectorAll(
     "#story .edit-story-button, #story .add-note-button, #story .story-category, #story .story-approve-button, "
-    + "#story .story-drop-button")) {
+    + "#story .story-drop-button, #story .story-done-button")) {
     button.hidden = !visible;
   }
 }
@@ -837,9 +838,9 @@ function storyNoteButton(target, data, reload) {
 
 let storyDecisionRequest = 0;
 
-// The status chip, the position, and Approve and Drop in the story bar only while the item's backlog line is a [?]
-// line. Called after the story is shown and after a live refresh: buttons that should stay are kept as they are (focus
-// stays on them).
+// The status chip, the position, Approve and Drop in the story bar only while the item's backlog line is a [?]
+// line, and Done only while it is a [h] line. Called after the story is shown and after a live refresh: buttons that
+// should stay are kept as they are (focus stays on them).
 async function showStoryDecision(target, data) {
   const number = asNumber(data && data.number);
   storyDecisionRequest += 1;
@@ -864,6 +865,7 @@ async function showStoryDecision(target, data) {
     return;
   }
   showStoryCategory(bar, target, data, found);
+  showStoryDone(bar, target, number, found);
   const shown = bar.querySelectorAll(".story-approve-button, .story-drop-button");
   if (found === null || found.group !== "approval") {
     for (const button of shown) {
@@ -888,7 +890,7 @@ function showStoryCategory(bar, target, data, found) {
   }
   const next = storyCategoryControl(target, data);
   if (old === null) {
-    const decision = bar.querySelector(".story-approve-button");
+    const decision = bar.querySelector(".story-approve-button, .story-done-button");
     bar.insertBefore(next, decision);
     return;
   }
@@ -1013,6 +1015,58 @@ async function decideStory(target, number, action) {
     return;
   }
   const ok = await sendChange({ project: target.project, version: found.version, line: found.line, action: action });
+  if (!ok) {
+    return;
+  }
+  leaveDecidedStory();
+}
+
+// Done in the story bar only while the item's line is a [h] line (group user), after Edit story, Add note and the
+// Category select; a shown button is kept as it is (focus stays on it), else removed.
+function showStoryDone(bar, target, number, found) {
+  const old = bar.querySelector(".story-done-button");
+  if (found === null || found.group !== "user") {
+    if (old !== null) {
+      old.remove();
+    }
+    return;
+  }
+  if (old === null) {
+    bar.appendChild(storyDoneButton(target, number));
+  }
+}
+
+// The Done button, named for screen readers by number; hidden while Edit story or Add note is open.
+function storyDoneButton(target, number) {
+  const done = editButton(EditTexts.markDone, "edit-primary story-done-button", () => {
+    doneStory(target, number);
+  });
+  done.setAttribute("aria-label", EditTexts.markDone + " #" + number);
+  done.hidden = storyFormOpen();
+  return done;
+}
+
+// Sends done with the version and line of the [h] item as the server sees it at the tap, through sendChange. After it
+// succeeds the view closes like Approve and Drop (#128); a failed one stays on the story with its error.
+async function doneStory(target, number) {
+  if (changeBusy || storyFormOpen()) {
+    return;
+  }
+  let found;
+  try {
+    found = await findStoryLine(target.project, number);
+  } catch {
+    if (!tokenViewShown()) {
+      showEditNotice(ChangeErrors.unreachable, true);
+    }
+    return;
+  }
+  if (found === null || found.group !== "user") {
+    showEditNotice(ChangeErrors.changed, true);
+    loadStory(target);
+    return;
+  }
+  const ok = await sendChange({ project: target.project, version: found.version, line: found.line, action: "done" });
   if (!ok) {
     return;
   }

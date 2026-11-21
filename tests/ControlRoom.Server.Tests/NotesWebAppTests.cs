@@ -65,7 +65,7 @@ public sealed class NotesWebAppTests
             "document.querySelector(\"#story .edit-story-form, #story .add-note-form\") !== null", edit,
             StringComparison.Ordinal);
         Assert.Contains(
-            "\"#story .edit-story-button, #story .add-note-button, #story .story-category, #story .story-approve-button, \"\n    + \"#story .story-drop-button\")", edit,
+            "\"#story .edit-story-button, #story .add-note-button, #story .story-category, #story .story-approve-button, \"\n    + \"#story .story-drop-button, #story .story-done-button\")", edit,
             StringComparison.Ordinal);
         foreach (string handler in new[] { storyEdit, note })
         {
