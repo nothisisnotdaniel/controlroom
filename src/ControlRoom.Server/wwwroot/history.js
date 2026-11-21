@@ -2,10 +2,9 @@
 
 // History: the finished factory jobs from /api/history, newest first, with token totals per project and per mode for
 // the last 7 and 30 days, an All time block (filtered by the Project select) and a daily chart of tokens per mode.
-// Read-only. A job without token data is "unknown",
-// never 0. Loaded after capture.js and before live.js and app.js; their functions (element, asList, asText,
-// asNumber, titleText, jobHash, formatTokens, authFetch) are only called at run time. Every text is set with
-// textContent and the chart is built with createElementNS, never from markup.
+// Read-only. A job without token data is "unknown", never 0. Loaded after capture.js and before live.js and app.js;
+// their functions (element, asList, asText, asNumber, titleText, jobHash, formatTokens, authFetch) are only called
+// at run time. Every text is set with textContent and the chart is built with createElementNS, never from markup.
 
 const HistoryTexts = {
   loading: "Loading…",
@@ -243,7 +242,7 @@ function renderHistory() {
   }
   showHistoryStatus("", "status");
   const nodes = [];
-  const all = element("div", "history-all");
+  const all = element("div");
   all.id = "history-all-block";
   const recent = data.projects.length > 0 || data.modes.length > 0;
   if (!recent) {
