@@ -1015,9 +1015,9 @@ async function refreshStory() {
   return true;
 }
 
-const Views = ["backlogs", "board", "inbox", "tasks", "search", "capture", "history", "doctor", "job", "story"];
+const Views = ["backlogs", "board", "inbox", "tasks", "search", "history", "doctor", "job", "story"];
 const ViewTitles = { backlogs: "Backlogs", board: "Jobs", inbox: "Inbox", tasks: "Tasks", search: "Search",
-  capture: "Capture", history: "History", doctor: "Health" };
+  history: "History", doctor: "Health" };
 // A page without its own tab marks the tab it belongs to: a job is on the Jobs board, a story in a backlog.
 const TabForView = { job: "board", story: "backlogs" };
 let currentView = null;
@@ -1038,8 +1038,9 @@ function viewFor(hash) {
   if (hash === SearchRoute) {
     return "search";
   }
+  // The old Capture tab: its form is now at the top of the Inbox, so bookmarks open the Inbox.
   if (hash === CaptureRoute) {
-    return "capture";
+    return "inbox";
   }
   if (hash === HistoryRoute) {
     return "history";
@@ -1077,6 +1078,11 @@ function showView(name) {
 
 function route() {
   const next = viewFor(location.hash);
+  // #capture becomes #inbox in place (no new history entry), with the capture form at the top in view.
+  const fromCapture = location.hash === CaptureRoute;
+  if (fromCapture) {
+    history.replaceState(null, "", InboxRoute);
+  }
   // Keep the scroll position of the list being left, so Back returns to it.
   if (currentView === "backlogs" && next !== "backlogs") {
     listScroll = window.scrollY;
@@ -1124,6 +1130,9 @@ function route() {
   }
   if (next === "inbox") {
     showInbox();
+    if (fromCapture) {
+      window.scrollTo(0, 0);
+    }
     return;
   }
   if (next === "tasks") {
@@ -1132,10 +1141,6 @@ function route() {
   }
   if (next === "search") {
     showSearch();
-    return;
-  }
-  if (next === "capture") {
-    showCapture();
     return;
   }
   if (next === "history") {

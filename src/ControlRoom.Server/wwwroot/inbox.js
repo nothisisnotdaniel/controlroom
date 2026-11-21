@@ -3,8 +3,8 @@
 // Approval inbox: every [?] item of every project from /api/inbox, oldest proposal first, with Approve and Drop
 // (sent through sendChange in edit.js with the version and line the inbox returned), and the waiting count in the
 // nav. Loaded after edit.js and before live.js and app.js; their functions (element, titleText, openStory,
-// jobHash) are only called at run time. Only fixed texts and file text through textContent are shown, never
-// server error text.
+// jobHash, showCapture) are only called at run time. Only fixed texts and file text through textContent are shown,
+// never server error text.
 
 const InboxTexts = {
   loading: "Loading…",
@@ -71,8 +71,24 @@ function inboxShown() {
   return !document.getElementById("inbox").hidden;
 }
 
+// The Inbox view in two parts, built once and kept: the capture form at the top (capture.js fills the section) and
+// the list of proposed items under it. Only the list is ever replaced, so a typed idea survives every refresh.
+function inboxParts() {
+  const main = document.getElementById("inbox");
+  let list = document.getElementById("inbox-list");
+  if (!list) {
+    const capture = element("section", "capture");
+    capture.id = "inbox-capture";
+    capture.setAttribute("aria-labelledby", "capture-title");
+    list = element("div", "inbox-list-part");
+    list.id = "inbox-list";
+    main.replaceChildren(capture, list);
+  }
+  return list;
+}
+
 function showInboxContent(nodes) {
-  document.getElementById("inbox").replaceChildren(...nodes);
+  inboxParts().replaceChildren(...nodes);
 }
 
 // Fetches the inbox once: the count always, the list only while the inbox is shown and no change is being sent
@@ -203,12 +219,12 @@ async function sendInboxChange(body) {
 }
 
 // Called by app.js when the inbox view is shown (its heading is the header title): the last list stays while it is
-// fetched again, so nothing flashes.
+// fetched again, so nothing flashes, and the capture form at the top fetches its project list again.
 function showInbox() {
-  const main = document.getElementById("inbox");
-  if (main.childElementCount === 0) {
+  if (inboxParts().childElementCount === 0) {
     showInboxContent([element("p", "status", InboxTexts.loading)]);
   }
+  showCapture();
   window.scrollTo(0, inboxScroll);
   loadInbox();
 }

@@ -1,33 +1,111 @@
 namespace ControlRoom.Server.Tests;
 
-/// <summary>The Capture view in <c>capture.js</c> and its hooks in <c>index.html</c>, <c>app.js</c>, <c>app.css</c> and
-/// <c>sw.js</c>, checked as text (there is no JS test runtime): nav link, fixed texts, request fields, the stored
-/// project, the Save rule and text-only rendering. Sending from the phone is checked by hand.</summary>
+/// <summary>The capture form in <c>capture.js</c> at the top of the Inbox (#132) and its hooks in <c>index.html</c>,
+/// <c>inbox.js</c>, <c>app.js</c>, <c>app.css</c> and <c>sw.js</c>, checked as text (there is no JS test runtime): no
+/// Capture tab, the form above the list, the <c>#capture</c> redirect, fixed texts, request fields, the stored project,
+/// the Save rule and text-only rendering. Sending from the phone is checked by hand.</summary>
 public sealed class CaptureWebAppTests
 {
     [Fact]
-    public async Task IndexHtml_HasTheCaptureLinkAfterSearchTheViewAndTheScriptAfterSearchJs()
+    public async Task IndexHtml_HasNoCaptureTabAndNoCaptureViewButStillLoadsCaptureJsAfterSearchJs()
     {
         string html = await Fetch("/index.html");
 
-        int search = html.IndexOf("<a href=\"#search\" data-view=\"search\">", StringComparison.Ordinal);
-        int capture = html.IndexOf("<a href=\"#capture\" data-view=\"capture\">", StringComparison.Ordinal);
-        int navEnd = html.IndexOf("</nav>", StringComparison.Ordinal);
-        Assert.True(search >= 0 && capture > search && capture < navEnd);
-        Assert.Contains("<main id=\"capture\" hidden></main>", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("href=\"#capture\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("data-view=\"capture\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("<span class=\"tab-label\">Capture</span>", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("<main id=\"capture\"", html, StringComparison.Ordinal);
+        Assert.Contains("<main id=\"inbox\" hidden></main>", html, StringComparison.Ordinal);
         Assert.Contains(
             "<script src=\"/search.js\" defer></script>\n  <script src=\"/capture.js\" defer></script>\n"
             + "  <script src=\"/history.js\" defer></script>", html, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task AppJs_RoutesHashCaptureToTheCaptureViewTitledCapture()
+    public async Task AppJs_HasNoCaptureViewAndRoutesHashCaptureToTheInbox()
     {
         string app = await Fetch("/app.js");
 
-        Assert.Contains("  if (hash === CaptureRoute) {\n    return \"capture\";\n  }", app, StringComparison.Ordinal);
-        Assert.Contains("  if (next === \"capture\") {\n    showCapture();\n    return;\n  }", app, StringComparison.Ordinal);
-        Assert.Contains("  capture: \"Capture\", history: \"History\", doctor: \"Health\" };", app, StringComparison.Ordinal);
+        Assert.Contains("  if (hash === CaptureRoute) {\n    return \"inbox\";\n  }", app, StringComparison.Ordinal);
+        Assert.DoesNotContain("next === \"capture\"", app, StringComparison.Ordinal);
+        Assert.DoesNotContain("capture: \"Capture\"", app, StringComparison.Ordinal);
+        string views = Between(app, "const Views = [", "];");
+        Assert.DoesNotContain("\"capture\"", views, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AppJs_HashCaptureIsReplacedByHashInboxAndScrollsToTheFormAtTheTop()
+    {
+        string app = await Fetch("/app.js");
+        string route = Between(app, "function route() {", "\n}\n");
+
+        Assert.Contains(
+            "  const fromCapture = location.hash === CaptureRoute;\n  if (fromCapture) {\n"
+            + "    history.replaceState(null, \"\", InboxRoute);\n  }", route, StringComparison.Ordinal);
+        Assert.DoesNotContain("history.pushState", route, StringComparison.Ordinal);
+        Assert.DoesNotContain("location.hash = ", route, StringComparison.Ordinal);
+        int replace = route.IndexOf("history.replaceState", StringComparison.Ordinal);
+        int show = route.IndexOf("showView(next);", StringComparison.Ordinal);
+        Assert.True(replace >= 0 && show > replace);
+        Assert.Contains(
+            "  if (next === \"inbox\") {\n    showInbox();\n    if (fromCapture) {\n      window.scrollTo(0, 0);\n    }\n"
+            + "    return;\n  }", route, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task InboxJs_PutsTheCaptureSectionAboveTheListAndReplacesOnlyTheList()
+    {
+        string js = await Fetch("/inbox.js");
+        string parts = Between(js, "function inboxParts() {", "\n}\n");
+
+        Assert.Contains("const capture = element(\"section\", \"capture\");", parts, StringComparison.Ordinal);
+        Assert.Contains("capture.id = \"inbox-capture\";", parts, StringComparison.Ordinal);
+        Assert.Contains("capture.setAttribute(\"aria-labelledby\", \"capture-title\");", parts, StringComparison.Ordinal);
+        Assert.Contains("list.id = \"inbox-list\";", parts, StringComparison.Ordinal);
+        Assert.Contains("main.replaceChildren(capture, list);", parts, StringComparison.Ordinal);
+        Assert.Contains("if (!list) {", parts, StringComparison.Ordinal);
+        Assert.Contains("function showInboxContent(nodes) {\n  inboxParts().replaceChildren(...nodes);\n}", js,
+            StringComparison.Ordinal);
+        Assert.Equal(1, Count(js, "replaceChildren(capture, list)"));
+        Assert.Equal(2, Count(js, "replaceChildren("));
+    }
+
+    [Fact]
+    public async Task CaptureJs_BuildsTheFormWithItsHeadingIntoTheInboxCaptureSection()
+    {
+        string js = await Fetch("/capture.js");
+        string build = Between(js, "function buildCaptureView() {", "\n}\n");
+
+        Assert.Contains("const main = document.getElementById(\"inbox-capture\");", build, StringComparison.Ordinal);
+        Assert.Contains("const title = element(\"h2\", \"capture-title\", CaptureTexts.title);", build,
+            StringComparison.Ordinal);
+        Assert.Contains("title.id = \"capture-title\";", build, StringComparison.Ordinal);
+        Assert.Contains("main.replaceChildren(title, form, status);", build, StringComparison.Ordinal);
+        Assert.Contains("  title: \"Capture\",\n", Between(js, "const CaptureTexts = {", "\n};\n"), StringComparison.Ordinal);
+        Assert.DoesNotContain("getElementById(\"capture\")", js, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task InboxJs_ShowingTheInboxAlsoRefreshesTheCaptureProjects()
+    {
+        string js = await Fetch("/inbox.js");
+        string show = Between(js, "function showInbox() {", "\n}\n");
+
+        int capture = show.IndexOf("showCapture();", StringComparison.Ordinal);
+        int load = show.IndexOf("loadInbox();", StringComparison.Ordinal);
+        Assert.True(capture >= 0 && load > capture);
+        Assert.Contains("if (inboxParts().childElementCount === 0) {", show, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AppCss_TheCaptureSectionIsACardWithAHeading()
+    {
+        string css = await Fetch("/app.css");
+
+        string section = Between(css, "\n.capture {", "}");
+        Assert.Contains("  background: var(--card);\n", section, StringComparison.Ordinal);
+        Assert.Contains("  margin: 0 0 20px;\n", section, StringComparison.Ordinal);
+        Assert.Contains("  font-weight: 700;\n", Between(css, "\n.capture-title {", "}"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -88,7 +166,7 @@ public sealed class CaptureWebAppTests
     }
 
     [Fact]
-    public async Task CaptureJs_SaveFetchesTheVersionThenSendsCaptureAndClearsTheTextOnlyOnSuccess()
+    public async Task CaptureJs_SaveFetchesTheVersionThenSendsCaptureAndClearsTheTextAndRefreshesTheInboxOnlyOnSuccess()
     {
         string js = await Fetch("/capture.js");
         string save = Between(js, "async function saveCapture() {", "\n}\n");
@@ -101,12 +179,13 @@ public sealed class CaptureWebAppTests
             save, StringComparison.Ordinal);
         Assert.Contains(
             "  if (ok) {\n    storeCaptureProject(project);\n    area.value = \"\";\n"
-            + "    showCaptureStatus(CaptureTexts.saved, \"capture-saved\");\n    loadInboxCount();\n  }",
+            + "    showCaptureStatus(CaptureTexts.saved, \"capture-saved\");\n    loadInbox();\n  }",
             save, StringComparison.Ordinal);
         Assert.Contains("if (changeBusy || captureSaving || project === \"\" || area.value.trim() === \"\") {", save,
             StringComparison.Ordinal);
         Assert.Contains("showEditNotice(ChangeErrors.unreachable, true);", save, StringComparison.Ordinal);
         Assert.Equal(1, Count(save, "area.value = \"\";"));
+        Assert.DoesNotContain("loadInboxCount", save, StringComparison.Ordinal);
     }
 
     [Fact]

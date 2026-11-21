@@ -294,7 +294,7 @@ public sealed partial class WebAppTests
     {
         string js = await Fetch("/app.js");
 
-        Assert.Contains("const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"search\", \"capture\", \"history\", \"doctor\", \"job\", \"story\"];", js, StringComparison.Ordinal);
+        Assert.Contains("const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"search\", \"history\", \"doctor\", \"job\", \"story\"];", js, StringComparison.Ordinal);
         Assert.Contains("if (parseStoryHash(hash)) {", js, StringComparison.Ordinal);
         Assert.Contains("if (parseJobHash(hash) !== null) {", js, StringComparison.Ordinal);
         Assert.Contains("return hash === BoardRoute ? \"board\" : \"backlogs\";", js, StringComparison.Ordinal);
