@@ -143,4 +143,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#134](backlog/134-done-button-for-your-tasks-in.md) Done button for your tasks in the story view → 365-done-button-tasks
 - [x] [#135](backlog/135-leaner-bottom-bar-with-counts-on.md) Leaner bottom bar with counts on Backlogs → 362-leaner-bottom-bar
 - [ ] [#136](backlog/136-start-end-and-time-per-agent.md) Start, end and time per agent on job cards (after: factory#22)
-- [ ] [#137](backlog/137-updater-replaces-itself-with-each-release.md) Updater replaces itself with each release
+- [x] [#137](backlog/137-updater-replaces-itself-with-each-release.md) Updater replaces itself with each release → 369-updater-self-update
