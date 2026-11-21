@@ -76,7 +76,7 @@ internal static class SafeFileReader
     /// disposes it.</summary>
     public static SafeFileHandle OpenFolder(string path)
     {
-        if (OperatingSystem.IsWindows())
+        if (OperatingSystem.IsWindows() || !HasKnownFlags())
         {
             return new SafeFileHandle(-1, ownsHandle: true);
         }
@@ -105,7 +105,8 @@ internal static class SafeFileReader
     /// Windows.</summary>
     public static byte[]? ReadBytesAt(SafeFileHandle folder, string name, long maxBytes)
     {
-        if (OperatingSystem.IsWindows() || folder.IsInvalid || folder.IsClosed || !IsSingleName(name))
+        if (OperatingSystem.IsWindows() || !HasKnownFlags() || folder.IsInvalid || folder.IsClosed
+            || !IsSingleName(name))
         {
             return null;
         }
@@ -184,6 +185,15 @@ internal static class SafeFileReader
             && name != "."
             && name != ".."
             && name.IndexOfAny(['/', '\\', '\0']) < 0;
+    }
+
+    /// <summary>True on macOS and on Linux x64 or arm64, the only targets whose open flags and <c>struct stat</c>
+    /// layout are known here; the folder-relative read fails closed everywhere else.</summary>
+    private static bool HasKnownFlags()
+    {
+        return OperatingSystem.IsMacOS()
+            || (OperatingSystem.IsLinux()
+                && RuntimeInformation.OSArchitecture is Architecture.X64 or Architecture.Arm64);
     }
 
     private static SafeFileHandle OpenAtNoFollowNonBlocking(SafeFileHandle folder, string name)
