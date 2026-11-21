@@ -146,10 +146,10 @@ public sealed class UpdateApiTests
     }
 
     [Theory]
-    [InlineData("{\"updateInterval\":720}")]
-    [InlineData("{\"updateInterval\":60,\"autoUpdate\":true}")]
-    [InlineData("{\"updateInterval\":45}")]
-    public async Task PostOfTheInterval_StartsNoCheck(string body)
+    [InlineData("{\"updateInterval\":720}", HttpStatusCode.OK)]
+    [InlineData("{\"updateInterval\":60,\"autoUpdate\":true}", HttpStatusCode.OK)]
+    [InlineData("{\"updateInterval\":45}", HttpStatusCode.BadRequest)]
+    public async Task PostOfTheInterval_StartsNoCheck(string body, HttpStatusCode expected)
     {
         using TempFactoryRoot root = new();
         using ServerFactory factory = new(root.Path) { CurrentVersion = "1.2.3" };
@@ -161,8 +161,7 @@ public sealed class UpdateApiTests
         // Check waits for any started check (one at a time), so a check started by the POST would show here.
         await factory.Services.GetRequiredService<UpdateChecker>().Check();
 
-        Assert.Equal(body.Contains("45", StringComparison.Ordinal) ? HttpStatusCode.BadRequest : HttpStatusCode.OK,
-            response.StatusCode);
+        Assert.Equal(expected, response.StatusCode);
         Assert.Equal(2, factory.Update.Requests.Count);
         Assert.All(factory.Update.Requests, request => Assert.Equal(UpdateChecker.LatestUrl, request.Uri.AbsoluteUri));
     }
