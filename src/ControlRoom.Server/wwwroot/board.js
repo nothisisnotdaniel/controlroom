@@ -37,7 +37,20 @@ const BoardTexts = {
   ci: "CI ",
   approveSent: "Approve sent",
   reworkSent: "Rework sent",
+  started: "Started ",
+  ended: " · ended ",
+  endedOnly: "Ended ",
+  took: " · took ",
+  running: " · running ",
+  underMinute: "< 1 min",
+  minutes: " min",
+  hours: " h",
+  agents: "Agents",
+  tok: " tok",
 };
+
+// The stages of a running job: its time runs from started to now, and a leftover ended is ignored.
+const RunningStages = ["spike", "spec", "build", "review", "approve"];
 
 const AutoUpdateRoute = "/api/update/settings";
 
@@ -115,6 +128,115 @@ function parseJobHash(hash) {
 
 function formatTokens(count) {
   return count >= 1e6 ? (count / 1e6).toFixed(1) + "M" : Math.round(count / 1e3) + "k";
+}
+
+// Whole minutes, rounded down: "< 1 min", "4 min", "2 h", "1 h 12 min".
+function formatDuration(seconds) {
+  const minutes = Math.floor(Math.max(0, seconds) / 60);
+  if (minutes < 1) {
+    return BoardTexts.underMinute;
+  }
+  if (minutes < 60) {
+    return minutes + BoardTexts.minutes;
+  }
+  const rest = minutes % 60;
+  return Math.floor(minutes / 60) + BoardTexts.hours + (rest > 0 ? " " + rest + BoardTexts.minutes : "");
+}
+
+// A UTC record time in the browser's local time zone (no zone option given); timeOnly leaves out the date.
+function formatTime(date, timeOnly) {
+  const time = { hour: "2-digit", minute: "2-digit" };
+  return timeOnly
+    ? date.toLocaleTimeString([], time)
+    : date.toLocaleString([], { month: "short", day: "numeric", ...time });
+}
+
+// started or ended as a Date, or null when missing or not a time.
+function recordTime(value) {
+  const text = asText(value);
+  if (!text) {
+    return null;
+  }
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function sameLocalDay(a, b) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+// The times line of a card and the job page: "Started <start> · running <d>" for a running job, "Started <start>
+// · ended <end> · took <d>" for a finished one; a missing part is left out, never shown as 0. Null when the job
+// has neither time. The running part is a span with data-running-since, kept current by updateRunningTimes.
+function jobTimes(job, className) {
+  const started = recordTime(job.started);
+  const ended = recordTime(job.ended);
+  const running = RunningStages.includes(job.stage);
+  if (started === null && (ended === null || running)) {
+    return null;
+  }
+  const line = element("span", className);
+  if (started !== null) {
+    line.appendChild(element("span", null, BoardTexts.started + formatTime(started, false)));
+  }
+  if (running) {
+    const since = element("span", null, runningText(started, Date.now()));
+    since.dataset.runningSince = String(started.getTime());
+    line.appendChild(since);
+    return line;
+  }
+  if (ended !== null) {
+    const endText = started !== null && sameLocalDay(started, ended)
+      ? formatTime(ended, true)
+      : formatTime(ended, false);
+    line.appendChild(element("span", null, (started !== null ? BoardTexts.ended : BoardTexts.endedOnly) + endText));
+    if (started !== null && ended.getTime() >= started.getTime()) {
+      line.appendChild(element("span", null, BoardTexts.took + formatDuration((ended.getTime() - started.getTime()) / 1000)));
+    }
+  }
+  return line;
+}
+
+function runningText(started, now) {
+  return BoardTexts.running + formatDuration((now - started.getTime()) / 1000);
+}
+
+// Called by live.js after each check while the board or a job page is shown: every running time is recomputed
+// in place, with no refetch.
+function updateRunningTimes() {
+  const now = Date.now();
+  for (const span of document.querySelectorAll("[data-running-since]")) {
+    const since = Number(span.dataset.runningSince);
+    if (Number.isFinite(since)) {
+      span.textContent = runningText(new Date(since), now);
+    }
+  }
+}
+
+// The job page's Agents list: name, tokens when known and time when seconds is known (never 0 for unknown).
+function renderAgents(agents) {
+  const rows = agents.filter((agent) => agent && typeof agent === "object" && asText(agent.name));
+  if (rows.length === 0) {
+    return null;
+  }
+  const section = element("section", "job-agents");
+  section.setAttribute("aria-label", BoardTexts.agents);
+  section.appendChild(element("h2", null, BoardTexts.agents));
+  const list = element("ul", "agent-list");
+  for (const agent of rows) {
+    const parts = [asText(agent.name)];
+    const tokens = asNumber(agent.tokens);
+    if (tokens !== null) {
+      parts.push(formatTokens(tokens) + BoardTexts.tok);
+    }
+    const seconds = asNumber(agent.seconds);
+    if (seconds !== null) {
+      parts.push(formatDuration(seconds));
+    }
+    list.appendChild(element("li", "agent", parts.join(" · ")));
+  }
+  section.appendChild(list);
+  return section;
 }
 
 // Chip colours come from a fixed map, never from the value itself.
@@ -239,6 +361,11 @@ function renderCard(job) {
 
   if (asText(job.note)) {
     card.appendChild(element("span", "card-note", asText(job.note)));
+  }
+
+  const times = jobTimes(job, "card-times");
+  if (times) {
+    card.appendChild(times);
   }
 
   const foot = element("div", "card-foot");
@@ -813,9 +940,17 @@ function renderJobPage(data) {
     asText(job.risk) ? job.risk + " risk" : "",
   ].filter((fact) => fact !== "");
   article.appendChild(element("p", "job-facts", facts.join(" · ")));
+  const times = jobTimes(job, "job-times");
+  if (times) {
+    article.appendChild(times);
+  }
   const state = renderJobState(job);
   if (state.childElementCount > 0) {
     article.appendChild(state);
+  }
+  const agents = renderAgents(asList(data && data.agents));
+  if (agents) {
+    article.appendChild(agents);
   }
   // The "Your decision" section (act.js), only for a needs-human job.
   const decision = typeof renderJobDecision === "function" ? renderJobDecision(data) : null;

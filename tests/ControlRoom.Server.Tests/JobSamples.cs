@@ -40,7 +40,7 @@ internal static class JobSamples
         {
           "project": 1, "title": [], "branch": {}, "stage": true, "round": "2", "mode": null, "path": 3,
           "risk": false, "reviews": [ "PASS" ], "pastRounds": { "a": 1 }, "specReview": 1, "specRevised": "yes",
-          "decision": 2, "note": [], "ci": "passed", "tokens": [ 1, 2 ]
+          "decision": 2, "note": [], "ci": "passed", "tokens": [ 1, 2 ], "started": 1, "ended": []
         }
         """;
 
