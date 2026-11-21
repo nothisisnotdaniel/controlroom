@@ -88,12 +88,12 @@ public sealed partial class StoryDecisionWebAppTests
     }
 
     [Fact]
-    public async Task EditJs_ApproveAndDropBothRefetchTheInboxAndLeaveTheStory()
+    public async Task EditJs_ApproveAndDropBothLeaveTheStory()
     {
         string edit = await Fetch("/edit.js");
         string decide = Between(edit, "async function decideStory(target, number, action) {", "\n}\n");
 
-        Assert.Contains("if (!ok) {\n    return;\n  }\n  loadInbox();\n  leaveDecidedStory();", decide,
+        Assert.Contains("if (!ok) {\n    return;\n  }\n  leaveDecidedStory();", decide,
             StringComparison.Ordinal);
         Assert.DoesNotContain("action === \"approve\"", decide, StringComparison.Ordinal);
         Assert.DoesNotContain("leaveDroppedStory", edit, StringComparison.Ordinal);
@@ -109,7 +109,6 @@ public sealed partial class StoryDecisionWebAppTests
 
         int failed = decide.IndexOf("if (!ok) {\n    return;\n  }", StringComparison.Ordinal);
         Assert.True(failed >= 0);
-        Assert.True(failed < decide.IndexOf("loadInbox();", StringComparison.Ordinal));
         Assert.True(failed < decide.IndexOf("leaveDecidedStory();", StringComparison.Ordinal));
         Assert.Single(LeaveCall().Matches(decide));
         Assert.Contains("} catch {\n    if (!tokenViewShown()) {\n      showEditNotice(ChangeErrors.unreachable, true);\n    }\n    return;\n  }",
@@ -117,24 +116,20 @@ public sealed partial class StoryDecisionWebAppTests
     }
 
     [Fact]
-    public async Task InboxAndBacklogOpenTheStoryFromAList()
+    public async Task TheBacklogOpensTheStoryFromAList()
     {
         string app = await Fetch("/app.js");
-        string inbox = await Fetch("/inbox.js");
         string open = Between(app, "function openStory(project, number) {", "\n}\n");
 
         Assert.Contains("openedFromList = true;\n  location.hash = storyHash(project, number);", open,
             StringComparison.Ordinal);
-        Assert.Contains("event.stopPropagation();\n      openStory(item.project, item.number);", inbox,
-            StringComparison.Ordinal);
-        Assert.Contains("return;\n      }\n      openStory(item.project, item.number);", inbox, StringComparison.Ordinal);
         Assert.Contains(
             "if (event.target instanceof Element && event.target.closest(\"a\")) {\n      openedFromList = true;\n      return;\n    }\n    openStory(projectName, number);",
             app, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task EditJs_ApproveAndDropLeaveTheStoryBackOrToTheInboxKeepingTheNotice()
+    public async Task EditJs_ApproveAndDropLeaveTheStoryBackOrToTheBacklogsKeepingTheNotice()
     {
         string edit = await Fetch("/edit.js");
         string app = await Fetch("/app.js");
@@ -142,7 +137,7 @@ public sealed partial class StoryDecisionWebAppTests
         string route = Between(app, "function route() {", "\n}\n");
 
         Assert.Contains(
-            "keepEditNotice();\n  if (openedFromList) {\n    history.back();\n    return;\n  }\n  history.replaceState(null, \"\", InboxRoute);\n  route();",
+            "keepEditNotice();\n  if (openedFromList) {\n    history.back();\n    return;\n  }\n  history.replaceState(null, \"\", BacklogsRoute);\n  route();",
             leave, StringComparison.Ordinal);
         Assert.Contains("currentView = next;\n  routeEditNotice();", route, StringComparison.Ordinal);
         Assert.DoesNotContain("hideEditNotice", route, StringComparison.Ordinal);
@@ -175,7 +170,7 @@ public sealed partial class StoryDecisionWebAppTests
         Assert.Contains("Approve and Drop in the story bar of a `[?]` item only (`story-approve-button`", text,
             StringComparison.Ordinal);
         Assert.Contains("(`routeEditNotice`)", text, StringComparison.Ordinal);
-        Assert.Contains("after either succeeds the view goes `history.back()` or to `#inbox` (#128, `leaveDecidedStory`)", text,
+        Assert.Contains("after either succeeds the view goes `history.back()` or to `#backlogs` (#128, #135, `leaveDecidedStory`)", text,
             StringComparison.Ordinal);
         Assert.DoesNotContain("Approve reloads the story", text, StringComparison.Ordinal);
     }

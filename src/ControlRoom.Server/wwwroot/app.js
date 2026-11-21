@@ -1021,10 +1021,12 @@ async function refreshStory() {
   return true;
 }
 
-const Views = ["backlogs", "board", "inbox", "tasks", "history", "doctor", "job", "story"];
-const ViewTitles = { backlogs: "Backlogs", board: "Jobs", inbox: "Inbox", tasks: "Tasks",
-  history: "History", doctor: "Health" };
+const Views = ["backlogs", "board", "capture", "history", "doctor", "job", "story"];
+const ViewTitles = { backlogs: "Backlogs", board: "Jobs", capture: "Capture", history: "History", doctor: "Health" };
 const BacklogsRoute = "#backlogs";
+// The old Inbox and Tasks tabs (#135): their items are in the backlog now, so bookmarks open the Backlogs.
+const InboxRoute = "#inbox";
+const TasksRoute = "#tasks";
 // A page without its own tab marks the tab it belongs to: a job is on the Jobs board, a story in a backlog.
 const TabForView = { job: "board", story: "backlogs" };
 let currentView = null;
@@ -1036,19 +1038,16 @@ function viewFor(hash) {
   if (parseJobHash(hash) !== null) {
     return "job";
   }
-  if (hash === InboxRoute) {
-    return "inbox";
-  }
-  if (hash === TasksRoute) {
-    return "tasks";
-  }
   // The old Search tab: the search field is now at the top of the Backlogs, so bookmarks open the Backlogs.
   if (hash === SearchRoute) {
     return "backlogs";
   }
-  // The old Capture tab: its form is now at the top of the Inbox, so bookmarks open the Inbox.
+  // The old Inbox and Tasks tabs: their items are in the backlog, so bookmarks open the Backlogs too.
+  if (hash === InboxRoute || hash === TasksRoute) {
+    return "backlogs";
+  }
   if (hash === CaptureRoute) {
-    return "inbox";
+    return "capture";
   }
   if (hash === HistoryRoute) {
     return "history";
@@ -1086,14 +1085,14 @@ function showView(name) {
 
 function route() {
   const next = viewFor(location.hash);
-  // #capture becomes #inbox in place (no new history entry), with the capture form at the top in view.
-  const fromCapture = location.hash === CaptureRoute;
-  if (fromCapture) {
-    history.replaceState(null, "", InboxRoute);
-  }
   // #search becomes #backlogs in place, with the search field at the top focused.
   const fromSearch = location.hash === SearchRoute;
   if (fromSearch) {
+    history.replaceState(null, "", BacklogsRoute);
+  }
+  // #inbox and #tasks become #backlogs in place too (no new history entry), scrolled to the top.
+  const fromOldTab = location.hash === InboxRoute || location.hash === TasksRoute;
+  if (fromOldTab) {
     history.replaceState(null, "", BacklogsRoute);
   }
   // Keep the scroll position of the list being left, so Back returns to it.
@@ -1102,12 +1101,6 @@ function route() {
   }
   if (currentView === "board" && next !== "board") {
     rememberBoardScroll();
-  }
-  if (currentView === "inbox" && next !== "inbox") {
-    rememberInboxScroll();
-  }
-  if (currentView === "tasks" && next !== "tasks") {
-    rememberTasksScroll();
   }
   currentView = next;
   routeEditNotice();
@@ -1138,15 +1131,9 @@ function route() {
     showBoard();
     return;
   }
-  if (next === "inbox") {
-    showInbox();
-    if (fromCapture) {
-      window.scrollTo(0, 0);
-    }
-    return;
-  }
-  if (next === "tasks") {
-    showTasks();
+  if (next === "capture") {
+    showCapture();
+    window.scrollTo(0, 0);
     return;
   }
   if (next === "history") {
@@ -1156,6 +1143,9 @@ function route() {
   if (next === "doctor") {
     showDoctor();
     return;
+  }
+  if (fromOldTab) {
+    listScroll = 0;
   }
   showStatus();
   showSearch();
@@ -1175,12 +1165,11 @@ function registerServiceWorker() {
   navigator.serviceWorker.register("/sw.js").catch(() => undefined);
 }
 
-// After Save: show the current view again and reload its data, the backlogs and the inbox and tasks counts.
+// After Save: show the current view again and reload its data, the backlogs and the counts on the Backlogs tab.
 onTokenSaved(() => {
   route();
   load();
-  loadInboxCount();
-  loadTasksCount();
+  loadBacklogCounts();
 });
 if (!hasToken()) {
   showTokenView(false);
@@ -1188,7 +1177,6 @@ if (!hasToken()) {
 window.addEventListener("hashchange", route);
 route();
 load();
-loadInboxCount();
-loadTasksCount();
+loadBacklogCounts();
 startLiveChecks();
 registerServiceWorker();

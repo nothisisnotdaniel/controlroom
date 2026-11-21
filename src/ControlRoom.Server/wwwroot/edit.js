@@ -122,6 +122,8 @@ async function sendChange(body) {
     } else {
       showEditNotice(data.pushed === true ? EditTexts.savedPushed : EditTexts.saved, false);
     }
+    // Every committed change can move a [h] or [?] line, so the counts on the Backlogs tab are fetched again.
+    loadBacklogCounts();
     return true;
   }
   const code = data && typeof data.error === "string" ? data.error : "";
@@ -1014,18 +1016,17 @@ async function decideStory(target, number, action) {
   if (!ok) {
     return;
   }
-  loadInbox();
   leaveDecidedStory();
 }
 
-// Back to where the story was opened from, else to the inbox; the outcome notice stays for that one route.
+// Back to where the story was opened from, else to the Backlogs; the outcome notice stays for that one route.
 function leaveDecidedStory() {
   keepEditNotice();
   if (openedFromList) {
     history.back();
     return;
   }
-  history.replaceState(null, "", InboxRoute);
+  history.replaceState(null, "", BacklogsRoute);
   route();
 }
 

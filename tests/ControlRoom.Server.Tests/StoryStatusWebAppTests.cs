@@ -110,7 +110,7 @@ public sealed class StoryStatusWebAppTests
         string load = Between(app, "async function loadStory(target) {", "\n}\n");
 
         // Since #128 Approve closes the story view; the chip is built again when the story is opened next.
-        Assert.Contains("loadInbox();\n  leaveDecidedStory();", decide, StringComparison.Ordinal);
+        Assert.Contains("if (!ok) {\n    return;\n  }\n  leaveDecidedStory();", decide, StringComparison.Ordinal);
         Assert.DoesNotContain("location.reload", edit, StringComparison.Ordinal);
         Assert.Contains("showStoryDecision(target, data);", load, StringComparison.Ordinal);
     }

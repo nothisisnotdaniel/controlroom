@@ -2,12 +2,11 @@
 
 // Live updates: one timer asks /api/changes (metadata fingerprints) every PollInterval while the page is visible,
 // and only what changed is fetched again: the board (pollBoard in board.js), the backlog sections of changed
-// projects, the open story (app.js), the inbox with its nav count (inbox.js), the tasks with theirs (tasks.js), the
-// current search (search.js), the history (history.js), the health view (doctor.js) and the project status lines
-// (status.js) while shown. A failed check
-// shows one fixed connection notice. Loaded after status.js and before app.js; the functions of the other scripts
-// are only called at run time. Fingerprints are compared, never shown; only fixed texts are rendered, with
-// textContent.
+// projects, the open story (app.js), the counts on the Backlogs tab (counts.js), the current search (search.js),
+// the history (history.js), the health view (doctor.js) and the project status lines (status.js) while shown. A
+// failed check shows one fixed connection notice. Loaded after status.js and before app.js; the functions of the
+// other scripts are only called at run time. Fingerprints are compared, never shown; only fixed texts are rendered,
+// with textContent.
 
 const LiveTexts = {
   lost: "Connection lost. Reconnecting…",
@@ -25,10 +24,8 @@ let liveLast = null;
 // after a lost connection, the open job page.
 let boardStale = false;
 let jobStale = false;
-// Any project's backlog or stories changed: the inbox count (and the list, while shown) is fetched again.
-let inboxStale = false;
-// The same for the tasks and their ready count.
-let tasksStale = false;
+// Any project's backlog changed: the [h] and [?] counts on the Backlogs tab are fetched again.
+let countsStale = false;
 // The jobs changed: the history (history.js) is fetched again while it is shown; showing it fetches it anyway.
 let historyStale = false;
 // The jobs, a backlog or the story files changed: the health view (doctor.js) is fetched again while it is shown.
@@ -144,8 +141,7 @@ function noteChanges(next, recovered) {
   if (recovered) {
     boardStale = true;
     jobStale = true;
-    inboxStale = true;
-    tasksStale = true;
+    countsStale = true;
     for (const name of names) {
       staleBacklogs.add(name);
       staleStories.add(name);
@@ -165,15 +161,12 @@ function noteChanges(next, recovered) {
     const backlogChanged = !before || !after || before.backlog !== after.backlog;
     if (backlogChanged) {
       boardStale = true;
-      inboxStale = true;
-      tasksStale = true;
+      countsStale = true;
       staleBacklogs.add(name);
       staleStories.add(name);
       searchChanged = true;
     } else if (before.stories !== after.stories) {
       staleStories.add(name);
-      inboxStale = true;
-      tasksStale = true;
       searchChanged = true;
     }
   }
@@ -228,31 +221,17 @@ async function refreshShownViews() {
   await refreshStaleHistory();
   await refreshStaleDoctor();
   await refreshStaleStatus();
-  await refreshStaleTasks();
-  await refreshStaleInbox();
+  await refreshStaleCounts();
 }
 
-// The count follows every change; loadInbox leaves the list alone while a change is sent (changeBusy) and
-// reports it, so it is tried again on the next check. A Drop confirm blocks the page, so it never overlaps a check.
-async function refreshStaleInbox() {
-  if (!inboxStale) {
+// The counts follow every backlog change; a failed fetch is tried again on the next check.
+async function refreshStaleCounts() {
+  if (!countsStale) {
     return;
   }
-  inboxStale = false;
-  if (!(await loadInbox())) {
-    inboxStale = true;
-  }
-}
-
-// The same for the tasks: the ready count follows every change; loadTasks leaves the list alone while a change is
-// sent (changeBusy) and reports it, so it is tried again on the next check.
-async function refreshStaleTasks() {
-  if (!tasksStale) {
-    return;
-  }
-  tasksStale = false;
-  if (!(await loadTasks())) {
-    tasksStale = true;
+  countsStale = false;
+  if (!(await loadBacklogCounts())) {
+    countsStale = true;
   }
 }
 

@@ -107,7 +107,7 @@ public sealed partial class TokenWebAppTests
         int store = token.IndexOf("storeToken(token);", StringComparison.Ordinal);
         int hide = token.IndexOf("hideTokenView();\n  if (tokenSaved) {", StringComparison.Ordinal);
         Assert.True(prevent >= 0 && prevent < trim && trim < store && store < hide);
-        Assert.Contains("onTokenSaved(() => {\n  route();\n  load();\n  loadInboxCount();\n  loadTasksCount();\n});", app, StringComparison.Ordinal);
+        Assert.Contains("onTokenSaved(() => {\n  route();\n  load();\n  loadBacklogCounts();\n});", app, StringComparison.Ordinal);
     }
 
     [Fact]

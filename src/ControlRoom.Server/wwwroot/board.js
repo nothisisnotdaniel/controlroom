@@ -279,7 +279,7 @@ function sectionHeading(label, count) {
   return label + " (" + count + ")";
 }
 
-// Jobs waiting for the user (needs-human); no other tab shows them. The user's own [h] tasks are on the Tasks tab.
+// Jobs waiting for the user (needs-human); no other tab shows them. The user's own [h] tasks are in the backlog, counted on the Backlogs tab.
 function renderStuck(jobs) {
   const section = element("section", "stuck");
   section.appendChild(element("h2", null, sectionHeading(BoardTexts.stuck, jobs.length)));

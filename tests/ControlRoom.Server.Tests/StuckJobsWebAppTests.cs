@@ -1,7 +1,7 @@
 namespace ControlRoom.Server.Tests;
 
 /// <summary>The Jobs view shows only jobs (#129): no [h] task cards, and a Stuck section for needs-human jobs that is
-/// left out when there are none. Checked in <c>board.js</c>, <c>app.css</c> and <c>tasks.js</c> as text (there is no
+/// left out when there are none. Checked in <c>board.js</c>, <c>app.css</c> and <c>counts.js</c> as text (there is no
 /// JS test runtime yet, see #59); the board API still returning tasks is checked in
 /// <c>BoardApiTests.Board_TasksAreTheHandLinesOfEveryProjectInOrder</c>.</summary>
 public sealed class StuckJobsWebAppTests
@@ -86,13 +86,14 @@ public sealed class StuckJobsWebAppTests
     }
 
     [Fact]
-    public async Task TasksJs_CountStillComesFromTheTasksApi()
+    public async Task CountsJs_TheTasksCountIsOnTheBacklogsTabNotTheBoard()
     {
-        string tasks = await Fetch("/tasks.js");
+        string counts = await Fetch("/counts.js");
+        string board = await Fetch("/board.js");
 
-        Assert.Contains("const TasksApi = \"/api/tasks\";", tasks, StringComparison.Ordinal);
-        Assert.Contains("const badge = document.getElementById(\"tasks-count\");", tasks, StringComparison.Ordinal);
-        Assert.Contains("badge.textContent = shown ? String(tasksCount) : \"\";", tasks, StringComparison.Ordinal);
+        Assert.Contains("showCountBadge(\"tasks-count\", tasks, ", counts, StringComparison.Ordinal);
+        Assert.Contains("tasks += asList(project.user).length;", counts, StringComparison.Ordinal);
+        Assert.DoesNotContain("tasks-count", board, StringComparison.Ordinal);
     }
 
     private static string Between(string text, string start, string end)
