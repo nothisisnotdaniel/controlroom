@@ -128,7 +128,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#115](backlog/115-scroll-to-the-top-when-the.md) Scroll to the top when the Backlogs project changes
 - [?] [#116](backlog/116-correct-the-project-picker-when-the.md) Correct the project picker when the chosen project disappears while focused
 - [ ] [#117](backlog/117-drop-the-dead-group-h3-selector.md) Drop the dead .group h3 selector
-- [h] [#118](backlog/118-browser-check-of-collapsible-backlog-groups.md) Browser check of collapsible backlog groups at phone width
+- [x] [#118](backlog/118-browser-check-of-collapsible-backlog-groups.md) Browser check of collapsible backlog groups at phone width
 - [?] [#119](backlog/119-one-position-per-item-in-open.md) One position per item in Open and Waiting
 - [?] [#120](backlog/120-refuse-a-target-field-on-backlog.md) Refuse a target field on backlog changes other than place
 - [?] [#121](backlog/121-announce-the-new-position-after-a.md) Announce the new position after a drag for screen readers
