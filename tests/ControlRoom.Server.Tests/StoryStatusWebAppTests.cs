@@ -82,7 +82,7 @@ public sealed class StoryStatusWebAppTests
         string line = Between(edit, "async function findStoryLine(project, number) {", "\n}\n");
 
         Assert.Contains("for (const group of [\"open\", \"approval\", \"user\", \"done\"]) {", entry, StringComparison.Ordinal);
-        Assert.Contains("mark: asText(entry.mark) };", entry, StringComparison.Ordinal);
+        Assert.Contains("mark: asText(entry.mark),", entry, StringComparison.Ordinal);
         Assert.Contains("if (entry === null || entry.group === \"done\") {\n    return null;\n  }", notDone,
             StringComparison.Ordinal);
         Assert.Contains("return notDone(await findStoryEntry(project, number));", line, StringComparison.Ordinal);

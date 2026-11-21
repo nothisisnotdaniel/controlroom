@@ -631,8 +631,9 @@ function addForm(projectName, version) {
   return details;
 }
 
-// Finds the line, the backlog version, the group (open, approval, user or done) and the mark of a numbered item, as
-// the server sees it now.
+// Finds the line, the backlog version, the group (open, approval, user or done), the mark and the position (1-based
+// index in the group, the number the backlog list shows in front of the row, #108) of a numbered item, as the server
+// sees it now.
 async function findStoryEntry(project, number) {
   const response = await authFetch("/api/backlogs", { cache: "no-store" });
   if (!response.ok) {
@@ -644,9 +645,12 @@ async function findStoryEntry(project, number) {
     return null;
   }
   for (const group of ["open", "approval", "user", "done"]) {
-    for (const entry of asList(match[group])) {
+    const entries = asList(match[group]);
+    for (let index = 0; index < entries.length; index += 1) {
+      const entry = entries[index];
       if (asNumber(entry && entry.number) === number && asNumber(entry.line) !== null) {
-        return { version: match.version, line: entry.line, group: group, mark: asText(entry.mark) };
+        return { version: match.version, line: entry.line, group: group, mark: asText(entry.mark),
+          position: index + 1 };
       }
     }
   }
@@ -831,7 +835,7 @@ function storyNoteButton(target, data, reload) {
 
 let storyDecisionRequest = 0;
 
-// The status chip, and Approve and Drop in the story bar only while the item's backlog line is a [?] line. Called after the story is
+// The status chip, the position, and Approve and Drop in the story bar only while the item's backlog line is a [?] line. Called after the story is
 // shown and after a live refresh: buttons that should stay are kept as they are (focus stays on them).
 async function showStoryDecision(target, data) {
   const number = asNumber(data && data.number);
@@ -850,6 +854,7 @@ async function showStoryDecision(target, data) {
     return;
   }
   showStoryStatus(entry === null ? null : entry.mark);
+  showStoryPosition(entry === null ? null : entry.position);
   const found = notDone(entry);
   const bar = document.querySelector("#story .story-bar");
   if (bar === null) {

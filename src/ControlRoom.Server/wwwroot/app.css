@@ -456,6 +456,19 @@ main {
   margin-right: 6px;
 }
 
+/* A story's place in its backlog group (#126), next to the status chip: muted like the list's number. */
+.story-position {
+  display: inline-block;
+  margin: -4px 0 12px 6px;
+  font-size: 0.8rem;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  color: var(--muted);
+  white-space: nowrap;
+  vertical-align: 1px;
+}
+
 /* A line's place in its group: plain, lighter and right-aligned, so it never reads as the bold "#N". */
 .position {
   position: relative;

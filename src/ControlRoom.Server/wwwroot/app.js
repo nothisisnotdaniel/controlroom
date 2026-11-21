@@ -21,6 +21,7 @@ const Texts = {
   pending: "Edits wait for the running job and go into develop after it.",
   project: "Project",
   position: "position ",
+  storyPosition: "Position ",
   stopLine: "Auto stops here",
   stopsBefore: "Auto stops before #",
 };
@@ -193,6 +194,48 @@ function showStoryStatus(mark) {
   const chip = mark === null ? null : statusChip(mark);
   if (chip !== null) {
     placeStatusChip(article, chip);
+  }
+}
+
+// A story's place in its backlog group (#126) as text: "Position N", or null for anything but a whole number >= 1.
+function storyPosition(position) {
+  if (!Number.isInteger(position) || position < 1) {
+    return null;
+  }
+  return element("span", "story-position", Texts.storyPosition + String(position));
+}
+
+// Puts the position in a story header right after the status chip, or after the category chip or the title when
+// there is no status chip.
+function placeStoryPosition(article, node) {
+  const status = article.querySelector(":scope > .status-chip");
+  if (status !== null) {
+    status.after(node);
+    return;
+  }
+  const title = article.querySelector(":scope > .story-title");
+  if (title === null) {
+    return;
+  }
+  const next = title.nextElementSibling;
+  const anchor = next !== null && next.classList.contains("category-chip") ? next : title;
+  anchor.after(node);
+}
+
+// The position of the shown story, from the same /api/backlogs lookup as the status chip (edit.js's
+// showStoryDecision); none when position is null (the line can't be found).
+function showStoryPosition(position) {
+  const article = document.querySelector("#story .story");
+  if (article === null) {
+    return;
+  }
+  const old = article.querySelector(":scope > .story-position");
+  if (old !== null) {
+    old.remove();
+  }
+  const node = position === null ? null : storyPosition(position);
+  if (node !== null) {
+    placeStoryPosition(article, node);
   }
 }
 
@@ -946,6 +989,10 @@ async function refreshStory() {
   const status = old.querySelector(":scope > .status-chip");
   if (status !== null) {
     placeStatusChip(article, status);
+  }
+  const position = old.querySelector(":scope > .story-position");
+  if (position !== null) {
+    placeStoryPosition(article, position);
   }
   old.replaceWith(article);
   const reload = () => loadStory(target);
