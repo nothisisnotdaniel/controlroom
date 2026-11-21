@@ -26,7 +26,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#102](backlog/102-fix-the-release-sign-step-on.md) Fix the release Sign step on the macOS runner → 333-fix-release-signing
 - [x] [#101](backlog/101-set-up-the-release-signing-certificate.md) Set up the release signing certificate (after: #100)
 - [x] [#99](backlog/099-updater-checks-soon-after-install-and.md) Updater checks soon after install and retries after a skipped run → 337-updater-early-checks
-- [?] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone
+- [ ] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone
 - [ ] [#13](backlog/013-releases-overview.md) Releases overview
 - [x] [#15](backlog/015-job-detail.md) Job detail (after: #2) → 248-job-detail-gaps
 - [x] [#16](backlog/016-live-updates.md) Live updates → 249-live-board-updates
@@ -41,10 +41,10 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#24](backlog/024-doctor-view.md) Doctor view → 266-doctor-view
 - [x] [#25](backlog/025-ci-and-git-status.md) CI and git status → 269-ci-and-git-status
 - [x] [#127](backlog/127-bottom-tab-bar-with-icons.md) Bottom tab bar with icons → 357-bottom-tab-bar
-- [?] [#28](backlog/028-close-the-symlink-race-when-reading.md) Close the symlink race when reading story files
-- [?] [#29](backlog/029-drop-the-hand-written-equality-on.md) Drop the hand-written equality on BacklogEntry
+- [ ] [#28](backlog/028-close-the-symlink-race-when-reading.md) Close the symlink race when reading story files
+- [ ] [#29](backlog/029-drop-the-hand-written-equality-on.md) Drop the hand-written equality on BacklogEntry
 - [?] [#30](backlog/030-cap-the-bytes-read-per-board.md) Cap the bytes read per board and job response
-- [?] [#31](backlog/031-show-pending-reviewer-chips-with-a.md) Show pending reviewer chips with a text marker
+- [ ] [#31](backlog/031-show-pending-reviewer-chips-with-a.md) Show pending reviewer chips with a text marker
 - [x] [#126](backlog/126-backlog-position-in-the-story-view.md) Backlog position in the story view → 356-story-position
 - [?] [#33](backlog/033-refuse-a-token-folder-others-can.md) Refuse a token folder others can write to
 - [?] [#34](backlog/034-check-the-token-file-s-mode.md) Check the token file's mode and owner on the open handle
@@ -62,11 +62,11 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#46](backlog/046-update-available-notice.md) Update available notice (after: #45) → 228-update-available-notice
 - [x] [#47](backlog/047-automatic-updates.md) Automatic updates (after: #46) → 229-automatic-updates
 - [x] [#48](backlog/048-strict-semver-prerelease-identifiers-in-release.md) Strict SemVer prerelease identifiers in release tags → 270-strict-semver-prerelease
-- [?] [#49](backlog/049-verify-release-signatures-in-the-updater.md) Verify release signatures in the updater without gh
+- [ ] [#49](backlog/049-verify-release-signatures-in-the-updater.md) Verify release signatures in the updater without gh
 - [ ] [#26](backlog/026-usage-view-spike.md) Usage view spike
 - [x] [#51](backlog/051-develop-prerelease-builds-and-an-opt.md) Develop prerelease builds and an opt-in develop update channel → 234-develop-prereleases-channel
 - [?] [#52](backlog/052-test-that-keeping-the-update-channel.md) Test that keeping the update channel starts no check
-- [?] [#53](backlog/053-keep-focus-on-the-channel-select.md) Keep focus on the channel select after saving
+- [ ] [#53](backlog/053-keep-focus-on-the-channel-select.md) Keep focus on the channel select after saving
 - [?] [#54](backlog/054-hint-that-the-develop-channel-installs.md) Hint that the develop channel installs unreleased builds
 - [?] [#55](backlog/055-limit-how-often-channel-changes-start.md) Limit how often channel changes start update checks
 - [?] [#56](backlog/056-drop-a-develop-check-result-after.md) Drop a develop check result after switching back to stable
@@ -92,13 +92,12 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#77](backlog/077-refuse-invisible-unicode-format-characters-in.md) Refuse invisible Unicode format characters in written text
 - [?] [#78](backlog/078-character-counter-on-the-note-box.md) Character counter on the note box
 - [?] [#79](backlog/079-notes-section-end-ignores-headings-inside.md) Notes section end ignores headings inside code blocks
-- [?] [#80](backlog/080-ask-for-the-project-before-a.md) Ask for the project before a capture is saved
 - [?] [#81](backlog/081-escape-a-leading-in-captured-text.md) Escape a leading # in captured text
 - [?] [#82](backlog/082-browser-check-of-capture-and-the.md) Browser check of Capture and the two-row nav
 - [?] [#83](backlog/083-browser-check-of-approve-and-rework.md) Browser check of Approve and Rework on an escalated job
 - [?] [#84](backlog/084-browser-check-of-the-history-view.md) Browser check of the History view and seven-link nav
-- [?] [#85](backlog/085-distinct-chart-colours-for-more-than.md) Distinct chart colours for more than six modes
-- [?] [#86](backlog/086-add-the-empty-30-day-text.md) Add the empty 30-day text to the History spec
+- [ ] [#85](backlog/085-distinct-chart-colours-for-more-than.md) Distinct chart colours for more than six modes
+- [ ] [#86](backlog/086-add-the-empty-30-day-text.md) Add the empty 30-day text to the History spec
 - [?] [#87](backlog/087-cap-the-git-output-the-server.md) Cap the git output the server reads
 - [?] [#88](backlog/088-one-doctor-check-at-a-time.md) One doctor check at a time
 - [?] [#89](backlog/089-browser-check-of-the-health-view.md) Browser check of the Health view
@@ -124,7 +123,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#114](backlog/114-browser-check-of-the-backlogs-project.md) Browser check of the Backlogs project picker at phone width
 - [?] [#115](backlog/115-scroll-to-the-top-when-the.md) Scroll to the top when the Backlogs project changes
 - [?] [#116](backlog/116-correct-the-project-picker-when-the.md) Correct the project picker when the chosen project disappears while focused
-- [?] [#117](backlog/117-drop-the-dead-group-h3-selector.md) Drop the dead .group h3 selector
+- [ ] [#117](backlog/117-drop-the-dead-group-h3-selector.md) Drop the dead .group h3 selector
 - [?] [#118](backlog/118-browser-check-of-collapsible-backlog-groups.md) Browser check of collapsible backlog groups at phone width
 - [?] [#119](backlog/119-one-position-per-item-in-open.md) One position per item in Open and Waiting
 - [?] [#120](backlog/120-refuse-a-target-field-on-backlog.md) Refuse a target field on backlog changes other than place
@@ -137,7 +136,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#65](backlog/065-refresh-the-inbox-count-right-after.md) Refresh the inbox count right after any backlog change
 - [x] [#128](backlog/128-approve-or-drop-goes-back-from.md) Approve or Drop goes back from the story view → 355-approve-goes-back
 - [x] [#129](backlog/129-jobs-view-without-your-tasks.md) Jobs view without your tasks → 358-jobs-view-only-jobs
-- [h] [#130](backlog/130-check-the-bottom-tab-bar-on.md) Check the bottom tab bar on the iPhone
+- [x] [#130](backlog/130-check-the-bottom-tab-bar-on.md) Check the bottom tab bar on the iPhone
 - [ ] [#131](backlog/131-lifetime-totals-in-history.md) Lifetime totals in History
 - [x] [#132](backlog/132-capture-at-the-top-of-the.md) Capture at the top of the Inbox → 359-capture-in-inbox
 - [ ] [#133](backlog/133-search-at-the-top-of-the.md) Search at the top of the Backlogs
