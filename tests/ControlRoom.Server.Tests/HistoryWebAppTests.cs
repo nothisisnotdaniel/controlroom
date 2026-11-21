@@ -12,8 +12,8 @@ public sealed partial class HistoryWebAppTests
     {
         string html = await Fetch("/index.html");
 
-        int capture = html.IndexOf("<a href=\"#capture\" data-view=\"capture\">Capture</a>", StringComparison.Ordinal);
-        int history = html.IndexOf("<a href=\"#history\" data-view=\"history\">History</a>", StringComparison.Ordinal);
+        int capture = html.IndexOf("<a href=\"#capture\" data-view=\"capture\">", StringComparison.Ordinal);
+        int history = html.IndexOf("<a href=\"#history\" data-view=\"history\">", StringComparison.Ordinal);
         int navEnd = html.IndexOf("</nav>", StringComparison.Ordinal);
         Assert.True(capture >= 0 && history > capture && history < navEnd);
         Assert.Contains("<main id=\"history\" hidden></main>", html, StringComparison.Ordinal);
@@ -204,13 +204,12 @@ public sealed partial class HistoryWebAppTests
     }
 
     [Fact]
-    public async Task AppCss_FitsEightNavLinksAndStylesTheView()
+    public async Task AppCss_FitsEightTabsInOneRowAndStylesTheView()
     {
         string css = await Fetch("/app.css");
 
-        Assert.Contains("/* Eight nav links fit in two rows of four at iPhone width (375 px). */", css,
-            StringComparison.Ordinal);
-        Assert.Contains("    flex: 1 1 calc((100% - 12px) / 4);\n", css, StringComparison.Ordinal);
+        Assert.DoesNotContain("two rows of four", css, StringComparison.Ordinal);
+        Assert.Contains("  flex: 1 1 0;\n", css, StringComparison.Ordinal);
         foreach (string rule in new[]
                  {
                      ".history-table {", ".history-svg {", ".history-legend {", ".history-select {", ".history-list {",

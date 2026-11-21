@@ -13,7 +13,7 @@ public sealed partial class TasksWebAppTests
         string html = await Fetch("/index.html");
 
         Assert.Contains(
-            "<a href=\"#tasks\" data-view=\"tasks\">Tasks<span class=\"nav-count\" id=\"tasks-count\" hidden></span></a>",
+            "<span class=\"tab-label\">Tasks</span>\n      <span class=\"nav-count\" id=\"tasks-count\" hidden></span>\n    </a>",
             html, StringComparison.Ordinal);
         int inbox = html.IndexOf("<a href=\"#inbox\" data-view=\"inbox\">", StringComparison.Ordinal);
         int tasks = html.IndexOf("<a href=\"#tasks\" data-view=\"tasks\">", StringComparison.Ordinal);

@@ -55,6 +55,8 @@
   --status-open-fg: #0c4a6e;
   --status-user-bg: #f3e8ff;
   --status-user-fg: #581c87;
+  /* The bottom tab bar without the home indicator inset; at least the 44px tap target. */
+  --tab-bar-height: 56px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -130,7 +132,8 @@ html {
 
 body {
   margin: 0;
-  padding: 0 max(12px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
+  /* The bottom padding keeps the last item clear of the fixed tab bar. */
+  padding: 0 max(12px, env(safe-area-inset-right)) calc(var(--tab-bar-height) + env(safe-area-inset-bottom) + 12px)
     max(12px, env(safe-area-inset-left));
   background: var(--bg);
   color: var(--fg);
@@ -165,6 +168,11 @@ body {
 /* The token view replaces every other view, the notice too. */
 body:has(#token:not([hidden])) .live-notice {
   display: none;
+}
+
+/* The token view has no tab bar, so it needs no room for one. */
+body:has(#token:not([hidden])) {
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
 }
 
 h1 {
@@ -718,31 +726,65 @@ main {
   white-space: pre;
 }
 
-/* Top nav: Jobs, Backlogs, Inbox and Tasks */
-.nav {
+/* Bottom tab bar: the eight sections in one row on every view and width, an icon over a tiny label. */
+.tab-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0 0 8px;
+  flex-wrap: nowrap;
+  justify-content: center;
+  min-height: var(--tab-bar-height);
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  border-top: 1px solid var(--line);
+  background: var(--card);
 }
 
-.nav a {
-  display: inline-flex;
+.tab-bar a {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
   align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 120px;
   min-height: 44px;
-  padding: 8px 16px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: var(--card);
-  color: var(--link);
-  font-weight: 600;
+  padding: 6px 0 4px;
+  border-radius: 8px;
+  color: var(--muted);
   text-decoration: none;
 }
 
-.nav a[aria-current="page"] {
-  background: var(--fg);
-  border-color: var(--fg);
-  color: var(--bg);
+.tab-bar a[aria-current="page"] {
+  color: var(--link);
+}
+
+.tab-bar a:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: -2px;
+}
+
+.tab-icon {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tab-label {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 /* Jobs board: stages stack on the iPhone and become columns on wide screens. */
@@ -1425,7 +1467,7 @@ textarea.edit-input {
   position: fixed;
   left: 12px;
   right: 12px;
-  bottom: max(12px, env(safe-area-inset-bottom));
+  bottom: calc(var(--tab-bar-height) + env(safe-area-inset-bottom) + 12px);
   z-index: 2;
   display: flex;
   align-items: center;
@@ -1440,9 +1482,9 @@ textarea.edit-input {
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
 }
 
-/* Keeps the last lines and the Back button reachable above the fixed notice. */
+/* Keeps the last lines and the Back button reachable above the fixed notice, which sits above the tab bar. */
 body:has(#edit-notice:not([hidden])) {
-  padding-bottom: calc(max(24px, env(safe-area-inset-bottom)) + 72px);
+  padding-bottom: calc(var(--tab-bar-height) + env(safe-area-inset-bottom) + 12px + 72px);
 }
 
 .edit-notice-text {
@@ -1606,23 +1648,26 @@ body:has(#edit-notice:not([hidden])) {
   color: var(--link);
 }
 
-/* Inbox: the waiting count in the nav, and one card row per proposal. */
+/* Inbox: the waiting count as a badge on the tab icon, and one card row per proposal. */
 .nav-count {
-  display: inline-block;
+  position: absolute;
+  top: 2px;
+  left: calc(50% + 4px);
   min-width: 1.4em;
-  margin-left: 6px;
-  padding: 0 6px;
+  padding: 0 4px;
   border-radius: 999px;
   background: var(--accent);
   color: var(--primary-fg);
-  font-size: 0.8rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
   line-height: 1.5;
   text-align: center;
 }
 
-.nav a[aria-current="page"] .nav-count {
-  background: var(--bg);
-  color: var(--fg);
+.tab-bar a[aria-current="page"] .nav-count {
+  background: var(--link);
+  color: var(--bg);
+  box-shadow: 0 0 0 2px var(--card);
 }
 
 .inbox-list {
@@ -1802,26 +1847,6 @@ body:has(#edit-notice:not([hidden])) {
 
 .search-unreadable {
   margin: 0 0 12px;
-}
-
-/* Eight nav links fit in two rows of four at iPhone width (375 px). */
-@media (max-width: 420px) {
-  .nav {
-    gap: 4px;
-    flex-wrap: wrap;
-  }
-
-  .nav a {
-    flex: 1 1 calc((100% - 12px) / 4);
-    justify-content: center;
-    padding: 8px 2px;
-    font-size: 0.8125rem;
-  }
-
-  .nav-count {
-    margin-left: 2px;
-    padding: 0 4px;
-  }
 }
 
 /* Capture: a project select and a large text field for a quick idea; 16px text keeps iOS from zooming. */

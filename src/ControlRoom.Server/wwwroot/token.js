@@ -43,7 +43,7 @@ function tokenViewShown() {
   return !document.getElementById("token").hidden;
 }
 
-// Hides every other view and the header, and shows the token form; refused adds the fixed refusal text.
+// Hides every other view, the header and the tab bar, and shows the token form; refused adds the fixed refusal text.
 // A second call while the view is shown (several requests refused at once) keeps what the user is typing.
 function showTokenView(refused) {
   const note = document.getElementById("token-refused");
@@ -62,6 +62,7 @@ function showTokenView(refused) {
     main.hidden = main.id !== "token";
   }
   document.getElementById("top").hidden = true;
+  document.querySelector(".tab-bar").hidden = true;
   document.body.classList.remove("view-board");
   const input = document.getElementById("token-input");
   input.value = "";

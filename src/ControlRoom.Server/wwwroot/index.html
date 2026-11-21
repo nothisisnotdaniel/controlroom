@@ -31,19 +31,45 @@
 </head>
 <body>
   <header class="top" id="top">
-    <nav class="nav" aria-label="Sections">
-      <a href="#jobs" data-view="board">Jobs</a>
-      <a href="#backlogs" data-view="backlogs">Backlogs</a>
-      <a href="#inbox" data-view="inbox">Inbox<span class="nav-count" id="inbox-count" hidden></span></a>
-      <a href="#tasks" data-view="tasks">Tasks<span class="nav-count" id="tasks-count" hidden></span></a>
-      <a href="#search" data-view="search">Search</a>
-      <a href="#capture" data-view="capture">Capture</a>
-      <a href="#history" data-view="history">History</a>
-      <a href="#doctor" data-view="doctor">Health</a>
-    </nav>
     <h1 id="top-title">Backlogs</h1>
   </header>
   <p class="live-notice" id="live-notice" role="status" hidden></p>
+  <nav class="nav tab-bar" aria-label="Sections">
+    <a href="#jobs" data-view="board">
+      <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM9 4v16M15 4v16"/></svg>
+      <span class="tab-label">Jobs</span>
+    </a>
+    <a href="#backlogs" data-view="backlogs">
+      <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+      <span class="tab-label">Backlogs</span>
+    </a>
+    <a href="#inbox" data-view="inbox">
+      <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+      <span class="tab-label">Inbox</span>
+      <span class="nav-count" id="inbox-count" hidden></span>
+    </a>
+    <a href="#tasks" data-view="tasks">
+      <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      <span class="tab-label">Tasks</span>
+      <span class="nav-count" id="tasks-count" hidden></span>
+    </a>
+    <a href="#search" data-view="search">
+      <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14zM21 21l-4.35-4.35"/></svg>
+      <span class="tab-label">Search</span>
+    </a>
+    <a href="#capture" data-view="capture">
+      <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM12 8v8M8 12h8"/></svg>
+      <span class="tab-label">Capture</span>
+    </a>
+    <a href="#history" data-view="history">
+      <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM12 7v5l3 2"/></svg>
+      <span class="tab-label">History</span>
+    </a>
+    <a href="#doctor" data-view="doctor">
+      <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      <span class="tab-label">Health</span>
+    </a>
+  </nav>
   <main id="backlogs">
     <p class="status">Loading…</p>
   </main>

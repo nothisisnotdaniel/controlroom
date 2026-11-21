@@ -271,14 +271,13 @@ public sealed partial class WebAppTests
     }
 
     [Fact]
-    public async Task IndexHtml_HasTheTopNavAndBoardAndJobViewsWithBoardJsBeforeAppJs()
+    public async Task IndexHtml_HasTheTabBarAndBoardAndJobViewsWithBoardJsBeforeAppJs()
     {
         string html = await Fetch("/index.html");
 
-        Assert.Contains("<nav class=\"nav\" aria-label=\"Sections\">", html, StringComparison.Ordinal);
-        int jobs = html.IndexOf("<a href=\"#jobs\" data-view=\"board\">Jobs</a>", StringComparison.Ordinal);
-        int backlogs = html.IndexOf(
-            "<a href=\"#backlogs\" data-view=\"backlogs\">Backlogs</a>", StringComparison.Ordinal);
+        Assert.Contains("<nav class=\"nav tab-bar\" aria-label=\"Sections\">", html, StringComparison.Ordinal);
+        int jobs = html.IndexOf("<a href=\"#jobs\" data-view=\"board\">", StringComparison.Ordinal);
+        int backlogs = html.IndexOf("<a href=\"#backlogs\" data-view=\"backlogs\">", StringComparison.Ordinal);
         Assert.True(jobs >= 0 && jobs < backlogs);
         Assert.Contains("<main id=\"board\" hidden>", html, StringComparison.Ordinal);
         Assert.Contains("<main id=\"job\" hidden></main>", html, StringComparison.Ordinal);
@@ -602,7 +601,7 @@ public sealed partial class WebAppTests
 
         foreach (string rule in new[]
                  {
-                     ".nav a {", ".needs-you {", ".card-human {", ".chip-pass {", ".chip-changes {", ".tab {",
+                     ".tab-bar a {", ".needs-you {", ".card-human {", ".chip-pass {", ".chip-changes {", ".tab {",
                      ".filter-button {", ".story-table {", "--human:", "--pass-fg:", "--changes-fg:",
                      ".view-board .top {",
                  })

@@ -10,8 +10,8 @@ public sealed class CaptureWebAppTests
     {
         string html = await Fetch("/index.html");
 
-        int search = html.IndexOf("<a href=\"#search\" data-view=\"search\">Search</a>", StringComparison.Ordinal);
-        int capture = html.IndexOf("<a href=\"#capture\" data-view=\"capture\">Capture</a>", StringComparison.Ordinal);
+        int search = html.IndexOf("<a href=\"#search\" data-view=\"search\">", StringComparison.Ordinal);
+        int capture = html.IndexOf("<a href=\"#capture\" data-view=\"capture\">", StringComparison.Ordinal);
         int navEnd = html.IndexOf("</nav>", StringComparison.Ordinal);
         Assert.True(search >= 0 && capture > search && capture < navEnd);
         Assert.Contains("<main id=\"capture\" hidden></main>", html, StringComparison.Ordinal);
