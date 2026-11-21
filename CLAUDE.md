@@ -255,7 +255,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     projects only, no All) shows one section at a time, the choice in `controlroom-backlog-project` (falls back to the first
     readable project without storing it), kept on a live refresh and set by a story link into a readable project; every group (Open, Waiting for approval, For you,
     Done and Waiting) folds as a `details.group` named in `data-group`, only Done closed by default, each state per project in
-    `controlroom-backlog-groups` and copied by name on a live refresh), story), `edit.js` (per-project edit mode, the Add form, Edit story and Add note (`add-note-button` in the story bar; only
+    `controlroom-backlog-groups` and copied by name on a live refresh; every row of every group starts with its 1-based place in
+    that group (`positionElement`: `span.position` with a `span.visually-hidden` `position ` for screen readers)), story), `edit.js` (per-project edit mode, the Add form, Edit story and Add note (`add-note-button` in the story bar; only
     one of the two forms open at a time), Approve and Drop in the story bar of a `[?]` item only (`story-approve-button`,
     `story-drop-button`, group `approval` from `/api/backlogs`; version and line looked up again at the tap, through
     `sendChange`, Drop after a confirm; Approve reloads the story, Drop goes `history.back()` or to `#inbox` keeping the

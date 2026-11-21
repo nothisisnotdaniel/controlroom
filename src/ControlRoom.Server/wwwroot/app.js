@@ -20,6 +20,7 @@ const Texts = {
   missing: "No such item",
   pending: "Edits wait for the running job and go into develop after it.",
   project: "Project",
+  position: "position ",
 };
 
 const Groups = [
@@ -129,10 +130,19 @@ function renderDependencies(projectName, after) {
   return line;
 }
 
-function renderNumberedLine(projectName, version, entry, number) {
+// The 1-based place of a line in its group; a screen reader hears "position N", the eye sees only the digit.
+function positionElement(position) {
+  const node = element("span", "position");
+  node.appendChild(element("span", "visually-hidden", Texts.position));
+  node.append(String(position));
+  return node;
+}
+
+function renderNumberedLine(projectName, version, entry, number, position) {
   const item = element("li", "numbered");
   const head = element("a", "head");
   head.href = storyHash(projectName, number);
+  head.appendChild(positionElement(position));
   head.appendChild(element("span", "mark", Marks[asText(entry.mark)] || Marks[" "]));
   head.appendChild(element("span", "number", "#" + number));
   head.appendChild(titleElement(entry.title));
@@ -170,13 +180,16 @@ function appendEditRow(item, projectName, version, entry) {
 
 function renderLines(projectName, version, entries) {
   const list = element("ul", "lines");
+  let position = 0;
   for (const entry of entries) {
+    position += 1;
     const number = asNumber(entry && entry.number);
     if (number !== null) {
-      list.appendChild(renderNumberedLine(projectName, version, entry, number));
+      list.appendChild(renderNumberedLine(projectName, version, entry, number, position));
       continue;
     }
     const item = element("li");
+    item.appendChild(positionElement(position));
     item.appendChild(titleElement(entry && entry.title));
     const rest = asText(entry && entry.rest);
     if (rest !== "") {
@@ -308,8 +321,11 @@ function renderPlan(projectName, project) {
     const group = element("details", "group waiting-group");
     group.appendChild(element("summary", null, Texts.waiting + " (" + blocked.length + ")"));
     const list = element("ul", "lines");
+    let position = 0;
     for (const entry of blocked) {
+      position += 1;
       const row = element("li");
+      row.appendChild(positionElement(position));
       row.appendChild(planItemLink(projectName, entry.number, entry.title));
       row.appendChild(renderWaitsFor(projectName, asList(entry.after)));
       list.appendChild(row);
