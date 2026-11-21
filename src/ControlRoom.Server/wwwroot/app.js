@@ -37,6 +37,14 @@ const Marks = { " ": "[ ]", "?": "[?]", h: "[h]", x: "[x]" };
 // The nine story categories (job.py's order). Only a value from this list becomes a chip or a class name.
 const Categories = ["feature", "bug", "security", "ux", "ui", "tidy-up", "test", "ci", "docs"];
 
+// A backlog line's mark as the story's status (#125). Only a mark in this map becomes a status chip or a class name.
+const StoryStatuses = {
+  x: { key: "done", label: "Done" },
+  "?": { key: "unapproved", label: "Unapproved" },
+  " ": { key: "open", label: "Open" },
+  h: { key: "user", label: "Your task" },
+};
+
 const StoryRoute = "#story/";
 
 // The project shown on Backlogs, kept on this device: only a project name, never the token.
@@ -145,6 +153,47 @@ function categoryChip(value) {
   chip.className = "category-chip category-" + value;
   chip.textContent = value;
   return chip;
+}
+
+// A story's status as a chip (span.status-chip.status-<key>, a visually-hidden "Status: " and the label as text),
+// or null for a mark outside the fixed map.
+function statusChip(mark) {
+  if (typeof mark !== "string" || !Object.hasOwn(StoryStatuses, mark)) {
+    return null;
+  }
+  const status = StoryStatuses[mark];
+  const chip = element("span", "status-chip status-" + status.key);
+  chip.appendChild(element("span", "visually-hidden", "Status: "));
+  chip.append(status.label);
+  return chip;
+}
+
+// Puts a status chip in a story header: after the title, or after the category chip right under it.
+function placeStatusChip(article, chip) {
+  const title = article.querySelector(":scope > .story-title");
+  if (title === null) {
+    return;
+  }
+  const next = title.nextElementSibling;
+  const anchor = next !== null && next.classList.contains("category-chip") ? next : title;
+  anchor.after(chip);
+}
+
+// The status chip of the shown story, from its backlog line's mark (edit.js's showStoryDecision); no chip when mark
+// is null (the line can't be found).
+function showStoryStatus(mark) {
+  const article = document.querySelector("#story .story");
+  if (article === null) {
+    return;
+  }
+  const old = article.querySelector(":scope > .status-chip");
+  if (old !== null) {
+    old.remove();
+  }
+  const chip = mark === null ? null : statusChip(mark);
+  if (chip !== null) {
+    placeStatusChip(article, chip);
+  }
 }
 
 // The 1-based place of a line in its group; a screen reader hears "position N", the eye sees only the digit.
@@ -894,6 +943,10 @@ async function refreshStory() {
   const scroll = window.scrollY;
   const article = renderStoryArticle(data);
   const focusedTitle = old.contains(document.activeElement);
+  const status = old.querySelector(":scope > .status-chip");
+  if (status !== null) {
+    placeStatusChip(article, status);
+  }
   old.replaceWith(article);
   const reload = () => loadStory(target);
   for (const [selector, make] of [[".edit-story-button", storyEditButton], [".add-note-button", storyNoteButton]]) {
