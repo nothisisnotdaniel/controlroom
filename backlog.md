@@ -139,7 +139,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#130](backlog/130-check-the-bottom-tab-bar-on.md) Check the bottom tab bar on the iPhone
 - [ ] [#131](backlog/131-lifetime-totals-in-history.md) Lifetime totals in History
 - [x] [#132](backlog/132-capture-at-the-top-of-the.md) Capture at the top of the Inbox → 359-capture-in-inbox
-- [ ] [#133](backlog/133-search-at-the-top-of-the.md) Search at the top of the Backlogs
+- [x] [#133](backlog/133-search-at-the-top-of-the.md) Search at the top of the Backlogs → 360-search-in-backlogs
 - [ ] [#134](backlog/134-done-button-for-your-tasks-in.md) Done button for your tasks in the story view
 - [ ] [#135](backlog/135-leaner-bottom-bar-with-counts-on.md) Leaner bottom bar with counts on Backlogs
 - [ ] [#136](backlog/136-start-end-and-time-per-agent.md) Start, end and time per agent on job cards (after: factory#22)
