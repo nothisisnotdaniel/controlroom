@@ -16,7 +16,7 @@ public sealed partial class SearchWebAppTests
         int search = html.IndexOf("<a href=\"#search\" data-view=\"search\">", StringComparison.Ordinal);
         int navEnd = html.IndexOf("</nav>", StringComparison.Ordinal);
         Assert.True(tasks >= 0 && search > tasks && search < navEnd);
-        Assert.Equal(8, NavLink().Matches(html[..navEnd]).Count);
+        Assert.Equal(7, NavLink().Matches(html[..navEnd]).Count);
         Assert.Contains("<main id=\"search\" hidden></main>", html, StringComparison.Ordinal);
     }
 
@@ -42,10 +42,10 @@ public sealed partial class SearchWebAppTests
         string search = await Fetch("/search.js");
 
         Assert.Contains(
-            "const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"search\", \"capture\", \"history\", \"doctor\", \"job\", \"story\"];", app,
+            "const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"search\", \"history\", \"doctor\", \"job\", \"story\"];", app,
             StringComparison.Ordinal);
         Assert.Contains(
-            "const ViewTitles = { backlogs: \"Backlogs\", board: \"Jobs\", inbox: \"Inbox\", tasks: \"Tasks\", search: \"Search\",\n  capture: \"Capture\", history: \"History\", doctor: \"Health\" };",
+            "const ViewTitles = { backlogs: \"Backlogs\", board: \"Jobs\", inbox: \"Inbox\", tasks: \"Tasks\", search: \"Search\",\n  history: \"History\", doctor: \"Health\" };",
             app, StringComparison.Ordinal);
         Assert.Contains("if (hash === SearchRoute) {\n    return \"search\";\n  }", app, StringComparison.Ordinal);
         Assert.Contains("if (next === \"search\") {\n    showSearch();\n    return;\n  }", app, StringComparison.Ordinal);

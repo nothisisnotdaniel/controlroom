@@ -41,11 +41,11 @@ public sealed partial class InboxWebAppTests
         string app = await Fetch("/app.js");
         string inbox = await Fetch("/inbox.js");
 
-        Assert.Contains("const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"search\", \"capture\", \"history\", \"doctor\", \"job\", \"story\"];", app, StringComparison.Ordinal);
-        Assert.Contains("const ViewTitles = { backlogs: \"Backlogs\", board: \"Jobs\", inbox: \"Inbox\", tasks: \"Tasks\", search: \"Search\",\n  capture: \"Capture\", history: \"History\", doctor: \"Health\" };", app,
+        Assert.Contains("const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"search\", \"history\", \"doctor\", \"job\", \"story\"];", app, StringComparison.Ordinal);
+        Assert.Contains("const ViewTitles = { backlogs: \"Backlogs\", board: \"Jobs\", inbox: \"Inbox\", tasks: \"Tasks\", search: \"Search\",\n  history: \"History\", doctor: \"Health\" };", app,
             StringComparison.Ordinal);
         Assert.Contains("if (hash === InboxRoute) {\n    return \"inbox\";\n  }", app, StringComparison.Ordinal);
-        Assert.Contains("if (next === \"inbox\") {\n    showInbox();\n    return;\n  }", app, StringComparison.Ordinal);
+        Assert.Contains("if (next === \"inbox\") {\n    showInbox();\n    if (fromCapture) {\n      window.scrollTo(0, 0);\n    }\n    return;\n  }", app, StringComparison.Ordinal);
         Assert.Contains("if (currentView === \"inbox\" && next !== \"inbox\") {\n    rememberInboxScroll();", app,
             StringComparison.Ordinal);
         Assert.Contains("const InboxRoute = \"#inbox\";", inbox, StringComparison.Ordinal);

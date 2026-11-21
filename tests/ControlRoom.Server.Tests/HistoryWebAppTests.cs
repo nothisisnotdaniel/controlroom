@@ -8,14 +8,14 @@ namespace ControlRoom.Server.Tests;
 public sealed partial class HistoryWebAppTests
 {
     [Fact]
-    public async Task IndexHtml_HasTheHistoryLinkAfterCaptureAndTheHistoryView()
+    public async Task IndexHtml_HasTheHistoryLinkAfterSearchAndTheHistoryView()
     {
         string html = await Fetch("/index.html");
 
-        int capture = html.IndexOf("<a href=\"#capture\" data-view=\"capture\">", StringComparison.Ordinal);
+        int search = html.IndexOf("<a href=\"#search\" data-view=\"search\">", StringComparison.Ordinal);
         int history = html.IndexOf("<a href=\"#history\" data-view=\"history\">", StringComparison.Ordinal);
         int navEnd = html.IndexOf("</nav>", StringComparison.Ordinal);
-        Assert.True(capture >= 0 && history > capture && history < navEnd);
+        Assert.True(search >= 0 && history > search && history < navEnd);
         Assert.Contains("<main id=\"history\" hidden></main>", html, StringComparison.Ordinal);
     }
 
@@ -47,9 +47,9 @@ public sealed partial class HistoryWebAppTests
         string js = await Fetch("/history.js");
 
         Assert.Contains(
-            "const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"search\", \"capture\", \"history\", \"doctor\", \"job\", \"story\"];",
+            "const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"search\", \"history\", \"doctor\", \"job\", \"story\"];",
             app, StringComparison.Ordinal);
-        Assert.Contains("  capture: \"Capture\", history: \"History\", doctor: \"Health\" };", app, StringComparison.Ordinal);
+        Assert.Contains("  history: \"History\", doctor: \"Health\" };", app, StringComparison.Ordinal);
         Assert.Contains("  if (hash === HistoryRoute) {\n    return \"history\";\n  }", app, StringComparison.Ordinal);
         Assert.Contains("  if (next === \"history\") {\n    showHistory();\n    return;\n  }", app, StringComparison.Ordinal);
         Assert.Contains("const HistoryRoute = \"#history\";", js, StringComparison.Ordinal);

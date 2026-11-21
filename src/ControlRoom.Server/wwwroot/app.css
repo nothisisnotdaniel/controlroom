@@ -726,7 +726,7 @@ main {
   white-space: pre;
 }
 
-/* Bottom tab bar: the eight sections in one row on every view and width, an icon over a tiny label. */
+/* Bottom tab bar: the seven sections in one row on every view and width, an icon over a tiny label. */
 .tab-bar {
   position: fixed;
   left: 0;
@@ -1853,7 +1853,21 @@ body:has(#edit-notice:not([hidden])) {
   margin: 0 0 12px;
 }
 
-/* Capture: a project select and a large text field for a quick idea; 16px text keeps iOS from zooming. */
+/* Capture: at the top of the Inbox, a project select and a large text field for a quick idea; 16px text keeps iOS
+   from zooming. */
+.capture {
+  margin: 0 0 20px;
+  padding: 4px 14px 12px;
+  background: var(--card);
+  border-radius: 12px;
+}
+
+.capture-title {
+  margin: 8px 0 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
 .capture-form {
   display: flex;
   flex-direction: column;

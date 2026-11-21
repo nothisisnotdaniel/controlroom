@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 namespace ControlRoom.Server.Tests;
 
 /// <summary>Checks the bottom tab bar in <c>index.html</c>, <c>app.css</c>, <c>app.js</c> and <c>token.js</c> as
-/// text (there is no JS test runtime). The layout itself (all eight tabs in one row at 375 px, the last item clear of
+/// text (there is no JS test runtime). The layout itself (all seven tabs in one row at 375 px, the last item clear of
 /// the bar, light and dark mode, the home indicator inset in the installed web app) is checked by hand.</summary>
 public sealed partial class TabBarWebAppTests
 {
@@ -12,12 +12,12 @@ public sealed partial class TabBarWebAppTests
     private static readonly (string Href, string View, string Label)[] Tabs =
     [
         ("#jobs", "board", "Jobs"), ("#backlogs", "backlogs", "Backlogs"), ("#inbox", "inbox", "Inbox"),
-        ("#tasks", "tasks", "Tasks"), ("#search", "search", "Search"), ("#capture", "capture", "Capture"),
+        ("#tasks", "tasks", "Tasks"), ("#search", "search", "Search"),
         ("#history", "history", "History"), ("#doctor", "doctor", "Health"),
     ];
 
     [Fact]
-    public async Task IndexHtml_HasOneTabBarAfterTheLiveNoticeOutsideTheHeaderWithTheEightLinksInOrder()
+    public async Task IndexHtml_HasOneTabBarAfterTheLiveNoticeOutsideTheHeaderWithTheSevenLinksInOrder()
     {
         string html = Normalize(await Fetch("/index.html"));
 
@@ -131,7 +131,7 @@ public sealed partial class TabBarWebAppTests
     }
 
     [Fact]
-    public async Task AppCss_AllEightTabsFitInOneRowWithTinyLabelsUnderTheIcons()
+    public async Task AppCss_AllSevenTabsFitInOneRowWithTinyLabelsUnderTheIcons()
     {
         string css = Normalize(await Fetch("/app.css"));
 

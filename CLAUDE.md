@@ -266,10 +266,10 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     job (ties by id descending) with `ci.status` `success|failure|timeout|skipped`, `url` only a plain
     `https://github.com/…` URL up to 500 chars, `sha` 7–40 lowercase hex sent as 7 chars, `time` the job's `Updated`;
     `ahead` from `ProjectGit.AheadOfMain` or `null`),
-    `wwwroot/` (`index.html` (the header holds only `h1#top-title`; the eight sections are a bottom tab bar
+    `wwwroot/` (`index.html` (the header holds only `h1#top-title`; the seven sections are a bottom tab bar
     `nav.nav.tab-bar` after `p.live-notice`, each link an inline `svg.tab-icon` (`aria-hidden`, paths only) over a
     `span.tab-label`, the Inbox and Tasks counts as badges on the icon), `app.css` (the bar is fixed to the bottom on
-    every width, one row of eight, `--tab-bar-height` plus the home indicator inset reserved as body bottom padding,
+    every width, one row of seven, `--tab-bar-height` plus the home indicator inset reserved as body bottom padding,
     the edit notice above it), `token.js` (stored token under
     `controlroom-token`, `authFetch` for every `/api/` call, the token view, which hides the header and the tab bar), `app.js` (routing (`showView` shows the tab bar on every view but the token view and sets `aria-current` on one tab, `job` on Jobs and `story` on Backlogs), backlogs (each readable project's `div.plan` between the head and the groups: `Next:` item
     with a `Spike` badge and `span.next-stop` `Auto stops before #N` when `next.belowStop`, `Nothing ready to run.` or the fixed stopped text, and a `Waiting (k)` group with `Waits for`
@@ -312,7 +312,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     confirm), Rework with a note box (`maxlength` 1000) and Send (off while blank); with a pending request the fixed
     `Waiting for the next /factory session for <project>: <Approve|Rework> sent <local time>` text, the note as text and
     Cancel request; fixed texts per error code in `ActErrors`; `jobDecisionBusy` (a send in flight, or the note box has
-    text or focus) keeps a live refresh from rebuilding it), `inbox.js` (the `#inbox` view: every `[?]` item with project,
+    text or focus) keeps a live refresh from rebuilding it), `inbox.js` (the `#inbox` view, built once as `section#inbox-capture` (the capture form, #132) above
+    `div#inbox-list`, only the list ever replaced; every show also runs `showCapture`: every `[?]` item with project,
     `#N Title`, `Proposed by <job>` link, Approve and Drop through `sendChange` (never rebuilt while `changeBusy`), fixed
     texts; the nav count, hidden at 0 or unknown, fetched once per page load, after a token is saved and after every
     committed change), `tasks.js` (the `#tasks` view: `Ready now` and `Waiting` sections of `[h]` items with project,
@@ -322,10 +323,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     read-only: the form (field `Search backlogs`, mark, project and category selects, the project list from the first answer) is
     built once and kept, so Back finds it as it was; one `/api/search` per change through `authFetch`, older answers
     dropped by a request counter, nothing sent with an empty field and no filter; only the results are replaced; fixed
-    texts in `SearchTexts`), `capture.js` (the `#capture` view: a `Project` select of readable projects from
+    texts in `SearchTexts`), `capture.js` (the capture form at the top of the Inbox, no tab of its own; `#capture` routes to the
+    Inbox, replaced by `#inbox` with `history.replaceState` and scrolled to the top: an `h2` `Capture`, a `Project` select of readable projects from
     `/api/backlogs` on every show (last used one in `localStorage` `controlroom-capture-project`), the `Idea` textarea
     (`maxlength` 2000) and Save (off while blank or `changeBusy`); Save fetches the version, sends `action:"capture"`
-    through `sendChange`, then clears the text, shows the fixed saved text and refreshes the inbox count; fixed texts in
+    through `sendChange`, then clears the text, shows the fixed saved text and refreshes the inbox (`loadInbox`, list and count); fixed texts in
     `CaptureTexts`), `history.js` (the `#history` view, read-only: `Last 7 days` and `Last 30 days` tables for projects
     and modes (`formatTokens`, `+ k unknown`), a stacked bar chart per day built with `createElementNS` (`role="img"`,
     text `aria-label`, legend with each mode's 30-day total), then the job list (title links `#job/<id>`, outcome badge,
