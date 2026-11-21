@@ -142,3 +142,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#133](backlog/133-search-at-the-top-of-the.md) Search at the top of the Backlogs
 - [ ] [#134](backlog/134-done-button-for-your-tasks-in.md) Done button for your tasks in the story view
 - [ ] [#135](backlog/135-leaner-bottom-bar-with-counts-on.md) Leaner bottom bar with counts on Backlogs
+- [ ] [#136](backlog/136-start-end-and-time-per-agent.md) Start, end and time per agent on job cards (after: factory#22)
