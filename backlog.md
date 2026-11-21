@@ -144,4 +144,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#135](backlog/135-leaner-bottom-bar-with-counts-on.md) Leaner bottom bar with counts on Backlogs → 362-leaner-bottom-bar
 - [ ] [#136](backlog/136-start-end-and-time-per-agent.md) Start, end and time per agent on job cards (after: factory#22)
 - [x] [#137](backlog/137-updater-replaces-itself-with-each-release.md) Updater replaces itself with each release → 369-updater-self-update
-- [?] [#138](backlog/138-number-of-active-and-blocked-jobs.md) Number of active and blocked jobs as a little chip on the
+- [ ] [#138](backlog/138-number-of-active-and-blocked-jobs.md) Number of active and blocked jobs as a little chip on the
