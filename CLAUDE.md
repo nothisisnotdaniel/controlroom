@@ -266,12 +266,12 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     job (ties by id descending) with `ci.status` `success|failure|timeout|skipped`, `url` only a plain
     `https://github.com/…` URL up to 500 chars, `sha` 7–40 lowercase hex sent as 7 chars, `time` the job's `Updated`;
     `ahead` from `ProjectGit.AheadOfMain` or `null`),
-    `wwwroot/` (`index.html` (the header holds only `h1#top-title`; the seven sections are a bottom tab bar
+    `wwwroot/` (`index.html` (the header holds only `h1#top-title`; the six sections are a bottom tab bar (no Search tab: search is at the top of Backlogs, #133)
     `nav.nav.tab-bar` after `p.live-notice`, each link an inline `svg.tab-icon` (`aria-hidden`, paths only) over a
     `span.tab-label`, the Inbox and Tasks counts as badges on the icon), `app.css` (the bar is fixed to the bottom on
-    every width, one row of seven, `--tab-bar-height` plus the home indicator inset reserved as body bottom padding,
+    every width, one row of six, `--tab-bar-height` plus the home indicator inset reserved as body bottom padding,
     the edit notice above it), `token.js` (stored token under
-    `controlroom-token`, `authFetch` for every `/api/` call, the token view, which hides the header and the tab bar), `app.js` (routing (`showView` shows the tab bar on every view but the token view and sets `aria-current` on one tab, `job` on Jobs and `story` on Backlogs), backlogs (each readable project's `div.plan` between the head and the groups: `Next:` item
+    `controlroom-token`, `authFetch` for every `/api/` call, the token view, which hides the header and the tab bar), `app.js` (routing (`showView` shows the tab bar on every view but the token view and sets `aria-current` on one tab, `job` on Jobs and `story` on Backlogs; `#search` routes to Backlogs, replaced by `#backlogs` with `history.replaceState`, scrolled to the top with the search field focused; every Backlogs show calls `showSearch`; `show`, the picker and a new section never move `#backlog-search`, the first child of `#backlogs`), backlogs (each readable project's `div.plan` between the head and the groups: `Next:` item
     with a `Spike` badge and `span.next-stop` `Auto stops before #N` when `next.belowStop`, `Nothing ready to run.` or the fixed stopped text, and a `Waiting (k)` group with `Waits for`
     links, a missing one as text plus `No such item`; the plan's signature (with `stopLine`) in `data-plan`, and a live refresh also
     replaces a section whose signature changed; a `Project` select (`div.backlog-picker`, `select#backlog-project`, readable
@@ -319,9 +319,10 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     committed change), `tasks.js` (the `#tasks` view: `Ready now` and `Waiting` sections of `[h]` items with project,
     `#N Title` story link, `rest` and `Waits for` links (`Project#N` or `#N`), a Done button on Ready items only
     (confirm, then `action:"done"` through `sendChange`, never rebuilt while `changeBusy`), fixed texts in `TasksTexts`;
-    the nav count of Ready items, hidden at 0 or unknown, fetched as the inbox count), `search.js` (the `#search` view,
+    the nav count of Ready items, hidden at 0 or unknown, fetched as the inbox count), `search.js` (search at the top of Backlogs (#133),
     read-only: the form (field `Search backlogs`, mark, project and category selects, the project list from the first answer) is
-    built once and kept, so Back finds it as it was; one `/api/search` per change through `authFetch`, older answers
+    built once into `div#backlog-search` and kept, so Back finds it as it was; while the field or a filter is set `#backlogs` has
+    the class `searching` and CSS hides every child but the box (results in place of the backlog), cleared it shows the backlog again; one `/api/search` per change through `authFetch`, older answers
     dropped by a request counter, nothing sent with an empty field and no filter; only the results are replaced; fixed
     texts in `SearchTexts`), `capture.js` (the capture form at the top of the Inbox, no tab of its own; `#capture` routes to the
     Inbox, replaced by `#inbox` with `history.replaceState` and scrolled to the top: an `h2` `Capture`, a `Project` select of readable projects from

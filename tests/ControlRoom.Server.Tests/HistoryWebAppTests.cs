@@ -8,11 +8,11 @@ namespace ControlRoom.Server.Tests;
 public sealed partial class HistoryWebAppTests
 {
     [Fact]
-    public async Task IndexHtml_HasTheHistoryLinkAfterSearchAndTheHistoryView()
+    public async Task IndexHtml_HasTheHistoryLinkAfterTasksAndTheHistoryView()
     {
         string html = await Fetch("/index.html");
 
-        int search = html.IndexOf("<a href=\"#search\" data-view=\"search\">", StringComparison.Ordinal);
+        int search = html.IndexOf("<a href=\"#tasks\" data-view=\"tasks\">", StringComparison.Ordinal);
         int history = html.IndexOf("<a href=\"#history\" data-view=\"history\">", StringComparison.Ordinal);
         int navEnd = html.IndexOf("</nav>", StringComparison.Ordinal);
         Assert.True(search >= 0 && history > search && history < navEnd);
@@ -47,7 +47,7 @@ public sealed partial class HistoryWebAppTests
         string js = await Fetch("/history.js");
 
         Assert.Contains(
-            "const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"search\", \"history\", \"doctor\", \"job\", \"story\"];",
+            "const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"history\", \"doctor\", \"job\", \"story\"];",
             app, StringComparison.Ordinal);
         Assert.Contains("  history: \"History\", doctor: \"Health\" };", app, StringComparison.Ordinal);
         Assert.Contains("  if (hash === HistoryRoute) {\n    return \"history\";\n  }", app, StringComparison.Ordinal);

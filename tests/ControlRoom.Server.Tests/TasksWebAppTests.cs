@@ -42,10 +42,10 @@ public sealed partial class TasksWebAppTests
         string app = await Fetch("/app.js");
         string tasks = await Fetch("/tasks.js");
 
-        Assert.Contains("const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"search\", \"history\", \"doctor\", \"job\", \"story\"];", app,
+        Assert.Contains("const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"history\", \"doctor\", \"job\", \"story\"];", app,
             StringComparison.Ordinal);
         Assert.Contains(
-            "const ViewTitles = { backlogs: \"Backlogs\", board: \"Jobs\", inbox: \"Inbox\", tasks: \"Tasks\", search: \"Search\",\n  history: \"History\", doctor: \"Health\" };", app,
+            "const ViewTitles = { backlogs: \"Backlogs\", board: \"Jobs\", inbox: \"Inbox\", tasks: \"Tasks\",\n  history: \"History\", doctor: \"Health\" };", app,
             StringComparison.Ordinal);
         Assert.Contains("if (hash === TasksRoute) {\n    return \"tasks\";\n  }", app, StringComparison.Ordinal);
         Assert.Contains("if (next === \"tasks\") {\n    showTasks();\n    return;\n  }", app, StringComparison.Ordinal);

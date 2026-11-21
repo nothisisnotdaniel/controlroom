@@ -1,9 +1,12 @@
 "use strict";
 
-// Search: finds any backlog item across all projects through /api/search by number (#12, Times#12), by words in
-// the title or rest, or by words in its story (searched on the server; story text never comes to the page), with a
-// mark, a project and a category filter. One request per field or filter change, no timer; an answer for an older request is
-// dropped. The form is built once and kept, so Back from a story finds the same text, filters, results and scroll.
+// Search at the top of the Backlogs view (#133): finds any backlog item across all projects through /api/search by
+// number (#12, Times#12), by words in the title or rest, or by words in its story (searched on the server; story
+// text never comes to the page), with a mark, a project and a category filter. One request per field or filter
+// change, no timer; an answer for an older request is dropped. The form is built once into #backlog-search and
+// kept, so Back from a story finds the same text, filters and results. While a query (field text or a filter) is
+// entered, #backlogs gets the class "searching" and only the search box shows, so the results stand in place of
+// the backlog; with an empty field and no filter the backlog shows again as it was.
 // Loaded after tasks.js and before live.js and app.js; their functions (element, titleText, storyHash, openStory,
 // asText, asNumber, asList, categoryChip, Categories) are only called at run time. Read-only: no edit buttons. Only fixed texts and file text
 // through textContent are shown, never server error text.
@@ -40,17 +43,28 @@ const SearchMarkLabels = { open: "Open", approval: "Proposed", task: "Task", don
 
 const SearchMatches = ["number", "title", "story", "filter"];
 
+// The old Search tab: app.js opens the Backlogs with the field focused, so bookmarks keep working.
 const SearchRoute = "#search";
 const SearchApi = "/api/search";
+const SearchingClass = "searching";
 
 let searchRequest = 0;
-let searchScroll = 0;
 // Set by live.js when a backlog or story changed while the view was hidden: the next show searches again.
 let searchStale = false;
 let searchProjectsFilled = false;
 
+// The search box lives in the Backlogs view, so it is shown while Backlogs is.
 function searchShown() {
-  return !document.getElementById("search").hidden;
+  return !document.getElementById("backlogs").hidden;
+}
+
+function backlogSearchBox() {
+  return document.getElementById("backlog-search");
+}
+
+// Results in place of the backlog while a query is entered; the backlog again when there is none.
+function showSearching(searching) {
+  document.getElementById("backlogs").classList.toggle(SearchingClass, searching);
 }
 
 function searchField() {
@@ -83,7 +97,7 @@ function searchOption(value, text) {
 
 // The form and the result area, built once on the first show; the field, filters and results stay in the page.
 function buildSearchView() {
-  const main = document.getElementById("search");
+  const box = backlogSearchBox();
   const form = element("form", "search-form");
   form.setAttribute("role", "search");
   form.noValidate = true;
@@ -97,6 +111,7 @@ function buildSearchView() {
   field.spellcheck = false;
   field.setAttribute("enterkeyhint", "search");
   field.maxLength = 200;
+  field.placeholder = SearchTexts.hint;
   field.addEventListener("input", () => runSearch(true));
   form.appendChild(searchLabel(SearchTexts.label, "search-field"));
   form.appendChild(field);
@@ -133,7 +148,7 @@ function buildSearchView() {
   status.setAttribute("role", "status");
   const results = element("div", "search-results");
   results.id = "search-results";
-  main.replaceChildren(form, status, results);
+  box.replaceChildren(form, status, results);
 }
 
 function showSearchStatus(text, className) {
@@ -221,9 +236,11 @@ async function runSearch(progress) {
   const category = searchCategory().value;
   if (text === "" && mark === "" && project === "" && category === "") {
     showSearchStatus("");
-    showSearchResults([element("p", "empty", SearchTexts.hint)]);
+    showSearchResults([]);
+    showSearching(false);
     return true;
   }
+  showSearching(true);
   if (progress) {
     showSearchStatus(SearchTexts.searching);
   }
@@ -314,7 +331,7 @@ function renderSearchItem(item) {
   return row;
 }
 
-// Called by app.js when the search view is shown: built on the first show, otherwise kept as it was (searched again
+// Called by app.js whenever Backlogs is shown: built on the first show, otherwise kept as it was (searched again
 // first when a backlog or story changed while it was hidden).
 function showSearch() {
   if (searchField() === null) {
@@ -322,19 +339,18 @@ function showSearch() {
     runSearch(true);
     return;
   }
-  window.scrollTo(0, searchScroll);
   if (searchStale) {
     searchStale = false;
     refreshSearch();
   }
 }
 
-// Called by app.js when the search view is left, so Back from a story returns to the same place.
-function rememberSearchScroll() {
-  searchScroll = window.scrollY;
+// Called by app.js for the old #search link: the field gets focus, the page stays at the top.
+function focusSearch() {
+  searchField().focus({ preventScroll: true });
 }
 
-// Live refresh (live.js): a changed backlog or story searches again while the view is shown, replacing only the
+// Live refresh (live.js): a changed backlog or story searches again while Backlogs is shown, replacing only the
 // results; while hidden, the next show does. Returns false when it should be tried again.
 async function refreshSearch() {
   if (searchField() === null) {

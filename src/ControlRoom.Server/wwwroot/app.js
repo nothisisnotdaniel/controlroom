@@ -548,9 +548,15 @@ function renderProject(project) {
   return section;
 }
 
+// Replaces the backlog under the search box; the box (#133) stays the first child, so its field keeps text and focus.
 function show(nodes) {
-  const main = document.getElementById("backlogs");
-  main.replaceChildren(...nodes);
+  const box = backlogSearchBox();
+  for (const child of [...document.getElementById("backlogs").children]) {
+    if (child !== box) {
+      child.remove();
+    }
+  }
+  box.after(...nodes);
 }
 
 // The stored choice; a failed read counts as nothing stored.
@@ -647,7 +653,7 @@ function updateBacklogPicker(main) {
     return;
   }
   if (picker === null) {
-    main.prepend(renderBacklogPicker());
+    backlogSearchBox().after(renderBacklogPicker());
     return;
   }
   const select = picker.querySelector("select");
@@ -747,7 +753,7 @@ async function refreshBacklogs(names) {
     } else if (picker !== null) {
       picker.after(next);
     } else {
-      main.prepend(next);
+      backlogSearchBox().after(next);
     }
     previous = next;
   }
@@ -1015,9 +1021,10 @@ async function refreshStory() {
   return true;
 }
 
-const Views = ["backlogs", "board", "inbox", "tasks", "search", "history", "doctor", "job", "story"];
-const ViewTitles = { backlogs: "Backlogs", board: "Jobs", inbox: "Inbox", tasks: "Tasks", search: "Search",
+const Views = ["backlogs", "board", "inbox", "tasks", "history", "doctor", "job", "story"];
+const ViewTitles = { backlogs: "Backlogs", board: "Jobs", inbox: "Inbox", tasks: "Tasks",
   history: "History", doctor: "Health" };
+const BacklogsRoute = "#backlogs";
 // A page without its own tab marks the tab it belongs to: a job is on the Jobs board, a story in a backlog.
 const TabForView = { job: "board", story: "backlogs" };
 let currentView = null;
@@ -1035,8 +1042,9 @@ function viewFor(hash) {
   if (hash === TasksRoute) {
     return "tasks";
   }
+  // The old Search tab: the search field is now at the top of the Backlogs, so bookmarks open the Backlogs.
   if (hash === SearchRoute) {
-    return "search";
+    return "backlogs";
   }
   // The old Capture tab: its form is now at the top of the Inbox, so bookmarks open the Inbox.
   if (hash === CaptureRoute) {
@@ -1083,6 +1091,11 @@ function route() {
   if (fromCapture) {
     history.replaceState(null, "", InboxRoute);
   }
+  // #search becomes #backlogs in place, with the search field at the top focused.
+  const fromSearch = location.hash === SearchRoute;
+  if (fromSearch) {
+    history.replaceState(null, "", BacklogsRoute);
+  }
   // Keep the scroll position of the list being left, so Back returns to it.
   if (currentView === "backlogs" && next !== "backlogs") {
     listScroll = window.scrollY;
@@ -1095,9 +1108,6 @@ function route() {
   }
   if (currentView === "tasks" && next !== "tasks") {
     rememberTasksScroll();
-  }
-  if (currentView === "search" && next !== "search") {
-    rememberSearchScroll();
   }
   currentView = next;
   routeEditNotice();
@@ -1139,10 +1149,6 @@ function route() {
     showTasks();
     return;
   }
-  if (next === "search") {
-    showSearch();
-    return;
-  }
   if (next === "history") {
     showHistory();
     return;
@@ -1152,6 +1158,12 @@ function route() {
     return;
   }
   showStatus();
+  showSearch();
+  if (fromSearch) {
+    window.scrollTo(0, 0);
+    focusSearch();
+    return;
+  }
   window.scrollTo(0, listScroll);
 }
 

@@ -119,7 +119,7 @@ public sealed partial class StatusWebAppTests
         int unreadable = app.IndexOf("section.appendChild(element(\"p\", \"error\", Texts.unreadable));", StringComparison.Ordinal);
         int line = app.IndexOf("section.appendChild(statusLine(name));", StringComparison.Ordinal);
         Assert.True(unreadable >= 0 && line > unreadable);
-        Assert.Contains("  showStatus();\n  window.scrollTo(0, listScroll);\n}", app, StringComparison.Ordinal);
+        Assert.Contains("  showStatus();\n  showSearch();\n  if (fromSearch) {\n    window.scrollTo(0, 0);\n    focusSearch();\n    return;\n  }\n  window.scrollTo(0, listScroll);\n}", app, StringComparison.Ordinal);
     }
 
     [Fact]
