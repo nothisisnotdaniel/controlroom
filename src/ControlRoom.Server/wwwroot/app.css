@@ -1029,11 +1029,14 @@ a.card:focus-visible {
   background: var(--human-bg);
   color: var(--human);
   border: 1px solid var(--human);
-  margin-right: 6px;
 }
 
 .card-request {
   margin: 0 0 8px;
+}
+
+.chip-human.card-request {
+  margin-right: 6px;
 }
 
 /* Job page */

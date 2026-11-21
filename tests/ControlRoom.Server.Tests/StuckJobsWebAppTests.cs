@@ -78,6 +78,9 @@ public sealed class StuckJobsWebAppTests
         Assert.Contains(".stuck > h2 {\n  color: var(--human);\n}", css, StringComparison.Ordinal);
         Assert.Contains(".chip-human {\n  background: var(--human-bg);\n  color: var(--human);", css,
             StringComparison.Ordinal);
+        int request = css.IndexOf(".card-request {\n  margin: 0 0 8px;\n}", StringComparison.Ordinal);
+        int gap = css.IndexOf(".chip-human.card-request {\n  margin-right: 6px;\n}", StringComparison.Ordinal);
+        Assert.True(request >= 0 && gap > request);
         Assert.DoesNotContain(".needs-you", css, StringComparison.Ordinal);
         Assert.DoesNotContain(".card-rest", css, StringComparison.Ordinal);
     }
