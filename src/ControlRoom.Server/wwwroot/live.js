@@ -2,11 +2,11 @@
 
 // Live updates: one timer asks /api/changes (metadata fingerprints) every PollInterval while the page is visible,
 // and only what changed is fetched again: the board (pollBoard in board.js), the backlog sections of changed
-// projects, the open story (app.js), the counts on the Backlogs tab (counts.js), the current search (search.js), the history (history.js), the health view (doctor.js) and the project status lines
-// (status.js) while shown. A failed check
-// shows one fixed connection notice. Loaded after status.js and before app.js; the functions of the other scripts
-// are only called at run time. Fingerprints are compared, never shown; only fixed texts are rendered, with
-// textContent.
+// projects, the open story (app.js), the counts on the Backlogs tab (counts.js), the current search (search.js),
+// the history (history.js), the health view (doctor.js) and the project status lines (status.js) while shown. A
+// failed check shows one fixed connection notice. Loaded after status.js and before app.js; the functions of the
+// other scripts are only called at run time. Fingerprints are compared, never shown; only fixed texts are rendered,
+// with textContent.
 
 const LiveTexts = {
   lost: "Connection lost. Reconnecting…",
