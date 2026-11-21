@@ -266,8 +266,12 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     job (ties by id descending) with `ci.status` `success|failure|timeout|skipped`, `url` only a plain
     `https://github.com/…` URL up to 500 chars, `sha` 7–40 lowercase hex sent as 7 chars, `time` the job's `Updated`;
     `ahead` from `ProjectGit.AheadOfMain` or `null`),
-    `wwwroot/` (`index.html`, `app.css`, `token.js` (stored token under
-    `controlroom-token`, `authFetch` for every `/api/` call, the token view), `app.js` (routing, backlogs (each readable project's `div.plan` between the head and the groups: `Next:` item
+    `wwwroot/` (`index.html` (the header holds only `h1#top-title`; the eight sections are a bottom tab bar
+    `nav.nav.tab-bar` after `p.live-notice`, each link an inline `svg.tab-icon` (`aria-hidden`, paths only) over a
+    `span.tab-label`, the Inbox and Tasks counts as badges on the icon), `app.css` (the bar is fixed to the bottom on
+    every width, one row of eight, `--tab-bar-height` plus the home indicator inset reserved as body bottom padding,
+    the edit notice above it), `token.js` (stored token under
+    `controlroom-token`, `authFetch` for every `/api/` call, the token view, which hides the header and the tab bar), `app.js` (routing (`showView` shows the tab bar on every view but the token view and sets `aria-current` on one tab, `job` on Jobs and `story` on Backlogs), backlogs (each readable project's `div.plan` between the head and the groups: `Next:` item
     with a `Spike` badge and `span.next-stop` `Auto stops before #N` when `next.belowStop`, `Nothing ready to run.` or the fixed stopped text, and a `Waiting (k)` group with `Waits for`
     links, a missing one as text plus `No such item`; the plan's signature (with `stopLine`) in `data-plan`, and a live refresh also
     replaces a section whose signature changed; a `Project` select (`div.backlog-picker`, `select#backlog-project`, readable

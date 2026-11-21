@@ -1018,6 +1018,8 @@ async function refreshStory() {
 const Views = ["backlogs", "board", "inbox", "tasks", "search", "capture", "history", "doctor", "job", "story"];
 const ViewTitles = { backlogs: "Backlogs", board: "Jobs", inbox: "Inbox", tasks: "Tasks", search: "Search",
   capture: "Capture", history: "History", doctor: "Health" };
+// A page without its own tab marks the tab it belongs to: a job is on the Jobs board, a story in a backlog.
+const TabForView = { job: "board", story: "backlogs" };
 let currentView = null;
 
 function viewFor(hash) {
@@ -1054,18 +1056,21 @@ function showView(name) {
   for (const view of Views) {
     document.getElementById(view).hidden = blocked || view !== name;
   }
-  // The wide board view widens the header too, so the nav lines up with the board's left edge.
+  // The wide board view widens the header too, so the title lines up with the board's left edge.
   document.body.classList.toggle("view-board", !blocked && name === "board");
   const top = document.getElementById("top");
   top.hidden = blocked || !(name in ViewTitles);
   if (!top.hidden) {
     document.getElementById("top-title").textContent = ViewTitles[name];
-    for (const link of document.querySelectorAll(".nav a")) {
-      if (link.dataset.view === name) {
-        link.setAttribute("aria-current", "page");
-      } else {
-        link.removeAttribute("aria-current");
-      }
+  }
+  // The bottom tab bar is on every view, the job and story pages too; only the token view hides it.
+  document.querySelector(".tab-bar").hidden = blocked;
+  const current = TabForView[name] || name;
+  for (const link of document.querySelectorAll(".tab-bar a")) {
+    if (link.dataset.view === current) {
+      link.setAttribute("aria-current", "page");
+    } else {
+      link.removeAttribute("aria-current");
     }
   }
 }

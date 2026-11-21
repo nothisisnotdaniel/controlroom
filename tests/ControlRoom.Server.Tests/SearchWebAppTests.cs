@@ -13,7 +13,7 @@ public sealed partial class SearchWebAppTests
         string html = await Fetch("/index.html");
 
         int tasks = html.IndexOf("<a href=\"#tasks\" data-view=\"tasks\">", StringComparison.Ordinal);
-        int search = html.IndexOf("<a href=\"#search\" data-view=\"search\">Search</a>", StringComparison.Ordinal);
+        int search = html.IndexOf("<a href=\"#search\" data-view=\"search\">", StringComparison.Ordinal);
         int navEnd = html.IndexOf("</nav>", StringComparison.Ordinal);
         Assert.True(tasks >= 0 && search > tasks && search < navEnd);
         Assert.Equal(8, NavLink().Matches(html[..navEnd]).Count);
@@ -209,16 +209,16 @@ public sealed partial class SearchWebAppTests
     }
 
     [Fact]
-    public async Task AppCss_StylesTheSearchView_With16PxFieldsAndSixNavLinksInTwoRows()
+    public async Task AppCss_StylesTheSearchView_With16PxFieldsAndEightTabsInOneRow()
     {
         string css = await Fetch("/app.css");
 
         Assert.Contains(".search-field,\n.search-select {", css, StringComparison.Ordinal);
         Assert.Contains("  font-size: 16px;\n}", css, StringComparison.Ordinal);
         Assert.Contains(".search-item {\n  overflow-wrap: anywhere;\n}", css, StringComparison.Ordinal);
-        Assert.Contains("/* Eight nav links fit in two rows of four at iPhone width (375 px). */", css, StringComparison.Ordinal);
-        Assert.Contains("    flex-wrap: wrap;\n", css, StringComparison.Ordinal);
-        Assert.Contains("    flex: 1 1 calc((100% - 12px) / 4);\n", css, StringComparison.Ordinal);
+        Assert.DoesNotContain("two rows of four", css, StringComparison.Ordinal);
+        Assert.Contains("  flex-wrap: nowrap;\n", css, StringComparison.Ordinal);
+        Assert.Contains("  flex: 1 1 0;\n", css, StringComparison.Ordinal);
     }
 
     [Fact]

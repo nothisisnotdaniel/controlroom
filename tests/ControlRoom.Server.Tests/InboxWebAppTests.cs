@@ -13,9 +13,9 @@ public sealed partial class InboxWebAppTests
         string html = await Fetch("/index.html");
 
         Assert.Contains(
-            "<a href=\"#inbox\" data-view=\"inbox\">Inbox<span class=\"nav-count\" id=\"inbox-count\" hidden></span></a>",
+            "<span class=\"tab-label\">Inbox</span>\n      <span class=\"nav-count\" id=\"inbox-count\" hidden></span>\n    </a>",
             html, StringComparison.Ordinal);
-        int nav = html.IndexOf("<nav class=\"nav\"", StringComparison.Ordinal);
+        int nav = html.IndexOf("<nav class=\"nav tab-bar\"", StringComparison.Ordinal);
         int link = html.IndexOf("<a href=\"#inbox\" data-view=\"inbox\">", StringComparison.Ordinal);
         Assert.True(nav >= 0 && link > nav && link < html.IndexOf("</nav>", StringComparison.Ordinal));
         Assert.Contains("<main id=\"inbox\" hidden></main>", html, StringComparison.Ordinal);
@@ -222,13 +222,13 @@ public sealed partial class InboxWebAppTests
     }
 
     [Fact]
-    public async Task AppCss_StylesTheCountBadgeAndLetsTheNavWrap()
+    public async Task AppCss_StylesTheCountBadgeOnTheTabIcon()
     {
         string css = await Fetch("/app.css");
 
-        Assert.Contains(".nav {\n  display: flex;\n  flex-wrap: wrap;", css, StringComparison.Ordinal);
-        Assert.Contains(".nav-count {", css, StringComparison.Ordinal);
-        Assert.Contains(".nav a[aria-current=\"page\"] .nav-count {", css, StringComparison.Ordinal);
+        Assert.Contains(".tab-bar {\n  position: fixed;", css, StringComparison.Ordinal);
+        Assert.Contains(".nav-count {\n  position: absolute;", css, StringComparison.Ordinal);
+        Assert.Contains(".tab-bar a[aria-current=\"page\"] .nav-count {", css, StringComparison.Ordinal);
         Assert.Contains(".inbox-item {", css, StringComparison.Ordinal);
     }
 
