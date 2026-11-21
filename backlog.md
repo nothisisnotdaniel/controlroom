@@ -27,7 +27,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#101](backlog/101-set-up-the-release-signing-certificate.md) Set up the release signing certificate (after: #100)
 - [x] [#99](backlog/099-updater-checks-soon-after-install-and.md) Updater checks soon after install and retries after a skipped run → 337-updater-early-checks
 - [?] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone
-- [?] [#13](backlog/013-releases-overview.md) Releases overview
+- [ ] [#13](backlog/013-releases-overview.md) Releases overview
 - [x] [#15](backlog/015-job-detail.md) Job detail (after: #2) → 248-job-detail-gaps
 - [x] [#16](backlog/016-live-updates.md) Live updates → 249-live-board-updates
 - [x] [#17](backlog/017-approval-inbox.md) Approval inbox (after: #4) → 251-approval-inbox
