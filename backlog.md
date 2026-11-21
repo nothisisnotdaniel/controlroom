@@ -26,6 +26,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#102](backlog/102-fix-the-release-sign-step-on.md) Fix the release Sign step on the macOS runner → 333-fix-release-signing
 - [x] [#101](backlog/101-set-up-the-release-signing-certificate.md) Set up the release signing certificate (after: #100)
 - [x] [#99](backlog/099-updater-checks-soon-after-install-and.md) Updater checks soon after install and retries after a skipped run → 337-updater-early-checks
+- [ ] [#138](backlog/138-number-of-active-and-blocked-jobs.md) Number of active and blocked jobs as a little chip on the
 - [ ] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone
 - [ ] [#13](backlog/013-releases-overview.md) Releases overview
 - [x] [#15](backlog/015-job-detail.md) Job detail (after: #2) → 248-job-detail-gaps
@@ -144,4 +145,3 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#135](backlog/135-leaner-bottom-bar-with-counts-on.md) Leaner bottom bar with counts on Backlogs → 362-leaner-bottom-bar
 - [ ] [#136](backlog/136-start-end-and-time-per-agent.md) Start, end and time per agent on job cards (after: factory#22)
 - [x] [#137](backlog/137-updater-replaces-itself-with-each-release.md) Updater replaces itself with each release → 369-updater-self-update
-- [ ] [#138](backlog/138-number-of-active-and-blocked-jobs.md) Number of active and blocked jobs as a little chip on the
