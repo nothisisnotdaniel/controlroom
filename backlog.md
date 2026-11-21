@@ -151,3 +151,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#141](backlog/141-loading-text-for-the-releases-block.md) Loading text for the releases block
 - [h] [#143](backlog/143-check-the-releases-block-on-the.md) Check the releases block on the iPhone
 - [?] [#144](backlog/144-settings-file-cap-fits-every-valid.md) Settings file cap fits every valid interval
+- [?] [#145](backlog/145-story-reads-on-linux-with-glibc.md) Story reads on Linux with glibc older than 2.33
