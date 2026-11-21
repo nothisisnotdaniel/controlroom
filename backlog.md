@@ -124,3 +124,5 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#114](backlog/114-browser-check-of-the-backlogs-project.md) Browser check of the Backlogs project picker at phone width
 - [?] [#115](backlog/115-scroll-to-the-top-when-the.md) Scroll to the top when the Backlogs project changes
 - [?] [#116](backlog/116-correct-the-project-picker-when-the.md) Correct the project picker when the chosen project disappears while focused
+- [?] [#117](backlog/117-drop-the-dead-group-h3-selector.md) Drop the dead .group h3 selector
+- [?] [#118](backlog/118-browser-check-of-collapsible-backlog-groups.md) Browser check of collapsible backlog groups at phone width
