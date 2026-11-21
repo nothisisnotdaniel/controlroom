@@ -314,6 +314,7 @@ main {
 
 /* A line's place in its group: plain, lighter and right-aligned, so it never reads as the bold "#N". */
 .position {
+  position: relative;
   display: inline-block;
   min-width: 1.6em;
   margin-right: 6px;
