@@ -40,12 +40,12 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#23](backlog/023-costs-and-history.md) Costs and history (after: #2) → 264-costs-and-history
 - [x] [#24](backlog/024-doctor-view.md) Doctor view → 266-doctor-view
 - [x] [#25](backlog/025-ci-and-git-status.md) CI and git status → 269-ci-and-git-status
-- [ ] [#26](backlog/026-usage-view-spike.md) Usage view spike
+- [ ] [#127](backlog/127-bottom-tab-bar-with-icons.md) Bottom tab bar with icons
 - [?] [#28](backlog/028-close-the-symlink-race-when-reading.md) Close the symlink race when reading story files
 - [?] [#29](backlog/029-drop-the-hand-written-equality-on.md) Drop the hand-written equality on BacklogEntry
 - [?] [#30](backlog/030-cap-the-bytes-read-per-board.md) Cap the bytes read per board and job response
 - [?] [#31](backlog/031-show-pending-reviewer-chips-with-a.md) Show pending reviewer chips with a text marker
-- [ ] [#32](backlog/032-show-the-live-status-line-on.md) Show the live status line on the job page
+- [ ] [#26](backlog/026-usage-view-spike.md) Usage view spike
 - [?] [#33](backlog/033-refuse-a-token-folder-others-can.md) Refuse a token folder others can write to
 - [?] [#34](backlog/034-check-the-token-file-s-mode.md) Check the token file's mode and owner on the open handle
 - [?] [#35](backlog/035-keep-the-token-in-memory-when.md) Keep the token in memory when localStorage is unavailable
@@ -63,7 +63,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#47](backlog/047-automatic-updates.md) Automatic updates (after: #46) → 229-automatic-updates
 - [x] [#48](backlog/048-strict-semver-prerelease-identifiers-in-release.md) Strict SemVer prerelease identifiers in release tags → 270-strict-semver-prerelease
 - [?] [#49](backlog/049-verify-release-signatures-in-the-updater.md) Verify release signatures in the updater without gh
-- [ ] [#127](backlog/127-bottom-tab-bar-with-icons.md) Bottom tab bar with icons
+- [ ] [#32](backlog/032-show-the-live-status-line-on.md) Show the live status line on the job page
 - [x] [#51](backlog/051-develop-prerelease-builds-and-an-opt.md) Develop prerelease builds and an opt-in develop update channel → 234-develop-prereleases-channel
 - [?] [#52](backlog/052-test-that-keeping-the-update-channel.md) Test that keeping the update channel starts no check
 - [?] [#53](backlog/053-keep-focus-on-the-channel-select.md) Keep focus on the channel select after saving
