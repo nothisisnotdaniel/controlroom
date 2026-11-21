@@ -98,7 +98,7 @@ public sealed partial class LiveWebAppTests
         Assert.Contains("section.dataset.project = name;", app, StringComparison.Ordinal);
         Assert.Contains("if (old && (!changed || sectionBusy(old))) {", app, StringComparison.Ordinal);
         Assert.Contains("keepOpenGroups(old, next);\n      old.replaceWith(next);", app, StringComparison.Ordinal);
-        Assert.Contains("group.open = before[index].open;", app, StringComparison.Ordinal);
+        Assert.Contains("group.open = before.get(group.dataset.group);", app, StringComparison.Ordinal);
         Assert.Contains("return section.querySelector(\".edit-title-form\") !== null", app, StringComparison.Ordinal);
         Assert.Contains("|| section.querySelector(\"details.edit-add[open]\") !== null", app, StringComparison.Ordinal);
         Assert.Contains("|| section.contains(document.activeElement);", app, StringComparison.Ordinal);
