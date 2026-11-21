@@ -72,7 +72,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#52](backlog/052-test-that-keeping-the-update-channel.md) Test that keeping the update channel starts no check
 - [ ] [#53](backlog/053-keep-focus-on-the-channel-select.md) Keep focus on the channel select after saving
 - [?] [#54](backlog/054-hint-that-the-develop-channel-installs.md) Hint that the develop channel installs unreleased builds
-- [?] [#55](backlog/055-limit-how-often-channel-changes-start.md) Limit how often channel changes start update checks
+- [ ] [#55](backlog/055-limit-how-often-channel-changes-start.md) Limit how often channel changes start update checks
 - [?] [#56](backlog/056-drop-a-develop-check-result-after.md) Drop a develop check result after switching back to stable
 - [?] [#57](backlog/057-filter-drafts-in-the-updater-s.md) Filter drafts in the updater's develop tag pick too
 - [?] [#58](backlog/058-guard-the-release-workflow-s-github.md) Guard the release workflow's GITHUB_ENV writes
