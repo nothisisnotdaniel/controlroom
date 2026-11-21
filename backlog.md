@@ -136,3 +136,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#64](backlog/064-keep-stale-story-marks-across-route.md) Keep stale story marks across route changes
 - [ ] [#65](backlog/065-refresh-the-inbox-count-right-after.md) Refresh the inbox count right after any backlog change
 - [x] [#128](backlog/128-approve-or-drop-goes-back-from.md) Approve or Drop goes back from the story view → 355-approve-goes-back
+- [ ] [#129](backlog/129-jobs-view-without-your-tasks.md) Jobs view without your tasks
