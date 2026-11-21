@@ -81,7 +81,7 @@ internal static class ScriptFixtures
             + "    <key>RunAtLoad</key>\n"
             + "    <true/>\n"
             + "    <key>StartInterval</key>\n"
-            + "    <integer>21600</integer>\n"
+            + "    <integer>900</integer>\n"
             + "    <key>StandardOutPath</key>\n"
             + "    <string>" + log + "</string>\n"
             + "    <key>StandardErrorPath</key>\n"
