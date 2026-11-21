@@ -66,10 +66,58 @@ public sealed class JobReaderTests
         Assert.NotNull(job);
         Assert.Equal(
             new JobSummary("1-a", null, null, null, null, null, null, null, null, job.Reviews, job.PastRounds, null,
-                null, null, null, null, null),
+                null, null, null, null, null, Agents: job.Agents),
             job);
+        Assert.Empty(job.Agents!);
         Assert.Empty(job.Reviews);
         Assert.Empty(job.PastRounds);
+    }
+
+    [Theory]
+    [InlineData("\"2026-11-21T15:32:19Z\"", "2026-11-21T15:32:19Z")]
+    [InlineData("\"2026-02-30T10:00:00Z\"", null)]
+    [InlineData("\"2026-11-21T15:32:19+00:00\"", null)]
+    [InlineData("\"2026-11-21 15:32:19Z\"", null)]
+    [InlineData("\"2026-11-21T15:32:19.5Z\"", null)]
+    [InlineData("1763739139", null)]
+    [InlineData("null", null)]
+    public void Parse_StartedAndEndedOnlyInTheExactUtcForm(string value, string? expected)
+    {
+        JobSummary? job = JobReader.Parse("1-a", "{\"started\":" + value + ",\"ended\":" + value + "}");
+
+        Assert.NotNull(job);
+        Assert.Equal(expected, job.Started);
+        Assert.Equal(expected, job.Ended);
+    }
+
+    [Fact]
+    public void Parse_OldRecord_HasNoTimesAndNoSeconds()
+    {
+        JobSummary? job = JobReader.Parse("007-board", JobSamples.FullState);
+
+        Assert.NotNull(job);
+        Assert.Null(job.Started);
+        Assert.Null(job.Ended);
+        Assert.Equal(["builder", "approver"], job.Agents!.Select(agent => agent.Name));
+        Assert.All(job.Agents!, agent => Assert.Null(agent.Seconds));
+        Assert.Equal(204000, job.Agents![0].Tokens);
+    }
+
+    [Theory]
+    [InlineData("754", 754L)]
+    [InlineData("0", 0L)]
+    [InlineData("-1", null)]
+    [InlineData("1.5", null)]
+    [InlineData("\"60\"", null)]
+    [InlineData("null", null)]
+    public void Parse_AgentSecondsOnlyANonNegativeInteger(string value, long? expected)
+    {
+        JobSummary? job = JobReader.Parse("1-a", "{\"tokens\":{\"builder\":{\"seconds\":" + value + "}}}");
+
+        Assert.NotNull(job);
+        JobAgent agent = Assert.Single(job.Agents!);
+        Assert.Equal(new JobAgent("builder", null, expected), agent);
+        Assert.Null(job.Tokens);
     }
 
     [Theory]

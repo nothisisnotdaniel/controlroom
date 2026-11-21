@@ -37,7 +37,7 @@ public sealed class JobApiTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.True(response.Headers.CacheControl?.NoStore);
         using JsonDocument json = JsonDocument.Parse(body);
-        Assert.Equal(["job", "records", "request"], json.RootElement.EnumerateObject().Select(property => property.Name));
+        Assert.Equal(["job", "records", "request", "agents"], json.RootElement.EnumerateObject().Select(property => property.Name));
         Assert.Equal(Id, json.RootElement.GetProperty("job").GetProperty("id").GetString());
         JsonElement[] records = json.RootElement.GetProperty("records").EnumerateArray().ToArray();
         Assert.Equal(

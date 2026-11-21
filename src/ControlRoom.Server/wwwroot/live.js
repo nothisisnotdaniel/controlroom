@@ -211,6 +211,8 @@ async function refreshShownViews() {
     if (jobStale && openJobId !== null && !document.getElementById("job").hidden) {
       loadJob(openJobId, true);
     }
+    // Running times on the cards and the job page follow the clock without a refetch (board.js).
+    updateRunningTimes();
   } else {
     setBoardStatus(true);
   }

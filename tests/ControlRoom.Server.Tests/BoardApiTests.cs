@@ -8,7 +8,7 @@ public sealed class BoardApiTests
     private static readonly string[] JobFields =
     [
         "id", "project", "title", "branch", "stage", "round", "mode", "path", "risk", "reviews", "pastRounds",
-        "specReview", "specRevised", "decision", "note", "ciStatus", "tokens", "request",
+        "specReview", "specRevised", "decision", "note", "ciStatus", "tokens", "request", "started", "ended",
     ];
 
     [Fact]
