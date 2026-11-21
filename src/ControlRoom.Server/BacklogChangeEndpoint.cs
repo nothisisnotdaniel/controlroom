@@ -352,7 +352,7 @@ internal static class BacklogChangeEndpoint
 
             if (story.Exists)
             {
-                byte[]? old = SafeFileReader.ReadBytes(storyPath, StoryReader.MaxBytes);
+                byte[]? old = StoryReader.ReadBytes(project, entry!);
                 if (old is null)
                 {
                     return InvalidPlan();
@@ -471,7 +471,7 @@ internal static class BacklogChangeEndpoint
         byte[] bytes = edit.Text.ToBytes();
         List<FileChange> files = [new(BacklogReader.FileName, backlogPath, bytes, file.Bytes)];
         string? storyPath = StoryReader.ResolvePath(project, entry);
-        byte[]? old = storyPath is null ? null : SafeFileReader.ReadBytes(storyPath, StoryReader.MaxBytes);
+        byte[]? old = storyPath is null ? null : StoryReader.ReadBytes(project, entry);
         EditableText? story = old is null ? null : EditableText.Parse(old);
         if (storyPath is not null && old is not null && story is not null)
         {
@@ -591,7 +591,7 @@ internal static class BacklogChangeEndpoint
         }
 
         storyPath = StoryReader.ResolvePath(project, entry);
-        old = storyPath is null ? null : SafeFileReader.ReadBytes(storyPath, StoryReader.MaxBytes);
+        old = storyPath is null ? null : StoryReader.ReadBytes(project, entry);
         if (storyPath is null || old is null)
         {
             return InvalidPlan();
