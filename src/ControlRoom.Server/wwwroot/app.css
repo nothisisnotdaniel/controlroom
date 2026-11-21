@@ -836,7 +836,7 @@ main {
   font-weight: 700;
 }
 
-.needs-you {
+.stuck {
   margin: 0 0 16px;
   padding: 12px;
   border: 2px solid var(--human);
@@ -844,11 +844,11 @@ main {
   background: var(--human-bg);
 }
 
-.needs-you > h2 {
+.stuck > h2 {
   color: var(--human);
 }
 
-.needs-you > h2,
+.stuck > h2,
 .stage > h2,
 .stage > summary {
   font-size: 0.85rem;
@@ -956,12 +956,6 @@ a.card:focus-visible {
   font-size: 0.9rem;
 }
 
-.card-rest {
-  display: block;
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-
 .card-foot {
   display: flex;
   flex-wrap: wrap;
@@ -1029,6 +1023,13 @@ a.card:focus-visible {
 .chip-sent {
   background: var(--waiting-bg);
   color: var(--waiting-fg);
+}
+
+.chip-human {
+  background: var(--human-bg);
+  color: var(--human);
+  border: 1px solid var(--human);
+  margin-right: 6px;
 }
 
 .card-request {

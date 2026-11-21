@@ -13,8 +13,8 @@ const BoardTexts = {
   recordUnreadable: "Can't read this record.",
   noRecords: "No records yet.",
   needsYou: "Needs you",
+  stuck: "Stuck",
   allProjects: "All projects",
-  task: "[h]",
   back: "Back",
   records: "Records",
   version: "ControlRoom ",
@@ -65,7 +65,6 @@ const Verdict = /^(?:VERDICT: (PASS|CHANGES)|(APPROVE|ESCALATE))$/;
 
 let boardText = null;
 let boardJobs = [];
-let boardTasks = [];
 let boardScroll = 0;
 let boardPolling = false;
 let mergedOpen = false;
@@ -225,6 +224,9 @@ function renderCard(job) {
   }
   card.appendChild(head);
   card.appendChild(element("span", "card-title", asText(job.title) || id));
+  if (job.stage === "needs-human") {
+    card.appendChild(element("span", "chip chip-human card-request", BoardTexts.needsYou));
+  }
   const sent = requestChipText(job);
   if (sent) {
     card.appendChild(element("span", "chip chip-sent card-request", sent));
@@ -273,47 +275,17 @@ function requestChipText(job) {
   return "";
 }
 
-function renderTask(task) {
-  const project = asText(task.project);
-  const number = asNumber(task.number);
-  let card;
-  if (number !== null) {
-    card = element("a", "card card-task");
-    card.href = storyHash(project, number);
-    card.addEventListener("click", () => {
-      openedFromList = true;
-    });
-  } else {
-    card = element("div", "card card-task");
-  }
-  const head = element("div", "card-head");
-  const name = element("span", "card-id");
-  name.appendChild(element("span", "card-project", project));
-  name.appendChild(element("span", null, " · " + BoardTexts.task + (number !== null ? " #" + number : "")));
-  head.appendChild(name);
-  card.appendChild(head);
-  card.appendChild(element("span", "card-title", asText(task.title)));
-  if (asText(task.rest)) {
-    card.appendChild(element("span", "card-rest", asText(task.rest)));
-  }
-  return card;
-}
-
 function sectionHeading(label, count) {
   return label + " (" + count + ")";
 }
 
-function renderNeedsYou(jobs, tasks) {
-  const section = element("section", "needs-you");
-  const count = jobs.length + tasks.length;
-  section.hidden = count === 0;
-  section.appendChild(element("h2", null, sectionHeading(BoardTexts.needsYou, count)));
+// Jobs waiting for the user (needs-human); no other tab shows them. The user's own [h] tasks are on the Tasks tab.
+function renderStuck(jobs) {
+  const section = element("section", "stuck");
+  section.appendChild(element("h2", null, sectionHeading(BoardTexts.stuck, jobs.length)));
   const cards = element("div", "cards");
   for (const job of jobs) {
     cards.appendChild(renderCard(job));
-  }
-  for (const task of tasks) {
-    cards.appendChild(renderTask(task));
   }
   section.appendChild(cards);
   return section;
@@ -376,8 +348,8 @@ function renderBoard() {
   }
   renderFilter(names);
   const shown = selectedProject ? boardJobs.filter((job) => job.project === selectedProject) : boardJobs;
-  const tasks = selectedProject ? boardTasks.filter((task) => task.project === selectedProject) : boardTasks;
-  const nodes = [renderNeedsYou(shown.filter((job) => job.stage === "needs-human"), tasks)];
+  const stuck = shown.filter((job) => job.stage === "needs-human");
+  const nodes = stuck.length > 0 ? [renderStuck(stuck)] : [];
   if (boardJobs.length === 0) {
     nodes.push(element("p", "empty", BoardTexts.noJobs));
   } else {
@@ -439,7 +411,6 @@ async function pollBoard() {
     }
     boardText = text;
     boardJobs = asList(data && data.jobs).filter((job) => job && typeof job === "object");
-    boardTasks = asList(data && data.tasks).filter((task) => task && typeof task === "object");
     renderBoard();
     refreshOpenJob();
     return true;

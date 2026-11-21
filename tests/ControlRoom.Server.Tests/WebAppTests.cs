@@ -367,7 +367,7 @@ public sealed partial class WebAppTests
     }
 
     [Fact]
-    public async Task BoardJs_RendersNeedsYouThenStagesInOrderWithCounts()
+    public async Task BoardJs_RendersStuckThenStagesInOrderWithCounts()
     {
         string js = await Fetch("/board.js");
 
@@ -381,12 +381,8 @@ public sealed partial class WebAppTests
         Assert.All(positions, position => Assert.True(position >= 0));
         Assert.Equal(positions.Order(), positions);
         Assert.Contains("needsYou: \"Needs you\"", js, StringComparison.Ordinal);
-        Assert.Contains(
-            "const nodes = [renderNeedsYou(shown.filter((job) => job.stage === \"needs-human\"), tasks)];", js,
-            StringComparison.Ordinal);
-        Assert.Contains("section.hidden = count === 0;", js, StringComparison.Ordinal);
+        Assert.Contains("const nodes = stuck.length > 0 ? [renderStuck(stuck)] : [];", js, StringComparison.Ordinal);
         Assert.Contains("return label + \" (\" + count + \")\";", js, StringComparison.Ordinal);
-        Assert.Contains("card.href = storyHash(project, number);", js, StringComparison.Ordinal);
         Assert.Contains("job.stage === \"needs-human\" ? \"card card-human\" : \"card\"", js, StringComparison.Ordinal);
     }
 
@@ -431,7 +427,6 @@ public sealed partial class WebAppTests
         Assert.Contains("allProjects: \"All projects\"", js, StringComparison.Ordinal);
         Assert.Contains("filter.hidden = names.length < 2;", js, StringComparison.Ordinal);
         Assert.Contains("if (selectedProject && !names.includes(selectedProject)) {", js, StringComparison.Ordinal);
-        Assert.Contains("boardTasks.filter((task) => task.project === selectedProject)", js, StringComparison.Ordinal);
         Assert.Contains("boardJobs.filter((job) => job.project === selectedProject)", js, StringComparison.Ordinal);
     }
 
@@ -601,7 +596,7 @@ public sealed partial class WebAppTests
 
         foreach (string rule in new[]
                  {
-                     ".tab-bar a {", ".needs-you {", ".card-human {", ".chip-pass {", ".chip-changes {", ".tab {",
+                     ".tab-bar a {", ".stuck {", ".card-human {", ".chip-pass {", ".chip-changes {", ".tab {",
                      ".filter-button {", ".story-table {", "--human:", "--pass-fg:", "--changes-fg:",
                      ".view-board .top {",
                  })
