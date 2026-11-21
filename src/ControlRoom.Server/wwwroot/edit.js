@@ -345,10 +345,11 @@ function dragKey(event) {
   }
 }
 
+// Ends the drag in progress and returns its state, or null when there is none.
 function cancelDrag() {
   const state = dragState;
   if (state === null) {
-    return;
+    return null;
   }
   dragState = null;
   dragBusy = false;
