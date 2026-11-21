@@ -45,7 +45,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#29](backlog/029-drop-the-hand-written-equality-on.md) Drop the hand-written equality on BacklogEntry
 - [?] [#30](backlog/030-cap-the-bytes-read-per-board.md) Cap the bytes read per board and job response
 - [?] [#31](backlog/031-show-pending-reviewer-chips-with-a.md) Show pending reviewer chips with a text marker
-- [ ] [#126](backlog/126-backlog-position-in-the-story-view.md) Backlog position in the story view
+- [x] [#126](backlog/126-backlog-position-in-the-story-view.md) Backlog position in the story view → 356-story-position
 - [?] [#33](backlog/033-refuse-a-token-folder-others-can.md) Refuse a token folder others can write to
 - [?] [#34](backlog/034-check-the-token-file-s-mode.md) Check the token file's mode and owner on the open handle
 - [?] [#35](backlog/035-keep-the-token-in-memory-when.md) Keep the token in memory when localStorage is unavailable
