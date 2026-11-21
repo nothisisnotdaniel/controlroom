@@ -196,6 +196,13 @@ public sealed class ReleasesEndpointTests
         Assert.Equal(new string('a', 199), ReleasesEndpoint.CleanSubject(subject));
     }
 
+    [Fact]
+    public void CleanSubject_DropsBidiControls()
+    {
+        Assert.Equal("abcdefgh", ReleasesEndpoint.CleanSubject("a\u200Eb\u200Fc\u202Ad\u202Ee\u2066f\u2069g\u0007h"));
+        Assert.Equal("caf\u00E9 \u05D0", ReleasesEndpoint.CleanSubject("caf\u00E9 \u05D0"));
+    }
+
     [Theory]
     [InlineData("factory: merge 12-x", "12-x")]
     [InlineData("factory: merge backlog", null)]

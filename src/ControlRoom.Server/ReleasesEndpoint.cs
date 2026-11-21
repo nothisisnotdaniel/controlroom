@@ -198,14 +198,15 @@ internal static partial class ReleasesEndpoint
         return id != BacklogWorktree.BranchName && JobReader.IdPattern().IsMatch(id) ? id : null;
     }
 
-    /// <summary>The subject without control characters, cut to <see cref="MaxSubject"/> characters (never inside a
-    /// surrogate pair).</summary>
+    /// <summary>The subject without control characters (also the bidi controls U+200E, U+200F, U+202A–U+202E and
+    /// U+2066–U+2069, so a subject can't reorder how its row reads), cut to <see cref="MaxSubject"/> characters (never
+    /// inside a surrogate pair).</summary>
     public static string CleanSubject(string subject)
     {
         StringBuilder text = new();
         foreach (char c in subject)
         {
-            if (!char.IsControl(c))
+            if (!char.IsControl(c) && !IsBidiControl(c))
             {
                 text.Append(c);
             }
@@ -218,6 +219,11 @@ internal static partial class ReleasesEndpoint
 
         int length = char.IsHighSurrogate(text[MaxSubject - 1]) ? MaxSubject - 1 : MaxSubject;
         return text.ToString(0, length);
+    }
+
+    private static bool IsBidiControl(char c)
+    {
+        return c is '\u200E' or '\u200F' or (>= '\u202A' and <= '\u202E') or (>= '\u2066' and <= '\u2069');
     }
 
     /// <summary>The first 7 characters of an abbreviated sha of at least 7 lowercase hex characters, else

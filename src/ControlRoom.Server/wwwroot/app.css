@@ -599,6 +599,7 @@ main {
 }
 
 .project-release .release-log summary {
+  padding: 4px 0;
   cursor: pointer;
   color: var(--link);
 }

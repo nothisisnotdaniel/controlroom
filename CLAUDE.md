@@ -277,7 +277,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `{projects:[{name, available, release, commits, log, suggested, bump}]}` in `ProjectFinder` order, `no-store`, any
     query parameter `400 invalid`; `release` `{tag, date}` the highest-SemVer strict `vX.Y.Z` tag (`date` its creator date,
     UTC) or `null`; `commits` the count since it (all of develop without one); `log` the newest 50 first-parent rows
-    `{sha (7 hex), subject (no control chars, at most 200), job (id of an exact `factory: merge <id>` with a
+    `{sha (7 hex), subject (no control or bidi control chars, at most 200), job (id of an exact `factory: merge <id>` with a
     `JobReader.IdPattern` id, not `backlog`, else `null`)}`; `bump` over every merged job of the log (up to 1000): `minor`
     when any is `feature` or has no category found (state title `#N …`, backlog item N through `BacklogSource`, its story's
     `Category:`), else `patch`, `null` without merged jobs; `suggested` `X.(Y+1).0` / `X.Y.(Z+1)` from the tag (`0.0.0`
