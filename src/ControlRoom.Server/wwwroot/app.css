@@ -170,6 +170,11 @@ body:has(#token:not([hidden])) .live-notice {
   display: none;
 }
 
+/* The token view has no tab bar, so it needs no room for one. */
+body:has(#token:not([hidden])) {
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+}
+
 h1 {
   font-size: 1.6rem;
   margin: 0 0 12px;
@@ -749,6 +754,7 @@ main {
   max-width: 120px;
   min-height: 44px;
   padding: 6px 0 4px;
+  border-radius: 8px;
   color: var(--muted);
   text-decoration: none;
 }
@@ -760,7 +766,6 @@ main {
 .tab-bar a:focus-visible {
   outline: 2px solid var(--link);
   outline-offset: -2px;
-  border-radius: 8px;
 }
 
 .tab-icon {

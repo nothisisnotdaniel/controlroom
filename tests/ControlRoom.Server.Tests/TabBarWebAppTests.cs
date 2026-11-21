@@ -223,6 +223,8 @@ public sealed partial class TabBarWebAppTests
         Assert.Contains("  padding-bottom: " + Clear + " + 72px);\n",
             Block(css, "body:has(#edit-notice:not([hidden])) {"), StringComparison.Ordinal);
         Assert.Contains("  bottom: " + Clear + ");\n", Block(css, ".edit-notice {"), StringComparison.Ordinal);
+        Assert.Contains("  padding-bottom: max(24px, env(safe-area-inset-bottom));\n",
+            Block(css, "body:has(#token:not([hidden])) {"), StringComparison.Ordinal);
     }
 
     [Fact]
