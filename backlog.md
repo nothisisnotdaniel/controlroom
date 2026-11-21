@@ -45,7 +45,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#24](backlog/024-doctor-view.md) Doctor view → 266-doctor-view
 - [x] [#25](backlog/025-ci-and-git-status.md) CI and git status → 269-ci-and-git-status
 - [x] [#127](backlog/127-bottom-tab-bar-with-icons.md) Bottom tab bar with icons → 357-bottom-tab-bar
-- [ ] [#28](backlog/028-close-the-symlink-race-when-reading.md) Close the symlink race when reading story files
+- [x] [#28](backlog/028-close-the-symlink-race-when-reading.md) Close the symlink race when reading story files → 378-story-open-nofollow
 - [ ] [#29](backlog/029-drop-the-hand-written-equality-on.md) Drop the hand-written equality on BacklogEntry
 - [?] [#30](backlog/030-cap-the-bytes-read-per-board.md) Cap the bytes read per board and job response
 - [ ] [#31](backlog/031-show-pending-reviewer-chips-with-a.md) Show pending reviewer chips with a text marker
