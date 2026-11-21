@@ -839,8 +839,8 @@ function storyNoteButton(target, data, reload) {
 let storyDecisionRequest = 0;
 
 // The status chip, the position, Approve and Drop in the story bar only while the item's backlog line is a [?]
-// line, and Done only while it is a [h] line. Called after the story is shown and after a live refresh: buttons that should stay are kept as they are (focus
-// stays on them).
+// line, and Done only while it is a [h] line. Called after the story is shown and after a live refresh: buttons that
+// should stay are kept as they are (focus stays on them).
 async function showStoryDecision(target, data) {
   const number = asNumber(data && data.number);
   storyDecisionRequest += 1;
