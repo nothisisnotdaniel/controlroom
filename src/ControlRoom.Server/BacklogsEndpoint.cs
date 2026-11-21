@@ -6,6 +6,7 @@ internal sealed record FactoryRoot(string Path);
 /// <summary>One project in the <c>GET /api/backlogs</c> response. <c>Version</c> is the SHA-256 of the
 /// <c>backlog.md</c> bytes (<c>null</c> when unreadable), sent back with every change. <c>Next</c>, <c>Stopped</c> and
 /// <c>Blocked</c> come from <see cref="BacklogPlan"/> (<c>null</c>, <c>false</c> and empty when unreadable).
+/// <c>StopLine</c> is the 0-based index of the first exact stop line (<c>null</c> without one or when unreadable).
 /// <c>Pending</c> is true when the backlog is read from the <see cref="BacklogWorktree"/> (<see cref="BacklogSource"/>).</summary>
 internal sealed record ProjectBacklog(
     string Name,
@@ -18,7 +19,8 @@ internal sealed record ProjectBacklog(
     PlanItem? Next,
     bool Stopped,
     IReadOnlyList<BlockedItem> Blocked,
-    bool Pending = false);
+    bool Pending = false,
+    int? StopLine = null);
 
 /// <summary>The <c>GET /api/backlogs</c> response.</summary>
 internal sealed record BacklogsResponse(IReadOnlyList<ProjectBacklog> Projects);
@@ -65,7 +67,8 @@ internal static class BacklogsEndpoint
                 plan.Next,
                 plan.Stopped,
                 plan.Blocked,
-                BacklogSource.IsPending(projectList[index], project)));
+                BacklogSource.IsPending(projectList[index], project),
+                file?.Backlog.StopLine));
         }
 
         return new BacklogsResponse(projects);

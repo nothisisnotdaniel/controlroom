@@ -610,6 +610,206 @@ public sealed class BacklogEditorTests
         Assert.Equal("#12", edit.Subject);
     }
 
+    private const string Stopped =
+        "# B\n"                                  // 0
+        + "- [x] [#1](backlog/001-d.md) D\n"     // 1
+        + "- [ ] [#2](backlog/002-a.md) A\n"     // 2
+        + "- [stop] Auto stops here\n"          // 3
+        + "Prose.\n"                            // 4
+        + "- [?] [#3](backlog/003-p.md) P\n"     // 5
+        + "- [ ] [#4](backlog/004-b.md) B\n"     // 6
+        + "- [ ] [#5](backlog/005-c.md) C\n";    // 7
+
+    /// <summary>The <c>[ ]</c> group with the stop line is lines 2, 3, 6, 7 (A, stop, B, C).</summary>
+    [Theory]
+    [InlineData(3, 7, false, new[] { 2, 6, 7, 3 })] // below the last item
+    [InlineData(3, 2, true, new[] { 3, 2, 6, 7 })]  // above the first item
+    [InlineData(3, 6, false, new[] { 2, 6, 3, 7 })] // one down
+    [InlineData(3, 7, true, new[] { 2, 6, 3, 7 })]  // before the last item
+    public void StopMove_ReordersTheOpenGroupWithTheStopLineInItsOwnIndexes(int line, int target, bool before, int[] order)
+    {
+        EditableText text = Text(Stopped);
+        BacklogEdit edit = BacklogEditor.StopMove(text, line, target, before)!;
+
+        Assert.Equal("stop line", edit.Subject);
+        AssertSlots(text, edit, [2, 3, 6, 7], order);
+    }
+
+    [Theory]
+    [InlineData(3, 6, true)]   // no-op: already before B
+    [InlineData(3, 2, false)]  // no-op: already after A
+    [InlineData(2, 6, true)]   // not the stop line
+    [InlineData(3, 3, true)]   // the stop line itself
+    [InlineData(3, 4, true)]   // prose target
+    [InlineData(3, 5, true)]   // [?] target
+    [InlineData(3, 1, true)]   // done target
+    [InlineData(3, 99, true)]
+    [InlineData(3, -1, true)]
+    [InlineData(99, 2, true)]
+    public void StopMove_RefusesOtherLinesTargetsAndNoOps(int line, int target, bool before)
+    {
+        Assert.Null(BacklogEditor.StopMove(Text(Stopped), line, target, before));
+    }
+
+    [Fact]
+    public void StopMove_OnlyTheFirstExactStopLineMoves()
+    {
+        string text = "- [ ] A\n- [stop] Auto stops here\n- [ ] B\n- [stop] Auto stops here\n- [ ] C\n";
+        Assert.Null(BacklogEditor.StopMove(Text(text), 3, 0, true));
+        Assert.Equal(1, BacklogEditor.StopLine(Text(text)));
+        Assert.Null(BacklogEditor.StopLine(Text("- [STOP] Auto stops here\n- [ ] A\n")));
+    }
+
+    [Theory]
+    [InlineData(7, 3, true, new[] { 2, 7, 3, 6 })]  // C directly above the stop line
+    [InlineData(2, 3, false, new[] { 3, 2, 6, 7 })] // A directly below the stop line
+    [InlineData(6, 3, true, new[] { 2, 6, 3, 7 })]  // B over the stop line
+    [InlineData(7, 2, true, new[] { 7, 2, 3, 6 })]  // C to the top, over the stop line
+    public void Place_CountsTheStopLineAsPartOfTheOpenGroup(int line, int target, bool before, int[] order)
+    {
+        EditableText text = Text(Stopped);
+        BacklogEdit edit = BacklogEditor.Place(text, line, target, before)!;
+
+        AssertSlots(text, edit, [2, 3, 6, 7], order);
+    }
+
+    [Theory]
+    [InlineData(5, 3, true)]  // a [?] line can't take the stop line
+    [InlineData(3, 6, true)]  // the stop line moves only through StopMove
+    [InlineData(6, 3, false)] // no-op: B is already right after the stop line
+    [InlineData(2, 3, true)]  // no-op: A is already right before it
+    public void Place_WithAStopLine_RefusesTheOtherCases(int line, int target, bool before)
+    {
+        Assert.Null(BacklogEditor.Place(Text(Stopped), line, target, before));
+    }
+
+    [Fact]
+    public void Place_TheStopLineIsNoTargetWhenItIsNotTheFirstExactOne()
+    {
+        string text = "- [ ] A\n- [stop] Auto stops here\n- [ ] B\n- [stop] Auto stops here\n- [ ] C\n";
+        Assert.Null(BacklogEditor.Place(Text(text), 4, 3, true));
+        Assert.NotNull(BacklogEditor.Place(Text(text), 4, 1, true));
+    }
+
+    [Fact]
+    public void Move_TopGoesBeforeTheFirstOpenItemOrTheStopLineWhicheverComesFirst()
+    {
+        BacklogEdit below = BacklogEditor.Move(Text("- [stop] Auto stops here\n- [x] D\n- [ ] A\n"), 2, MoveDirection.Top)!;
+        Assert.Equal("- [ ] A\n- [stop] Auto stops here\n- [x] D\n", below.Text.Text);
+
+        BacklogEdit above = BacklogEditor.Move(Text(Stopped), 6, MoveDirection.Top)!;
+        Assert.Equal(
+            "# B\n- [x] [#1](backlog/001-d.md) D\n- [ ] [#4](backlog/004-b.md) B\n- [ ] [#2](backlog/002-a.md) A\n"
+            + "- [stop] Auto stops here\nProse.\n- [?] [#3](backlog/003-p.md) P\n- [ ] [#5](backlog/005-c.md) C\n",
+            above.Text.Text);
+        Assert.Null(BacklogEditor.Move(Text(Stopped), 2, MoveDirection.Top));
+        Assert.Null(BacklogEditor.Move(Text(Stopped), 3, MoveDirection.Top));
+    }
+
+    [Fact]
+    public void Add_WithAStopLineFollowsJobPyAdd()
+    {
+        string first = "# T\r\n- [stop] Auto stops here\r\n- [x] D\r\n- [ ] A\r\n";
+        Assert.Equal(
+            "# T\r\n- [ ] [#9](backlog/009-new.md) New\r\n- [stop] Auto stops here\r\n- [x] D\r\n- [ ] A\r\n",
+            BacklogEditor.Add(Text(first), 9, "New", AddPosition.Top).Text.Text);
+        Assert.Equal(
+            "# T\r\n- [stop] Auto stops here\r\n- [x] D\r\n- [ ] A\r\n- [ ] [#9](backlog/009-new.md) New\r\n",
+            BacklogEditor.Add(Text(first), 9, "New", AddPosition.Bottom).Text.Text);
+
+        Assert.Equal(
+            "- [ ] [#2](backlog/002-a.md) A\n- [ ] [#9](backlog/009-new.md) New\n",
+            BacklogEditor.Add(Text("- [ ] [#2](backlog/002-a.md) A\n"), 9, "New", AddPosition.Bottom).Text.Text);
+        Assert.Equal(3, Array.IndexOf(
+            BacklogEditor.Add(Text(Stopped), 9, "New", AddPosition.Top).Text.Lines.ToArray(),
+            "- [ ] [#9](backlog/009-new.md) New") + 1);
+
+        string last = "- [ ] A\nprose\n- [stop] Auto stops here\ntail\n";
+        Assert.Equal(
+            "- [ ] A\nprose\n- [stop] Auto stops here\n- [?] [#9](backlog/009-new.md) New\ntail\n",
+            BacklogEditor.Add(Text(last), 9, "New", AddPosition.Bottom, "?").Text.Text);
+        Assert.Equal(
+            "- [ ] [#9](backlog/009-new.md) New\n- [ ] A\nprose\n- [stop] Auto stops here\ntail\n",
+            BacklogEditor.Add(Text(last), 9, "New", AddPosition.Top).Text.Text);
+        Assert.Equal(
+            "# T\n- [stop] Auto stops here\n- [ ] [#9](backlog/009-new.md) New\n",
+            BacklogEditor.Add(Text("# T\n- [stop] Auto stops here\n"), 9, "New", AddPosition.Bottom).Text.Text);
+    }
+
+    [Fact]
+    public void StopAdd_InsertsTheLineDirectlyAfterAnOpenLineWithTheFilesEnding()
+    {
+        BacklogEdit edit = BacklogEditor.StopAdd(Text("# T\n- [ ] A\nprose\n- [ ] B\n"), 1)!;
+        Assert.Equal("# T\n- [ ] A\n- [stop] Auto stops here\nprose\n- [ ] B\n", edit.Text.Text);
+        Assert.Equal("stop line", edit.Subject);
+
+        Assert.Equal(
+            Encoding.UTF8.GetBytes("\uFEFF- [ ] A\r\n- [stop] Auto stops here\r\n- [ ] B\r\n"),
+            BacklogEditor.StopAdd(Text("\uFEFF- [ ] A\r\n- [ ] B\r\n"), 0)!.Text.ToBytes());
+        Assert.Equal(
+            "- [ ] A\n- [ ] B\n- [stop] Auto stops here\n",
+            BacklogEditor.StopAdd(Text("- [ ] A\n- [ ] B\n"), 1)!.Text.Text);
+    }
+
+    [Theory]
+    [InlineData(1)]  // done
+    [InlineData(4)]  // prose
+    [InlineData(5)]  // [?]
+    [InlineData(0)]  // heading
+    [InlineData(99)]
+    [InlineData(-1)]
+    public void StopAdd_RefusesALineThatIsNotOpen(int line)
+    {
+        Assert.Null(BacklogEditor.StopAdd(Text(Stopped.Replace("- [stop] Auto stops here\n", "\n", StringComparison.Ordinal)), line));
+    }
+
+    [Fact]
+    public void StopAdd_RefusesAFileThatHasAStopLine()
+    {
+        Assert.Null(BacklogEditor.StopAdd(Text(Stopped), 2));
+        Assert.Null(BacklogEditor.StopAdd(Text(Stopped), 6));
+    }
+
+    [Fact]
+    public void StopRemove_DeletesOnlyTheFirstExactStopLine()
+    {
+        BacklogEdit edit = BacklogEditor.StopRemove(Text(Stopped), 3)!;
+        Assert.Equal(Stopped.Replace("- [stop] Auto stops here\n", "", StringComparison.Ordinal), edit.Text.Text);
+        Assert.Equal("stop line", edit.Subject);
+
+        Assert.Null(BacklogEditor.StopRemove(Text(Stopped), 2));
+        Assert.Null(BacklogEditor.StopRemove(Text(Stopped), 99));
+        Assert.Null(BacklogEditor.StopRemove(Text("- [ ] A\n- [stop] Auto stops here\n- [stop] Auto stops here\n"), 2));
+        Assert.Null(BacklogEditor.StopRemove(Text("- [ ] A\n- [STOP] Auto stops here\n"), 1));
+    }
+
+    [Theory]
+    [InlineData("- [ ] A\n", false)]
+    [InlineData("- [ ] A\n- [stop] Auto stops here\n", false)]
+    [InlineData("- [ ] A\r\n- [stop] Auto stops here\r\n", false)]
+    [InlineData("  - [stop] indented is prose\n", false)]
+    [InlineData("- [stop] Auto stops here\n- [ ] A\n- [stop] Auto stops here\n", true)]
+    [InlineData("- [STOP] Auto stops here\n", true)]
+    [InlineData("- [Stop] Auto stops here\n- [stop] Auto stops here\n", true)]
+    [InlineData("- [stop] Auto stops here now\n", true)]
+    [InlineData("- [stop]\n", true)]
+    public void HasStopLineProblem_LikeJobPyDoctor(string text, bool expected)
+    {
+        Assert.Equal(expected, BacklogEditor.HasStopLineProblem(Text(text)));
+    }
+
+    private static void AssertSlots(EditableText text, BacklogEdit edit, int[] slots, int[] order)
+    {
+        List<string> expected = [.. text.Lines];
+        for (int i = 0; i < slots.Length; i++)
+        {
+            expected[slots[i]] = text.Lines[order[i]];
+        }
+
+        Assert.Equal(expected, edit.Text.Lines);
+        Assert.Equal(text.FinalNewline, edit.Text.FinalNewline);
+    }
+
     private static EditableText Text(string text)
     {
         return EditableText.Parse(Encoding.UTF8.GetBytes(text))!;

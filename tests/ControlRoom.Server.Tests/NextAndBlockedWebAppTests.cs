@@ -101,7 +101,7 @@ public sealed class NextAndBlockedWebAppTests
 
         Assert.Contains("section.dataset.plan = planSignature(project);", app, StringComparison.Ordinal);
         Assert.Contains(
-            "return JSON.stringify([project.next || null, project.stopped === true, asList(project.blocked)]);", app,
+            "return JSON.stringify([project.next || null, project.stopped === true, asList(project.blocked), stop]);", app,
             StringComparison.Ordinal);
         Assert.Contains(
             "const changed = wanted.has(name) || (old !== undefined && old.dataset.plan !== planSignature(project));",

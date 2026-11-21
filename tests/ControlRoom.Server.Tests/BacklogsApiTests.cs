@@ -25,7 +25,7 @@ public sealed class BacklogsApiTests
 
         JsonElement normal = projects[3];
         Assert.Equal(
-            ["name", "readable", "open", "approval", "user", "done", "version", "next", "stopped", "blocked", "pending"],
+            ["name", "readable", "open", "approval", "user", "done", "version", "next", "stopped", "blocked", "pending", "stopLine"],
             normal.EnumerateObject().Select(property => property.Name));
         Assert.True(normal.GetProperty("readable").GetBoolean());
         Assert.False(normal.GetProperty("pending").GetBoolean());
@@ -261,7 +261,7 @@ public sealed class BacklogsApiTests
 
         JsonElement alpha = Project(json, "Alpha");
         JsonElement next = alpha.GetProperty("next");
-        Assert.Equal(["number", "title", "story", "spike"], next.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(["number", "title", "story", "spike", "belowStop"], next.EnumerateObject().Select(p => p.Name));
         Assert.Equal(4, next.GetProperty("number").GetInt32());
         Assert.Equal("Spike: try it", next.GetProperty("title").GetString());
         Assert.Equal("backlog/004-a.md", next.GetProperty("story").GetString());
@@ -349,5 +349,43 @@ public sealed class BacklogsApiTests
         return project.GetProperty(group).EnumerateArray()
             .Select(entry => (entry.GetProperty("title").GetString(), entry.GetProperty("rest").GetString()))
             .ToList();
+    }
+
+    [Fact]
+    public async Task Backlogs_StopLineAndBelowStop_ForANextItemAboveBelowAndWithoutALine()
+    {
+        using TempFactoryRoot root = new();
+        root.AddProject(
+            "Above",
+            "# A\n- [ ] [#1](backlog/001-a.md) One\n- [stop] Auto stops here\n- [ ] [#2](backlog/002-a.md) Two\n");
+        root.AddProject(
+            "Below",
+            "- [x] [#1](backlog/001-b.md) Done\r\n- [stop] Auto stops here\r\n- [ ] [#2](backlog/002-b.md) Two\r\n");
+        root.AddProject("NoLine", "- [ ] [#1](backlog/001-c.md) One\n- [stop] Auto stops here!\n");
+        root.AddProject("Locked", null);
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+
+        using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/backlogs"));
+
+        JsonElement above = Project(json, "Above");
+        Assert.Equal(2, above.GetProperty("stopLine").GetInt32());
+        Assert.Equal(1, above.GetProperty("next").GetProperty("number").GetInt32());
+        Assert.False(above.GetProperty("next").GetProperty("belowStop").GetBoolean());
+        Assert.Equal([1, 3], above.GetProperty("open").EnumerateArray().Select(entry => entry.GetProperty("line").GetInt32()));
+
+        JsonElement below = Project(json, "Below");
+        Assert.Equal(1, below.GetProperty("stopLine").GetInt32());
+        Assert.Equal(2, below.GetProperty("next").GetProperty("number").GetInt32());
+        Assert.True(below.GetProperty("next").GetProperty("belowStop").GetBoolean());
+
+        JsonElement none = Project(json, "NoLine");
+        Assert.Equal(JsonValueKind.Null, none.GetProperty("stopLine").ValueKind);
+        Assert.False(none.GetProperty("next").GetProperty("belowStop").GetBoolean());
+        Assert.Single(none.GetProperty("open").EnumerateArray());
+
+        JsonElement locked = Project(json, "Locked");
+        Assert.False(locked.GetProperty("readable").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, locked.GetProperty("stopLine").ValueKind);
     }
 }
