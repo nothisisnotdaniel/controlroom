@@ -280,7 +280,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     position) in the Open list before the first row whose line is after it, else at the end, and Open shows with only
     the divider when it has no rows (`renderStopLine`, `placeStopLine`); a numbered
     row with a category shows `categoryChip` (`span.category-chip.category-<name>`, text only, class only from the fixed
-    `Categories` list) after the title), story (the same chip under the title)), `edit.js` (per-project edit mode; a `button.drag-handle` (`≡`, `Move #N`, arrow-key hint) at the start of every
+    `Categories` list) after the title), story (the same chip under the title, then a status chip (#125, `statusChip`: `span.status-chip.status-<key>` from the fixed `StoryStatuses` map, `[x]` Done, `[?]` Unapproved, `[ ]` Open, `[h]` Your task, same box style as the category chip, a colour pair per status in light and dark) placed by `showStoryStatus` from the mark that edit.js's `showStoryDecision` looks up with `findStoryEntry` (all four groups of `/api/backlogs`; `findStoryLine` is its not-done part), none when the line can't be found, carried over on a live refresh)), `edit.js` (per-project edit mode; a `button.drag-handle` (`≡`, `Move #N`, arrow-key hint) at the start of every
     `[ ]` and `[?]` row, prepended by `appendEditRow`: pointer events only (captured on the handle, the only element with
     `touch-action: none`), a `.drop-indicator` among the rows of the row's own list, auto-scroll in the 48 px edges by
     `requestAnimationFrame`, one `place` per drop or ArrowUp/ArrowDown, Escape and `pointercancel` send nothing, focus back

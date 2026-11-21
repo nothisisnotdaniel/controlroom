@@ -631,8 +631,9 @@ function addForm(projectName, version) {
   return details;
 }
 
-// Finds the line, the backlog version and the group (open, approval or user) of a numbered item, as the server sees it now.
-async function findStoryLine(project, number) {
+// Finds the line, the backlog version, the group (open, approval, user or done) and the mark of a numbered item, as
+// the server sees it now.
+async function findStoryEntry(project, number) {
   const response = await authFetch("/api/backlogs", { cache: "no-store" });
   if (!response.ok) {
     throw new Error("status");
@@ -642,14 +643,27 @@ async function findStoryLine(project, number) {
   if (!match || typeof match.version !== "string") {
     return null;
   }
-  for (const group of ["open", "approval", "user"]) {
+  for (const group of ["open", "approval", "user", "done"]) {
     for (const entry of asList(match[group])) {
       if (asNumber(entry && entry.number) === number && asNumber(entry.line) !== null) {
-        return { version: match.version, line: entry.line, group: group };
+        return { version: match.version, line: entry.line, group: group, mark: asText(entry.mark) };
       }
     }
   }
   return null;
+}
+
+// The not-done part of findStoryEntry: a done line counts as not found.
+function notDone(entry) {
+  if (entry === null || entry.group === "done") {
+    return null;
+  }
+  return { version: entry.version, line: entry.line, group: entry.group };
+}
+
+// Finds the line, the backlog version and the group (open, approval or user) of a numbered item, as the server sees it now.
+async function findStoryLine(project, number) {
+  return notDone(await findStoryEntry(project, number));
 }
 
 // The Edit story button of the story view: opens a textarea with the raw Markdown, saved with storyVersion.
@@ -817,24 +831,26 @@ function storyNoteButton(target, data, reload) {
 
 let storyDecisionRequest = 0;
 
-// Approve and Drop in the story bar, only while the item's backlog line is a [?] line. Called after the story is
+// The status chip, and Approve and Drop in the story bar only while the item's backlog line is a [?] line. Called after the story is
 // shown and after a live refresh: buttons that should stay are kept as they are (focus stays on them).
 async function showStoryDecision(target, data) {
   const number = asNumber(data && data.number);
   storyDecisionRequest += 1;
   const request = storyDecisionRequest;
   const story = storyRequest;
-  let found = null;
+  let entry = null;
   if (number !== null) {
     try {
-      found = await findStoryLine(target.project, number);
+      entry = await findStoryEntry(target.project, number);
     } catch {
-      found = null;
+      entry = null;
     }
   }
   if (request !== storyDecisionRequest || story !== storyRequest || currentView !== "story") {
     return;
   }
+  showStoryStatus(entry === null ? null : entry.mark);
+  const found = notDone(entry);
   const bar = document.querySelector("#story .story-bar");
   if (bar === null) {
     return;

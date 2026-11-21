@@ -47,6 +47,14 @@
   --category-ci-fg: #312e81;
   --category-docs-bg: #e7e5e4;
   --category-docs-fg: #44403c;
+  --status-done-bg: #dcfce7;
+  --status-done-fg: #14532d;
+  --status-unapproved-bg: #ffedd5;
+  --status-unapproved-fg: #7c2d12;
+  --status-open-bg: #e0f2fe;
+  --status-open-fg: #0c4a6e;
+  --status-user-bg: #f3e8ff;
+  --status-user-fg: #581c87;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -98,6 +106,14 @@
     --category-ci-fg: #c7d2fe;
     --category-docs-bg: #33302d;
     --category-docs-fg: #e7e5e4;
+    --status-done-bg: #14361f;
+    --status-done-fg: #bbf7d0;
+    --status-unapproved-bg: #4a2511;
+    --status-unapproved-fg: #fed7aa;
+    --status-open-bg: #0c3047;
+    --status-open-fg: #bae6fd;
+    --status-user-bg: #3b1d57;
+    --status-user-fg: #e9d5ff;
   }
 }
 
@@ -343,8 +359,9 @@ main {
 }
 
 /* A story's category (job.py's Category: line). Each name has its own colour pair in light and dark mode; the chip
-   wraps below the title on a narrow row instead of pushing it off. */
-.category-chip {
+   wraps below the title on a narrow row instead of pushing it off. A story's status chip (#125) has the same style. */
+.category-chip,
+.status-chip {
   display: inline-block;
   font-family: inherit;
   font-size: 0.8rem;
@@ -359,6 +376,34 @@ main {
 
 .story-title + .category-chip {
   margin: -4px 0 12px;
+}
+
+.story-title + .status-chip {
+  margin: -4px 0 12px;
+}
+
+.story-title + .category-chip + .status-chip {
+  margin: -4px 0 12px 6px;
+}
+
+.status-done {
+  background: var(--status-done-bg);
+  color: var(--status-done-fg);
+}
+
+.status-unapproved {
+  background: var(--status-unapproved-bg);
+  color: var(--status-unapproved-fg);
+}
+
+.status-open {
+  background: var(--status-open-bg);
+  color: var(--status-open-fg);
+}
+
+.status-user {
+  background: var(--status-user-bg);
+  color: var(--status-user-fg);
 }
 
 .category-feature {

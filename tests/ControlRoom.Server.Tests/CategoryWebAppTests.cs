@@ -153,7 +153,7 @@ public sealed class CategoryWebAppTests
         string buttons = Between(edit, "function showStoryButtons(visible) {", "\n}\n");
         string control = Between(edit, "function storyCategoryControl(target, data) {", "\n}\n");
 
-        int find = decision.IndexOf("found = await findStoryLine(target.project, number);", StringComparison.Ordinal);
+        int find = decision.IndexOf("const found = notDone(entry);", StringComparison.Ordinal);
         int category = decision.IndexOf("showStoryCategory(bar, target, data, found);", StringComparison.Ordinal);
         int approval = decision.IndexOf("found.group !== \"approval\"", StringComparison.Ordinal);
         Assert.True(find >= 0 && find < category && category < approval);

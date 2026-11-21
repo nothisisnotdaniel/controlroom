@@ -284,6 +284,26 @@ public sealed partial class BacklogChangeApiTests
     }
 
     [Fact]
+    public async Task Approve_ThenBacklogsGiveTheItemAsOpen()
+    {
+        using Repo repo = Repo.Create();
+        using HttpClient client = repo.Factory.CreateTokenClient();
+
+        await repo.Change(new { action = "approve", line = 5 });
+
+        using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/backlogs"));
+        JsonElement alpha = json.RootElement.GetProperty("projects")[0];
+        Assert.DoesNotContain(alpha.GetProperty("approval").EnumerateArray(),
+            entry => entry.TryGetProperty("number", out JsonElement number) && number.ValueKind == JsonValueKind.Number
+                && number.GetInt32() == 3);
+        JsonElement three = alpha.GetProperty("open").EnumerateArray().Single(
+            entry => entry.TryGetProperty("number", out JsonElement number) && number.ValueKind == JsonValueKind.Number
+                && number.GetInt32() == 3);
+        Assert.Equal(" ", three.GetProperty("mark").GetString());
+        Assert.Equal(5, three.GetProperty("line").GetInt32());
+    }
+
+    [Fact]
     public async Task Approve_AnUnnumberedLineNamesItsLineNumber()
     {
         using Repo repo = Repo.Create();

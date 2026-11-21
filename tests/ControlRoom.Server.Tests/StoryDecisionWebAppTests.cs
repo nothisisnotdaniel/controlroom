@@ -32,9 +32,11 @@ public sealed partial class StoryDecisionWebAppTests
         string edit = await Fetch("/edit.js");
         string show = Between(edit, "async function showStoryDecision(target, data) {", "\n}\n");
 
-        Assert.Contains("return { version: match.version, line: entry.line, group: group };", edit, StringComparison.Ordinal);
-        Assert.Contains("found = await findStoryLine(target.project, number);", show, StringComparison.Ordinal);
-        Assert.Contains("} catch {\n      found = null;\n    }", show, StringComparison.Ordinal);
+        Assert.Contains("return { version: match.version, line: entry.line, group: group, mark: asText(entry.mark) };", edit,
+            StringComparison.Ordinal);
+        Assert.Contains("entry = await findStoryEntry(target.project, number);", show, StringComparison.Ordinal);
+        Assert.Contains("} catch {\n      entry = null;\n    }", show, StringComparison.Ordinal);
+        Assert.Contains("const found = notDone(entry);", show, StringComparison.Ordinal);
         Assert.Contains(
             "if (found === null || found.group !== \"approval\") {\n    for (const button of shown) {\n      button.remove();\n    }\n    return;\n  }",
             show, StringComparison.Ordinal);
