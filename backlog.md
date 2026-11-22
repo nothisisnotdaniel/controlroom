@@ -85,7 +85,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#50](backlog/050-updater-port-check-when-another-user.md) Updater port check when another user holds the port
 - [?] [#66](backlog/066-cheaper-inbox-reads.md) Cheaper inbox reads
 - [?] [#67](backlog/067-retry-button-when-the-inbox-fails.md) Retry button when the inbox fails to load
-- [h] [#68](backlog/068-browser-check-of-the-approval-inbox.md) Browser check of the approval inbox
+- [x] [#68](backlog/068-browser-check-of-the-approval-inbox.md) Browser check of the approval inbox
 - [?] [#70](backlog/070-guard-updatechecker-startasync-after-dispose.md) Guard UpdateChecker.StartAsync after Dispose
 - [?] [#71](backlog/071-name-the-task-in-the-done.md) Name the task in the Done confirmation
 - [?] [#72](backlog/072-fill-the-search-project-filter-before.md) Fill the search project filter before the first search
