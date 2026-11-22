@@ -99,7 +99,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#81](backlog/081-escape-a-leading-in-captured-text.md) Escape a leading # in captured text
 - [x] [#82](backlog/082-browser-check-of-capture-and-the.md) Browser check of Capture and the two-row nav
 - [h] [#83](backlog/083-browser-check-of-approve-and-rework.md) Browser check of Approve and Rework on an escalated job
-- [h] [#84](backlog/084-browser-check-of-the-history-view.md) Browser check of the History view and seven-link nav
+- [x] [#84](backlog/084-browser-check-of-the-history-view.md) Browser check of the History view and seven-link nav
 - [ ] [#85](backlog/085-distinct-chart-colours-for-more-than.md) Distinct chart colours for more than six modes
 - [ ] [#86](backlog/086-add-the-empty-30-day-text.md) Add the empty 30-day text to the History spec
 - [?] [#87](backlog/087-cap-the-git-output-the-server.md) Cap the git output the server reads
