@@ -126,7 +126,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#109](backlog/109-drag-and-drop-to-reorder-backlog.md) Drag and drop to reorder backlog items → 345-backlog-drag-drop
 - [x] [#110](backlog/110-category-chip-on-backlog-items-and.md) Category chip on backlog items and stories (after: factory#20) → 346-category-chips
 - [?] [#111](backlog/111-decide-what-the-updater-does-when.md) Decide what the updater does when rmdir of its lock fails
-- [?] [#112](backlog/112-decide-what-the-updater-does-when.md) Decide what the updater does when kill in cleanup fails
+- [ ] [#112](backlog/112-decide-what-the-updater-does-when.md) Decide what the updater does when kill in cleanup fails
 - [x] [#113](backlog/113-place-the-auto-stop-line-from.md) Place the auto stop line from the backlog view (after: factory#21; #109) → 348-stop-line-ui
 - [x] [#114](backlog/114-browser-check-of-the-backlogs-project.md) Browser check of the Backlogs project picker at phone width
 - [?] [#115](backlog/115-scroll-to-the-top-when-the.md) Scroll to the top when the Backlogs project changes
