@@ -10,8 +10,9 @@ public sealed partial class TokenWebAppTests
     public async Task TokenJs_StoresTheTokenUnderItsKeyAndSendsItOnlyAsABearerHeader()
     {
         string js = await Fetch("/token.js");
+        string room = await Fetch("/room.js");
 
-        Assert.Contains("const TokenKey = \"controlroom-token\";", js, StringComparison.Ordinal);
+        Assert.Contains("const TokenKey = \"controlroom-token\";", room, StringComparison.Ordinal);
         Assert.Contains("localStorage.getItem(TokenKey)", js, StringComparison.Ordinal);
         Assert.Contains("localStorage.setItem(TokenKey, token)", js, StringComparison.Ordinal);
         Assert.Contains("localStorage.removeItem(TokenKey)", js, StringComparison.Ordinal);

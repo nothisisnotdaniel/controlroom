@@ -184,10 +184,12 @@ public sealed partial class ReleasesWebAppTests
     public async Task ServiceWorker_CachesReleasesJsWithVersion21AndNeverTheApi()
     {
         string js = await Fetch("/sw.js");
+        string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v21\";", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/status.js\",\n  \"/releases.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v22\";", room, StringComparison.Ordinal);
+        Assert.Contains("  \"/status.js\",\n  \"/releases.js\",\n  \"/live.js\",\n", room, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/releases", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("/api/releases", room, StringComparison.Ordinal);
     }
 
     private static string Between(string text, string start, string end)

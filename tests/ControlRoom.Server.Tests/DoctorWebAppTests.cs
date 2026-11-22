@@ -32,7 +32,7 @@ public sealed partial class DoctorWebAppTests
         Assert.Contains(
             "<script src=\"/history.js\" defer></script>\n  <script src=\"/doctor.js\" defer></script>\n"
             + "  <script src=\"/status.js\" defer></script>\n  <script src=\"/releases.js\" defer></script>\n  <script src=\"/live.js\" defer></script>", html, StringComparison.Ordinal);
-        Assert.Equal(14, ScriptTag().Matches(html).Count);
+        Assert.Equal(15, ScriptTag().Matches(html).Count);
     }
 
     [Fact]
@@ -206,10 +206,12 @@ public sealed partial class DoctorWebAppTests
     public async Task ServiceWorker_CachesDoctorJsWithVersion15AndNeverTheApi()
     {
         string js = await Fetch("/sw.js");
+        string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v21\";", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/releases.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v22\";", room, StringComparison.Ordinal);
+        Assert.Contains("  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/releases.js\",\n  \"/live.js\",\n", room, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/doctor", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("/api/doctor", room, StringComparison.Ordinal);
     }
 
     [Fact]

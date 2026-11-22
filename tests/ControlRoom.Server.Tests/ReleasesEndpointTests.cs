@@ -353,9 +353,9 @@ public sealed class ReleasesEndpointTests
         string inner = root.AddProject("Inner", "- [ ] A\n");
         TempFactoryRoot.InitGit(root.Path, "develop");
 
-        Assert.Null(await ControlRoom.Server.ProjectGit.Tags(inner));
-        Assert.Null(await ControlRoom.Server.ProjectGit.CommitsSince(inner, null));
-        Assert.Null(await ControlRoom.Server.ProjectGit.LogSince(inner, null));
+        Assert.Null(await RoomKit.ProjectGit.Tags(inner));
+        Assert.Null(await RoomKit.ProjectGit.CommitsSince(inner, null));
+        Assert.Null(await RoomKit.ProjectGit.LogSince(inner, null));
     }
 
     [Theory]
@@ -368,9 +368,9 @@ public sealed class ReleasesEndpointTests
         using TempFactoryRoot root = new();
         string repo = Repo(root, "Alpha");
 
-        Assert.False(ControlRoom.Server.ProjectGit.IsReleaseTag(tag));
-        Assert.Null(await ControlRoom.Server.ProjectGit.CommitsSince(repo, tag));
-        Assert.Null(await ControlRoom.Server.ProjectGit.LogSince(repo, tag));
+        Assert.False(RoomKit.ProjectGit.IsReleaseTag(tag));
+        Assert.Null(await RoomKit.ProjectGit.CommitsSince(repo, tag));
+        Assert.Null(await RoomKit.ProjectGit.LogSince(repo, tag));
     }
 
     [Fact]
@@ -401,7 +401,7 @@ public sealed class ReleasesEndpointTests
         Assert.DoesNotContain("ProcessStartInfo", endpoint, StringComparison.Ordinal);
         Assert.DoesNotContain("Process.", endpoint, StringComparison.Ordinal);
         Assert.DoesNotContain("ProjectGit.Run", endpoint, StringComparison.Ordinal);
-        string git = File.ReadAllText(Path.Combine(folder, "ProjectGit.cs"));
+        string git = File.ReadAllText(Path.Combine(AccessTokenTests.KitSourceFolder(), "ProjectGit.cs"));
         Assert.Contains(
             "[\"for-each-ref\", \"--format=%(refname:strip=2)%09%(creatordate:unix)\", \"refs/tags/\"]", git, StringComparison.Ordinal);
         Assert.Contains("[\"rev-list\", \"--count\", range]", git, StringComparison.Ordinal);

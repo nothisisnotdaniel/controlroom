@@ -158,6 +158,34 @@ public sealed partial class ReleaseWorkflowTests
     }
 
     [Fact]
+    public void PackRoomKit_ComesAfterTheTestsAndShipsWithEveryRelease()
+    {
+        string yaml = Workflow();
+        string[] names = [.. StepName().Matches(yaml).Select(match => match.Groups["name"].Value)];
+        int test = Array.IndexOf(names, "Test");
+        int pack = Array.IndexOf(names, "Pack RoomKit");
+        Assert.True(test >= 0 && pack > test, "Pack RoomKit must come after Test");
+        Assert.True(pack < Array.IndexOf(names, "Checksums"), "Pack RoomKit must come before Checksums");
+        Assert.Equal(
+            "        run: dotnet pack src/RoomKit -c Release -p:Version=\"$RELEASE_VERSION\" -o dist\n",
+            Step(yaml, "Pack RoomKit").TrimEnd('\n') + "\n");
+
+        string sums = Step(yaml, "Checksums");
+        Assert.Contains("shasum -a 256 \"RoomKit.$RELEASE_VERSION.nupkg\" >> SHA256SUMS\n", sums, StringComparison.Ordinal);
+        Assert.Contains(
+            "subject-path: dist/controlroom-${{ env.RELEASE_VERSION }}-osx-arm64.tar.gz,dist/RoomKit.${{ env.RELEASE_VERSION }}.nupkg\n",
+            yaml, StringComparison.Ordinal);
+        // One gh release create for stable releases and prereleases alike (only $PRERELEASE differs).
+        Assert.Single(Regex.Matches(yaml, "gh release create "));
+        Assert.Contains(
+            "dist/SHA256SUMS \"dist/RoomKit.$RELEASE_VERSION.nupkg\" --title ", yaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("packages:", yaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("nuget push", yaml, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(2, Regex.Matches(yaml, "secrets\\.").Count);
+        Assert.Equal(3, Regex.Matches(yaml, "\n +uses: ").Count);
+    }
+
+    [Fact]
     public void Pack_CopiesTheUpdaterScriptIntoTheTopFolderBeforeTar()
     {
         string pack = Step(Workflow(), "Pack");

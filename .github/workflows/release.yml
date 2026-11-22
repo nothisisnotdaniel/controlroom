@@ -11,6 +11,9 @@
 #   with the self-contained publish output, wwwroot/ included) and SHA256SUMS, plus a build-provenance
 #   attestation for the tarball (check it with: gh attestation verify <tarball> --repo nothisisnotdaniel/controlroom).
 #   scripts/launch-agent.sh install --release [vX.Y.Z] installs it.
+# - The release also holds RoomKit.<version>.nupkg, the shared server core (docs/roomkit.md), packed with the same
+#   version, listed in SHA256SUMS and attested with the tarball. Apps restore it from a local folder feed filled
+#   with gh release download; no package registry, permission or secret is needed.
 # - Once signing-cert.sha1 is committed, every build is signed with that self-signed certificate (steps Sign and
 #   Verify signature; README "Signing"), and install --release and the updater refuse any build that is not. The
 #   temporary signing keychain goes on the user keychain search list for the run (.github/scripts/signing-keychain.sh).
@@ -298,16 +301,20 @@ jobs:
           chmod 0755 "$RUNNER_TEMP/pack/$NAME/updater.sh"
           tar -czf "dist/$NAME.tar.gz" -C "$RUNNER_TEMP/pack" "$NAME"
 
+      - name: Pack RoomKit
+        run: dotnet pack src/RoomKit -c Release -p:Version="$RELEASE_VERSION" -o dist
+
       - name: Checksums
         run: |
           cd dist
           shasum -a 256 "controlroom-$RELEASE_VERSION-osx-arm64.tar.gz" > SHA256SUMS
+          shasum -a 256 "RoomKit.$RELEASE_VERSION.nupkg" >> SHA256SUMS
           cat SHA256SUMS
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: dist/controlroom-${{ env.RELEASE_VERSION }}-osx-arm64.tar.gz
+          subject-path: dist/controlroom-${{ env.RELEASE_VERSION }}-osx-arm64.tar.gz,dist/RoomKit.${{ env.RELEASE_VERSION }}.nupkg
 
       - name: Create GitHub release
         env:
@@ -318,7 +325,7 @@ jobs:
           case "$RELEASE_VERSION" in
             *-*) PRERELEASE="--prerelease" ;;
           esac
-          gh release create "v$RELEASE_VERSION" "dist/controlroom-$RELEASE_VERSION-osx-arm64.tar.gz" dist/SHA256SUMS --title "ControlRoom $RELEASE_VERSION" --generate-notes --target "$RELEASE_TARGET" $PRERELEASE
+          gh release create "v$RELEASE_VERSION" "dist/controlroom-$RELEASE_VERSION-osx-arm64.tar.gz" dist/SHA256SUMS "dist/RoomKit.$RELEASE_VERSION.nupkg" --title "ControlRoom $RELEASE_VERSION" --generate-notes --target "$RELEASE_TARGET" $PRERELEASE
 
       # Housekeeping after a proper release: delete the -develop prereleases (and their tags) at or below the
       # release (.github/scripts/old-prereleases.sh). It runs only after the release was created, so

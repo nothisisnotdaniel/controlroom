@@ -195,11 +195,13 @@ public sealed partial class LiveWebAppTests
     public async Task ServiceWorker_CachesLiveJsButNeverTheChangesRoute()
     {
         string js = await Fetch("/sw.js");
+        string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v21\";", js, StringComparison.Ordinal);
-        Assert.DoesNotContain("const CacheVersion = \"v9\";", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/edit.js\",\n  \"/counts.js\",\n  \"/search.js\",\n  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/releases.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v22\";", room, StringComparison.Ordinal);
+        Assert.DoesNotContain("const CacheVersion = \"v9\";", room, StringComparison.Ordinal);
+        Assert.Contains("  \"/edit.js\",\n  \"/counts.js\",\n  \"/search.js\",\n  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/releases.js\",\n  \"/live.js\",\n", room, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/changes", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("/api/changes", room, StringComparison.Ordinal);
         Assert.Contains("return Shell.includes(url.pathname);", js, StringComparison.Ordinal);
     }
 

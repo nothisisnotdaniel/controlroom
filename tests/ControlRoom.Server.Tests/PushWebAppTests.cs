@@ -30,15 +30,16 @@ public sealed partial class PushWebAppTests
     public async Task PushJs_HasAFixedTextForEveryState()
     {
         string js = await Fetch("/push.js");
+        string room = await Fetch("/room.js");
 
         Assert.Contains("unsupported: \"This browser can't show notifications.\"", js, StringComparison.Ordinal);
         Assert.Contains(
             "homeScreen: \"To get notifications on iPhone, add Control Room to the Home Screen and open it from there.\"",
-            js, StringComparison.Ordinal);
+            room, StringComparison.Ordinal);
         Assert.Contains("off: \"Get a notification when a job needs you or new items wait for approval.\"", js,
             StringComparison.Ordinal);
         Assert.Contains("on: \"Notifications are on for this device.\"", js, StringComparison.Ordinal);
-        Assert.Contains("denied: \"Notifications are blocked for Control Room.", js, StringComparison.Ordinal);
+        Assert.Contains("denied: \"Notifications are blocked for Control Room.", room, StringComparison.Ordinal);
         Assert.Contains("turnOn: \"Turn on\"", js, StringComparison.Ordinal);
         Assert.Contains("turnOff: \"Turn off\"", js, StringComparison.Ordinal);
         Assert.Contains("sendTest: \"Send test\"", js, StringComparison.Ordinal);

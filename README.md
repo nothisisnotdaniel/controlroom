@@ -128,6 +128,15 @@ tail -f ~/Library/Logs/ControlRoom/server.log
 
 `uninstall` keeps the log and the access token.
 
+## RoomKit
+
+The parts of ControlRoom that are not about this factory's job format (sign-in, the `Host` check, loopback
+listening, the web app shell, push, updates, backlogs, search, history and the Health view) live in the shared
+library `src/RoomKit`. ControlRoom (`src/ControlRoom.Server`) is a thin app on top of it: its names, its job format
+(`state.json`), its tabs and `wwwroot/room.js`. Every release also carries `RoomKit.X.Y.Z.nupkg`, listed in
+`SHA256SUMS` and attested like the tarball, so another factory's app can use the same core. See
+[docs/roomkit.md](docs/roomkit.md) for the plug-in API, the scripts and the local folder feed.
+
 ## Signing
 
 Release builds can be signed with one self-signed code-signing certificate, so every build has the same identity
