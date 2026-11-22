@@ -32,6 +32,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#147](backlog/147-show-and-edit-the-factory-backlog.md) Show and edit the factory backlog (after: factory#30)
 - [ ] [#153](backlog/153-modular-roomkit-core-with-an-opt.md) Modular RoomKit core with an opt-in factory module (after: #147)
 - [ ] [#152](backlog/152-windows-executables-for-controlroom.md) Windows executables for ControlRoom
+- [stop] Auto stops here
 - [ ] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone (after: #139)
 - [ ] [#139](backlog/139-phone-start-spike.md) Phone start spike
 - [x] [#13](backlog/013-releases-overview.md) Releases overview → 375-releases-overview
