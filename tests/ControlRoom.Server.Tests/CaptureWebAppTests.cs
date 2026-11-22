@@ -107,8 +107,9 @@ public sealed class CaptureWebAppTests
     public async Task CaptureJs_ListsReadableProjectsFromBacklogsAndPreselectsTheStoredOne()
     {
         string js = await Fetch("/capture.js");
+        string room = await Fetch("/room.js");
 
-        Assert.Contains("const CaptureProjectKey = \"controlroom-capture-project\";", js, StringComparison.Ordinal);
+        Assert.Contains("const CaptureProjectKey = \"controlroom-capture-project\";", room, StringComparison.Ordinal);
         Assert.Contains("localStorage.getItem(CaptureProjectKey)", js, StringComparison.Ordinal);
         Assert.Contains("localStorage.setItem(CaptureProjectKey, name);", js, StringComparison.Ordinal);
         string show = Between(js, "async function showCapture() {", "\n}\n");
@@ -167,9 +168,10 @@ public sealed class CaptureWebAppTests
     public async Task ServiceWorker_CachesCaptureJsWithTheCurrentVersion()
     {
         string js = await Fetch("/sw.js");
+        string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v21\";", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/search.js\",\n  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/releases.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v22\";", room, StringComparison.Ordinal);
+        Assert.Contains("  \"/search.js\",\n  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/releases.js\",\n  \"/live.js\",\n", room, StringComparison.Ordinal);
     }
 
     [Fact]

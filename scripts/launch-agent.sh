@@ -1,31 +1,43 @@
 #!/bin/sh
-# Installs, removes and reports on the macOS LaunchAgent that starts the ControlRoom server at login.
+# Installs, removes and reports on the macOS LaunchAgent that starts the app's server at login.
 # Usage: scripts/launch-agent.sh install|uninstall|status
 #        scripts/launch-agent.sh install --tailnet-host <mac>.<tailnet>.ts.net  (adds --TailnetHost <name>)
 #        scripts/launch-agent.sh install --release [vX.Y.Z] [--tailnet-host <name>]
 #          (installs the ready-built release from GitHub instead of publishing: vX.Y.Z, or without a tag the
-#          latest one, or the newest develop build when settings.json picks the develop channel, plus the updater LaunchAgent local.controlroom.updater that runs <support>/updater.sh about a minute
+#          latest one, or the newest develop build when settings.json picks the develop channel, plus the updater LaunchAgent UPDATER_LABEL that runs <support>/updater.sh about a minute
 #          after install or login and then every 15 min; each run checks only when the interval chosen in the app,
 #          30 min by default, has passed)
 # POSIX sh. Runs only dotnet (publish), launchctl, sleep and, with --release, curl, tar, shasum and (once
-# signing-cert.sha1 is committed next to ControlRoom.slnx) codesign --verify, all with fixed arguments. Never reads
+# signing-cert.sha1 is committed next to the app's solution file) codesign --verify, all with fixed arguments. Never reads
 # the access token file. After every bootout it waits until launchd has removed the service, and a failed bootstrap
 # is tried again a few times.
 
 set -u
-
+# The app's values, the only lines that differ between RoomKit's copy of this script and an app's copy
+# (roomkit:app block: variable assignments only).
+# roomkit:app-begin
+APP_NAME="ControlRoom"
 LABEL="local.controlroom.server"
 UPDATER_LABEL="local.controlroom.updater"
+SUPPORT_FOLDER="ControlRoom"
+LOG_FOLDER="ControlRoom"
+REPO_SLUG="nothisisnotdaniel/controlroom"
+RELEASES="https://github.com/nothisisnotdaniel/controlroom/releases"
+APP_PORT=8100
+TARBALL_PREFIX="controlroom"
+SERVER_NAME="ControlRoom.Server"
+SOLUTION_FILE="ControlRoom.slnx"
+# roomkit:app-end
+
 # Every 15 min, and at load (install or login): each run first waits UPDATER_START_DELAY seconds, then checks only
 # when it is due (the interval from settings.json, see updater.sh).
 UPDATER_INTERVAL=900
 UPDATER_START_DELAY=60
 UPDATE_RUNNING="An update is running. Try again in a few minutes."
 USAGE="usage: scripts/launch-agent.sh install [--release [vX.Y.Z]] [--tailnet-host <name>]|uninstall|status"
-# The one repository releases come from (renaming it breaks --release).
-RELEASES="https://github.com/nothisisnotdaniel/controlroom/releases"
+# RELEASES (in the roomkit:app block) is the one repository releases come from (renaming it breaks --release).
 # The develop channel's one release list (newest first), the same as updater.sh.
-LIST_URL="https://api.github.com/repos/nothisisnotdaniel/controlroom/releases?per_page=100"
+LIST_URL="https://api.github.com/repos/$REPO_SLUG/releases?per_page=100"
 MAX_LIST_BYTES=1048576
 # <support>/settings.json is at most this long (the same cap as updater.sh).
 MAX_SETTINGS_BYTES=64
@@ -171,9 +183,9 @@ check_text "$HOME" "HOME contains a control character."
 
 AGENTS="$HOME/Library/LaunchAgents"
 PLIST="$AGENTS/$LABEL.plist"
-LOG_DIR="$HOME/Library/Logs/ControlRoom"
+LOG_DIR="$HOME/Library/Logs/$LOG_FOLDER"
 LOG="$LOG_DIR/server.log"
-SUPPORT="$HOME/Library/Application Support/ControlRoom"
+SUPPORT="$HOME/Library/Application Support/$SUPPORT_FOLDER"
 SERVER="$SUPPORT/server"
 SERVER_NEW="$SUPPORT/server.new"
 PREVIOUS="$SUPPORT/server.previous"
@@ -252,7 +264,7 @@ put_file() {
     if [ -L "$1" ] || [ -d "$1" ]; then
         return 1
     fi
-    put_temp=$(mktemp "$(dirname "$1")/.controlroom.XXXXXX") || return 1
+    put_temp=$(mktemp "$(dirname "$1")/.$TARBALL_PREFIX.XXXXXX") || return 1
     if cat >"$put_temp" && chmod "$2" "$put_temp" && mv -f "$put_temp" "$1"; then
         return 0
     fi
@@ -318,13 +330,13 @@ find_program() {
 
 # Publishes the server from the sources into server.new; launchd runs it with dotnet.
 publish_server() {
-    if ! "$DOTNET" publish "$REPO/src/ControlRoom.Server" -c Release -o "$SERVER_NEW" >&2 \
-        || [ ! -f "$SERVER_NEW/ControlRoom.Server.dll" ]; then
+    if ! "$DOTNET" publish "$REPO/src/$SERVER_NAME" -c Release -o "$SERVER_NEW" >&2 \
+        || [ ! -f "$SERVER_NEW/$SERVER_NAME.dll" ]; then
         rm -rf "$SERVER_NEW"
         fail "dotnet publish failed. Nothing was changed."
     fi
     PROGRAM=$DOTNET
-    PROGRAM_FILE="$SERVER/ControlRoom.Server.dll"
+    PROGRAM_FILE="$SERVER/$SERVER_NAME.dll"
 }
 
 # Removes the release work folder on every way out of the script.
@@ -419,7 +431,7 @@ check_and_extract() {
     fi
     others=$(find "$WORK/out/$TOP" ! -type f ! -type d) || fail "$RELEASE_BAD"
     [ -z "$others" ] || fail "$RELEASE_BAD"
-    if [ ! -f "$WORK/out/$TOP/ControlRoom.Server" ] || [ ! -x "$WORK/out/$TOP/ControlRoom.Server" ] \
+    if [ ! -f "$WORK/out/$TOP/$SERVER_NAME" ] || [ ! -x "$WORK/out/$TOP/$SERVER_NAME" ] \
         || [ ! -f "$WORK/out/$TOP/wwwroot/index.html" ]; then
         fail "$RELEASE_BAD"
     fi
@@ -464,8 +476,8 @@ verify_signature() {
         *) fail "$RELEASE_BAD" ;;
     esac
     "$CODESIGN" --verify --strict \
-        "-R=identifier \"ControlRoom.Server\" and certificate leaf = H\"$SIGNING_CERT_SHA1\"" \
-        "$WORK/out/$TOP/ControlRoom.Server" >/dev/null 2>&1 || fail "$RELEASE_BAD"
+        "-R=identifier \"$SERVER_NAME\" and certificate leaf = H\"$SIGNING_CERT_SHA1\"" \
+        "$WORK/out/$TOP/$SERVER_NAME" >/dev/null 2>&1 || fail "$RELEASE_BAD"
     for signed in "$WORK/out/$TOP"/*.dylib "$WORK/out/$TOP/createdump"; do
         if [ ! -e "$signed" ] && [ ! -L "$signed" ]; then
             continue
@@ -656,7 +668,7 @@ updater_plist() {
     printf '</plist>\n'
 }
 
-# Downloads, checks and extracts release TAG into server.new; launchd runs its ControlRoom.Server directly. Without
+# Downloads, checks and extracts release TAG into server.new; launchd runs its SERVER_NAME directly. Without
 # a tag it takes the channel the user chose: the newest develop build on develop (settings.json), else the latest
 # release. Nothing from the download runs here.
 install_release() {
@@ -670,20 +682,20 @@ install_release() {
             latest_tag
         fi
     fi
-    TOP="controlroom-${TAG#v}-osx-arm64"
+    TOP="$TARBALL_PREFIX-${TAG#v}-osx-arm64"
     TARBALL="$TOP.tar.gz"
     download "$TARBALL" "$MAX_TARBALL_BYTES"
     download SHA256SUMS "$MAX_SUMS_BYTES"
     check_and_extract
     mv "$WORK/out/$TOP" "$SERVER_NEW" || fail "$RELEASE_BAD"
-    PROGRAM="$SERVER/ControlRoom.Server"
+    PROGRAM="$SERVER/$SERVER_NAME"
     PROGRAM_FILE=""
 }
 
 do_install() {
     SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd) || fail "Can't find the script folder."
-    REPO=$(cd "$SCRIPT_DIR/.." && pwd) || fail "Can't find the ControlRoom folder."
-    [ -f "$REPO/ControlRoom.slnx" ] || fail "Can't find ControlRoom.slnx next to the scripts folder."
+    REPO=$(cd "$SCRIPT_DIR/.." && pwd) || fail "Can't find the $APP_NAME folder."
+    [ -f "$REPO/$SOLUTION_FILE" ] || fail "Can't find $SOLUTION_FILE next to the scripts folder."
     ROOT=$(cd "$REPO/.." && pwd) || fail "Can't find the factory root."
     check_text "$ROOT" "The factory root path contains a control character."
 

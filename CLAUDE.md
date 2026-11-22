@@ -148,6 +148,13 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
 - **Stack:** .NET 10 ASP.NET Core minimal API (`Microsoft.NET.Sdk.Web`, no extra packages) serving a plain
   HTML/CSS/JS web app from its own `wwwroot` (no CDN, no build step, strict CSP), xUnit tests with
   `Microsoft.AspNetCore.Mvc.Testing` to host the app in memory. No new package without a reason in the spec.
+  Since #386 the shared core is the class library `src/RoomKit` (`Microsoft.NET.Sdk.Razor`, `FrameworkReference
+  Microsoft.AspNetCore.App`, no `PackageReference`, namespace `RoomKit`; see `docs/roomkit.md`): everything that is
+  not about this factory's job format. Its web files are static web assets at base path `/` (same URLs; a path in
+  both `wwwroot` folders fails the build; outside Development `RoomKitApp` loads them through the static web assets
+  manifest). `src/ControlRoom.Server` is the app on it: `ControlRoomApp` (`RoomKitOptions` with today's values,
+  `StateJsonJobFormat`, its endpoints), and `RoomKitApp.Run` is the whole `Program.cs`. ControlRoom uses RoomKit's
+  public API only; RoomKit's `InternalsVisibleTo` names only the two test assemblies.
   Run: `dotnet run --project src/ControlRoom.Server` (listens on `127.0.0.1:8100` only; the factory root is the
   parent of the folder holding `ControlRoom.slnx`, or `--FactoryRoot <path>`).
   `--PushSubject <mailto:…>` sets the VAPID `sub` (default `mailto:controlroom@localhost`).
@@ -186,12 +193,42 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   that version (`.github/scripts/old-prereleases.sh`). Top-level `permissions: {}`; the job has only `contents: write`,
   `id-token: write`, `attestations: write`; every action pinned to a commit SHA; PR and ref fields only through `env:`.
   Check a tarball with `gh attestation verify <tarball> --repo nothisisnotdaniel/controlroom`. The repo slug is fixed
-  in `launch-agent.sh`; renaming the repo breaks `--release`.
+  in `launch-agent.sh`; renaming the repo breaks `--release`. After the tarball `Pack` step, `Pack RoomKit` runs
+  `dotnet pack src/RoomKit -c Release -p:Version="$RELEASE_VERSION" -o dist`; `RoomKit.X.Y.Z.nupkg` is in
+  `SHA256SUMS`, the attestation subjects and the `gh release create` files (stable and prerelease). Other apps restore
+  it from a local folder feed filled with `gh release download` (`docs/roomkit.md`); no GitHub Packages, no
+  `packages: write`, no new secret.
 - **Test command:** `dotnet test` (from `ControlRoom/`; `dotnet build` must stay at 0 warnings). Tests build a
   temporary factory root (`TempFactoryRoot`) and host the server with `ServerFactory`; no test reads the real
   factory root or opens a real port.
 - **Layout:**
   - `ControlRoom.slnx`, `Directory.Build.props` (nullable, implicit usings, code style in build), `.editorconfig`.
+  - Since #386 the units below are split: `src/RoomKit/` holds `RoomKitApp` (was `ServerApp`'s build: Kestrel,
+    headers, `HostCheck`, the method rule with the POST allow-list built from RoomKit's routes plus the app's
+    `RoomRoutes.MapPost` routes (fixed `/api/` paths only), the token gate, static files, push and update services,
+    the `version` and `token` commands), `RoomKitOptions`, `IJobFormat` (`RoomJob`, `RoomJobFolder`), `RoomRoutes`,
+    `RoomContext` (the process-wide options and job format) and the shared units `AccessToken`, `TokenCommand`,
+    `HostCheck`, `ServerEndpoint`, `FactoryRootLocator`, `ProjectFinder`, `SafeFileReader`, `SafeFileWriter`,
+    `BacklogReader`, `BacklogParser`, `BacklogWaiting`, `BacklogPlan`, `BacklogsEndpoint`, `BacklogEditor`,
+    `ProjectGit`, `BacklogWorktree`, `BacklogSource`, `BacklogChangeEndpoint`, `StoryReader`, `StoryCategory`,
+    `StoryMarkdown`, `StoryEndpoint`, `InboxEndpoint`, `TasksEndpoint`, `HistoryEndpoint`, `SearchEndpoint`,
+    `ChangeFingerprint`, `PushCrypto`, `PrivateFolder`, `PushStore`, `PushSender`, `PushWatcher`, `PushEndpoint`,
+    `PushTestLimiter`, `UnixOwner`, `AppVersion`, `VersionCommand`, `VersionEndpoint`, `UpdateCheck`, `UpdateEndpoint`,
+    `UpdateSettingsStore`, `UpdateResult`, `HealthEndpoint`, `DoctorCheck` and `DoctorEndpoint`, reading jobs only
+    through `IJobFormat`; its `wwwroot/` holds `app.css`, `sw.js`, `token.js`, `push.js`, `edit.js`, `counts.js`,
+    `search.js`, `capture.js`, `history.js`, `doctor.js` and `live.js`, and `scripts/` the neutral `launch-agent.sh`
+    and `updater.sh`. `src/ControlRoom.Server/` keeps `Program.cs`, a thin `ServerApp`, `ControlRoomApp`,
+    `StateJsonJobFormat`, `JobReader`, `JobAction`, `JobActEndpoint`, `BoardEndpoint`, `ChangesEndpoint`,
+    `JobEndpoint`, `ProjectStatusEndpoint`, `ReleasesEndpoint`, and in `wwwroot/` `index.html`,
+    `manifest.webmanifest`, `icons/`, `app.js`, `board.js`, `act.js`, `status.js`, `releases.js` and `room.js`.
+  - `wwwroot/room.js` (ControlRoom): the app values the RoomKit scripts read as globals, loaded as the first
+    `<script>` of `index.html` and by `sw.js` through `importScripts("/room.js")`: `TokenKey`, `CaptureProjectKey`,
+    `HistoryProjectKey`, `PushAppTexts` (`homeScreen`, `denied`), `CacheVersion` (`v22`), `CacheName`, `Shell` (the
+    shell list, with `/room.js`), `PushAppTitles` (`updated`), `PushFallbackTitle`, `PushDefaultTag` and
+    `PushUpdatePrefix`. The script order below starts with `room.js`.
+  - Scripts: every app value of `launch-agent.sh` and `updater.sh` is in the block between `# roomkit:app-begin`
+    and `# roomkit:app-end` (assignments only); outside it `scripts/*.sh` are byte-identical to
+    `src/RoomKit/scripts/*.sh` (`RoomKitScriptTests`).
   - `src/ControlRoom.Server/`: `Program.cs` (entry; `token` runs `TokenCommand`,
     `version` runs `VersionCommand`), `ServerApp` (builds the app:
     Kestrel, headers, the `HostCheck`, GET/HEAD only (POST only on `/api/backlog/change`, `/api/job/act`, `/api/update/settings` and the four `/api/push/*` POST routes), the `/api/` token gate, static files, endpoints, push services), `AccessToken` (token file
@@ -326,7 +363,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     pending, and at once on becoming visible; refetches only the board, the changed backlog sections (kept while a form
     is open or focus is inside) and the open story (in place, never while Edit story or Add note is open); a failed check shows
     the fixed `Connection lost. Reconnecting…` notice under the header, or in the `board-status` line on the board;
-    script order `token.js`, `board.js`, `act.js`, `push.js`, `edit.js`, `counts.js`, `search.js`, `capture.js`, `history.js`, `doctor.js`, `status.js`, `releases.js`, `live.js`, `app.js`; a changed
+    script order `room.js`, `token.js`, `board.js`, `act.js`, `push.js`, `edit.js`, `counts.js`, `search.js`, `capture.js`, `history.js`, `doctor.js`, `status.js`, `releases.js`, `live.js`, `app.js`; a changed
     `backlog` fingerprint (or a recovered connection) refetches the Backlogs counts; a changed `jobs` fingerprint (or a recovered connection) sets `jobCountsStale` and refetches the Jobs tab counts on every view (`refreshStaleJobCounts`, retried after a failure; skipped when `pollBoard` succeeded in the same check); a changed `backlog` or `stories` fingerprint re-runs the current search;
     a changed `jobs` fingerprint refetches the history while it is shown; a changed `jobs`, `backlog` or `stories`
     fingerprint refetches the health view while it is shown; a changed `jobs` or `backlog` fingerprint refetches the
@@ -435,6 +472,13 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     on the `security list-keychains -d user` search list, keeping the others in order; `check <keychain> <sha1>`
     through `find-identity -p codesigning` without `-v`; never prints `security`'s output, no password argument; exit 1
     on a `security` failure, 2 on wrong usage); `.github/signing/entitlements.plist`.
+  - `tests/RoomKit.Tests/` (references only RoomKit): `SampleRoom` (a test-only app, port 8201, repo
+    `example/sampleroom`, a fake job format in `work/jobs/<id>/job.txt`) hosted by `SampleServerFactory`, and
+    `RoomKitLibraryTests` (source scan, friends, `docs/roomkit.md` names every public type, `dotnet pack` contents);
+    `TempFactoryRoot`, `TempTokenFolder`, `PushFakes`, `PushTestData` and `RepoCopy` are linked from
+    `ControlRoom.Server.Tests`. `RepoCopy` copies `src/`, `docs/` and the root files to a temp folder for
+    `dotnet publish`/`dotnet pack` tests; `tests/ControlRoom.Server.Tests/Develop/` holds develop's web file hashes
+    and the develop copies of the files that lost lines to `room.js` (`WebAssetSplitTests`).
   - `tests/ControlRoom.Server.Tests/`: one test class per unit or concern (`LaunchAgentScriptTests` runs the script with fake
     `launchctl`/`dotnet`/`curl`/`codesign` in a temp `HOME`, runs every `install --release` from its own copy of the
     scripts (`ScriptFixtures.BuildReleaseTree`, so the real `signing-cert.sha1` is never read) and builds release

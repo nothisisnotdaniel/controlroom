@@ -177,8 +177,9 @@ public sealed class AutoUpdateWebAppTests
     public async Task SwJs_HasFixedTitlesAndBodiesForTheUpdateResults()
     {
         string js = await Fetch("/sw.js");
+        string room = await Fetch("/room.js");
 
-        Assert.Contains("  updated: \"ControlRoom updated\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("  updated: \"ControlRoom updated\",\n", room, StringComparison.Ordinal);
         Assert.Contains("  update_failed: \"Update failed\",\n", js, StringComparison.Ordinal);
         Assert.Contains("  check: \"The download didn't check out. Nothing was changed.\",\n", js, StringComparison.Ordinal);
         Assert.Contains("  no_answer: \"The new version didn't start, so the old one is back.\",\n", js, StringComparison.Ordinal);

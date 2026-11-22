@@ -34,7 +34,7 @@ public sealed partial class HistoryWebAppTests
             .ToArray();
         Assert.All(positions, position => Assert.True(position >= 0));
         Assert.Equal(positions.OrderBy(position => position), positions);
-        Assert.Equal(14, ScriptTag().Matches(html).Count);
+        Assert.Equal(15, ScriptTag().Matches(html).Count);
         Assert.Contains(
             "<script src=\"/capture.js\" defer></script>\n  <script src=\"/history.js\" defer></script>\n"
             + "  <script src=\"/doctor.js\" defer></script>", html, StringComparison.Ordinal);
@@ -175,8 +175,9 @@ public sealed partial class HistoryWebAppTests
     public async Task HistoryJs_ProjectSelectFiltersTheListAndAllTimeAndIsKept()
     {
         string js = await Fetch("/history.js");
+        string room = await Fetch("/room.js");
 
-        Assert.Contains("const HistoryProjectKey = \"controlroom-history-project\";", js, StringComparison.Ordinal);
+        Assert.Contains("const HistoryProjectKey = \"controlroom-history-project\";", room, StringComparison.Ordinal);
         Assert.Contains("localStorage.setItem(HistoryProjectKey, name);", js, StringComparison.Ordinal);
         Assert.Contains("const wanted = select.options.length > 0 ? select.value : storedHistoryProject();", js,
             StringComparison.Ordinal);
@@ -294,10 +295,12 @@ public sealed partial class HistoryWebAppTests
     public async Task ServiceWorker_CachesHistoryJsWithVersion15()
     {
         string js = await Fetch("/sw.js");
+        string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v21\";", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v22\";", room, StringComparison.Ordinal);
+        Assert.Contains("  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n", room, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/history", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("/api/history", room, StringComparison.Ordinal);
     }
 
     [Fact]

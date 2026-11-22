@@ -45,9 +45,12 @@ internal static class JobActEndpoint
 
     private static readonly HashSet<string> Fields = new(StringComparer.Ordinal) { "id", "action", "round", "note" };
 
-    public static void Map(WebApplication app)
+    /// <summary>Maps the route as an app POST route; one lock serializes the writes of this server.</summary>
+    public static void Map(RoomRoutes routes)
     {
-        app.MapPost(Route, async (FactoryRoot root, JobActLock actLock, TimeProvider time, HttpContext context) =>
+        ArgumentNullException.ThrowIfNull(routes);
+        JobActLock actLock = new();
+        routes.MapPost(Route, async (FactoryRoot root, TimeProvider time, HttpContext context) =>
         {
             context.Response.Headers.CacheControl = "no-store";
             if (!IsJson(context.Request.ContentType))

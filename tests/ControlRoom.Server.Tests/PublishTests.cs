@@ -1,0 +1,32 @@
+namespace ControlRoom.Server.Tests;
+
+/// <summary>A framework-dependent publish holds every web file of both <c>wwwroot</c> folders.</summary>
+public sealed class PublishTests
+{
+    [Fact]
+    public void Publish_HoldsEveryWebFileOfTheAppAndRoomKit()
+    {
+        using RepoCopy copy = new();
+
+        copy.Dotnet("publish", "src/ControlRoom.Server", "-c", "Release", "-o", copy.Output);
+
+        string published = Path.Combine(copy.Output, "wwwroot");
+        foreach (string project in new[] { "ControlRoom.Server", "RoomKit" })
+        {
+            string source = Path.Combine(copy.Path, "src", project, "wwwroot");
+            string[] files = Directory.GetFiles(source, "*", SearchOption.AllDirectories);
+            Assert.NotEmpty(files);
+            foreach (string file in files)
+            {
+                string relative = Path.GetRelativePath(source, file);
+                string target = Path.Combine(published, relative);
+                Assert.True(File.Exists(target), relative + " is missing from the publish output");
+                Assert.Equal(File.ReadAllBytes(file), File.ReadAllBytes(target));
+            }
+        }
+
+        Assert.True(File.Exists(Path.Combine(published, "room.js")));
+        Assert.True(File.Exists(Path.Combine(copy.Output, "ControlRoom.Server.dll")));
+        Assert.True(File.Exists(Path.Combine(copy.Output, "RoomKit.dll")));
+    }
+}

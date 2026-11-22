@@ -1,8 +1,8 @@
 #!/bin/sh
-# The ControlRoom updater: run by the LaunchAgent local.controlroom.updater (at load, so about a minute after
+# The app's updater: run by the LaunchAgent UPDATER_LABEL (at load, so about a minute after
 # install or login, and then every 15 min) as
 #   /bin/sh <support>/updater.sh --factory-root <root> [--start-delay <s>]
-# where <support> is ~/Library/Application Support/ControlRoom and <s> (1-600) is how many seconds it first waits
+# where <support> is ~/Library/Application Support/SUPPORT_FOLDER and <s> (1-600) is how many seconds it first waits
 # (sleep, before it reads anything; without sleep on PATH it goes on at once). Then it decides whether the run is due:
 # the first run since the agent loaded (launchctl print shows "runs = 1"; a failed print counts as due), a missing or
 # broken <support>/last-check stamp (not a private 0600 file of this user holding epoch seconds plus one line
@@ -22,7 +22,7 @@
 # were). After every bootout it waits until launchd has removed the service, and a
 # failed bootstrap is tried again a few times (one that never succeeds is bootstrap_failed). It writes
 # update-result.json for the server's push and prints one final line, "<UTC ISO-8601> <word>[ <tags>]", which
-# launchd appends to ~/Library/Logs/ControlRoom/updater.log. The words:
+# launchd appends to ~/Library/Logs/LOG_FOLDER/updater.log. The words:
 # off, not_release, busy, job_running, current, latest_failed, download_failed, check_failed, skipped_failed,
 # updated, rolled_back, bootstrap_failed, swap_failed, rollback_failed.
 # While a factory job runs, the run logs "<UTC> waiting <installed>", lets go of its lock, waits 15 min and checks
@@ -34,22 +34,34 @@
 # Never reads, copies or sends the access token. Nothing from the download runs here.
 
 set -u
+# The app's values, the only lines that differ between RoomKit's copy of this script and an app's copy
+# (roomkit:app block: variable assignments only).
+# roomkit:app-begin
+APP_NAME="ControlRoom"
+LABEL="local.controlroom.server"
+UPDATER_LABEL="local.controlroom.updater"
+SUPPORT_FOLDER="ControlRoom"
+LOG_FOLDER="ControlRoom"
+REPO_SLUG="nothisisnotdaniel/controlroom"
+RELEASES="https://github.com/nothisisnotdaniel/controlroom/releases"
+APP_PORT=8100
+TARBALL_PREFIX="controlroom"
+SERVER_NAME="ControlRoom.Server"
+SOLUTION_FILE="ControlRoom.slnx"
+# roomkit:app-end
 umask 077
 # Only the one log line reaches the log (fd 3); every other output is dropped.
 exec 3>&1 1>/dev/null 2>/dev/null
 
-LABEL="local.controlroom.server"
 # The updater's own LaunchAgent, with the same values as launch-agent.sh (updater_plist prints it).
-UPDATER_LABEL="local.controlroom.updater"
 UPDATER_INTERVAL=900
 UPDATER_START_DELAY=60
 FIXED_PATH="/usr/local/share/dotnet:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 # A release's updater.sh is installed only when it is at most this long (the script is about 40 KiB).
 MAX_UPDATER_BYTES=262144
-# The one repository releases come from (the same as launch-agent.sh).
-RELEASES="https://github.com/nothisisnotdaniel/controlroom/releases"
+# RELEASES (in the roomkit:app block) is the one repository releases come from (the same as launch-agent.sh).
 # The develop channel's one release list (newest first; the API never shows drafts without a token).
-LIST_URL="https://api.github.com/repos/nothisisnotdaniel/controlroom/releases?per_page=100"
+LIST_URL="https://api.github.com/repos/$REPO_SLUG/releases?per_page=100"
 MAX_LIST_BYTES=1048576
 # settings.json is at most this long: the longest form the server writes, with its line break, is 62 bytes.
 MAX_SETTINGS_BYTES=64
@@ -70,7 +82,7 @@ MAX_SUMS_BYTES=4096
 MAX_UNPACKED_BYTES=536870912
 MAX_ENTRIES=10000
 # The public, token-free route the swapped-in server must answer on: 15 tries, 2 s apart, 2 s each.
-HEALTH_URL="http://127.0.0.1:8100/health"
+HEALTH_URL="http://127.0.0.1:$APP_PORT/health"
 HEALTH_TRIES=15
 # After a bootout, launchctl print is polled until the service is gone: at most this many polls, 0.5 s apart (15 s).
 WAIT_POLLS=30
@@ -346,7 +358,7 @@ last_skipped_version() {
 }
 
 # True when launchd runs the server (top-level "state = running" in launchctl print) and its pid is the only
-# process listening on port 8100 that lsof shows, so an answer from another local process that took the port
+# process listening on APP_PORT that lsof shows, so an answer from another local process that took the port
 # after the bootout is never counted. Fails closed on anything else.
 server_owns_port() {
     printed=$("$LAUNCHCTL" print "$SERVICE") || return 1
@@ -355,7 +367,7 @@ server_owns_port() {
     case $pid in
         "" | *[!0-9]*) return 1 ;;
     esac
-    listeners=$("$LSOF" -nP -iTCP:8100 -sTCP:LISTEN -t) || return 1
+    listeners=$("$LSOF" -nP -iTCP:"$APP_PORT" -sTCP:LISTEN -t) || return 1
     [ "$listeners" = "$pid" ]
 }
 
@@ -671,7 +683,7 @@ check_and_extract() {
     fi
     others=$(find "$WORK/out/$TOP" ! -type f ! -type d) || fail "$RELEASE_BAD"
     [ -z "$others" ] || fail "$RELEASE_BAD"
-    if [ ! -f "$WORK/out/$TOP/ControlRoom.Server" ] || [ ! -x "$WORK/out/$TOP/ControlRoom.Server" ] \
+    if [ ! -f "$WORK/out/$TOP/$SERVER_NAME" ] || [ ! -x "$WORK/out/$TOP/$SERVER_NAME" ] \
         || [ ! -f "$WORK/out/$TOP/wwwroot/index.html" ]; then
         fail "$RELEASE_BAD"
     fi
@@ -716,8 +728,8 @@ verify_signature() {
         *) fail "$RELEASE_BAD" ;;
     esac
     "$CODESIGN" --verify --strict \
-        "-R=identifier \"ControlRoom.Server\" and certificate leaf = H\"$SIGNING_CERT_SHA1\"" \
-        "$WORK/out/$TOP/ControlRoom.Server" >/dev/null 2>&1 || fail "$RELEASE_BAD"
+        "-R=identifier \"$SERVER_NAME\" and certificate leaf = H\"$SIGNING_CERT_SHA1\"" \
+        "$WORK/out/$TOP/$SERVER_NAME" >/dev/null 2>&1 || fail "$RELEASE_BAD"
     for signed in "$WORK/out/$TOP"/*.dylib "$WORK/out/$TOP/createdump"; do
         if [ ! -e "$signed" ] && [ ! -L "$signed" ]; then
             continue
@@ -919,7 +931,7 @@ case ${HOME:-} in
     *) finish off ;;
 esac
 USER_ID=$(id -u) || finish off
-SUPPORT="$HOME/Library/Application Support/ControlRoom"
+SUPPORT="$HOME/Library/Application Support/$SUPPORT_FOLDER"
 SETTINGS="$SUPPORT/settings.json"
 MARKER="$SUPPORT/installed-release"
 SIGNING_CERT="$SUPPORT/signing-cert.sha1"
@@ -931,7 +943,7 @@ AGENTS="$HOME/Library/LaunchAgents"
 PLIST="$AGENTS/$LABEL.plist"
 UPDATER_SCRIPT="$SUPPORT/updater.sh"
 UPDATER_PLIST="$AGENTS/$UPDATER_LABEL.plist"
-UPDATER_LOG="$HOME/Library/Logs/ControlRoom/updater.log"
+UPDATER_LOG="$HOME/Library/Logs/$LOG_FOLDER/updater.log"
 UPDATER_SCRIPT_PREVIOUS="$SUPPORT/updater.sh.previous"
 UPDATER_PLIST_PREVIOUS="$SUPPORT/updater.plist.previous"
 STAMP="$SUPPORT/last-check"
@@ -1026,7 +1038,7 @@ WORK=$(mktemp -d "$SUPPORT/.release.XXXXXX") || {
     WORK=""
     finish download_failed
 }
-TOP="controlroom-${TAG#v}-osx-arm64"
+TOP="$TARBALL_PREFIX-${TAG#v}-osx-arm64"
 TARBALL="$TOP.tar.gz"
 TAR=$(find_program tar) || fail "$RELEASE_BAD"
 SHASUM=$(find_program shasum) || fail "$RELEASE_BAD"
