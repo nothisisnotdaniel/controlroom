@@ -2,6 +2,8 @@
 
 As the ControlRoom user on the iPhone, I want a pending reviewer chip to say it is pending in text, so that I can tell pending from other states without relying on colour.
 
+Category: ui
+
 ## What
 
 In board.js roundRow, give pending chips a visible text marker (for example `ux …` or `ux · pending`) in addition to the colour, in both light and dark mode. Update the WebAppTests assertions.

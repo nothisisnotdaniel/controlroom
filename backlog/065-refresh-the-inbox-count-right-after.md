@@ -2,6 +2,8 @@
 
 As the operator, I want the inbox count to update as soon as I change a backlog item anywhere in the app, so that the badge never shows a stale number.
 
+Category: bug
+
 ## What
 
 A change committed from the backlog or story view now updates the inbox count only on the next live check. Call loadInboxCount after every committed change in those views too.

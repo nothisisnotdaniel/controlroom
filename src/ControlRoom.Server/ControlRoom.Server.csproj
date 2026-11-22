@@ -20,4 +20,12 @@
     <InternalsVisibleTo Include="ControlRoom.Server.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\RoomKit\RoomKit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="RoomKit" />
+  </ItemGroup>
+
 </Project>

@@ -12,21 +12,21 @@ public sealed partial class HistoryWebAppTests
     {
         string html = await Fetch("/index.html");
 
-        int capture = html.IndexOf("<a href=\"#capture\" data-view=\"capture\">Capture</a>", StringComparison.Ordinal);
-        int history = html.IndexOf("<a href=\"#history\" data-view=\"history\">History</a>", StringComparison.Ordinal);
+        int search = html.IndexOf("<a href=\"#capture\" data-view=\"capture\">", StringComparison.Ordinal);
+        int history = html.IndexOf("<a href=\"#history\" data-view=\"history\">", StringComparison.Ordinal);
         int navEnd = html.IndexOf("</nav>", StringComparison.Ordinal);
-        Assert.True(capture >= 0 && history > capture && history < navEnd);
+        Assert.True(search >= 0 && history > search && history < navEnd);
         Assert.Contains("<main id=\"history\" hidden></main>", html, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task IndexHtml_LoadsHistoryJsBetweenCaptureJsAndDoctorJs_ThirteenScripts()
+    public async Task IndexHtml_LoadsHistoryJsBetweenCaptureJsAndDoctorJs_FourteenScripts()
     {
         string html = await Fetch("/index.html");
         string[] scripts =
         [
-            "/token.js", "/board.js", "/act.js", "/push.js", "/edit.js", "/inbox.js", "/tasks.js", "/search.js",
-            "/capture.js", "/history.js", "/doctor.js", "/status.js", "/live.js", "/app.js",
+            "/token.js", "/board.js", "/act.js", "/push.js", "/edit.js", "/counts.js", "/search.js",
+            "/capture.js", "/history.js", "/doctor.js", "/status.js", "/releases.js", "/live.js", "/app.js",
         ];
 
         int[] positions = scripts
@@ -34,7 +34,7 @@ public sealed partial class HistoryWebAppTests
             .ToArray();
         Assert.All(positions, position => Assert.True(position >= 0));
         Assert.Equal(positions.OrderBy(position => position), positions);
-        Assert.Equal(14, ScriptTag().Matches(html).Count);
+        Assert.Equal(15, ScriptTag().Matches(html).Count);
         Assert.Contains(
             "<script src=\"/capture.js\" defer></script>\n  <script src=\"/history.js\" defer></script>\n"
             + "  <script src=\"/doctor.js\" defer></script>", html, StringComparison.Ordinal);
@@ -47,9 +47,9 @@ public sealed partial class HistoryWebAppTests
         string js = await Fetch("/history.js");
 
         Assert.Contains(
-            "const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"search\", \"capture\", \"history\", \"doctor\", \"job\", \"story\"];",
+            "const Views = [\"backlogs\", \"board\", \"capture\", \"history\", \"doctor\", \"job\", \"story\"];",
             app, StringComparison.Ordinal);
-        Assert.Contains("  capture: \"Capture\", history: \"History\", doctor: \"Health\" };", app, StringComparison.Ordinal);
+        Assert.Contains(" history: \"History\", doctor: \"Health\" };", app, StringComparison.Ordinal);
         Assert.Contains("  if (hash === HistoryRoute) {\n    return \"history\";\n  }", app, StringComparison.Ordinal);
         Assert.Contains("  if (next === \"history\") {\n    showHistory();\n    return;\n  }", app, StringComparison.Ordinal);
         Assert.Contains("const HistoryRoute = \"#history\";", js, StringComparison.Ordinal);
@@ -83,6 +83,7 @@ public sealed partial class HistoryWebAppTests
         Assert.Contains("  emptyProject: \"No jobs for this project.\",\n", texts, StringComparison.Ordinal);
         Assert.Contains("  last7: \"Last 7 days\",\n", texts, StringComparison.Ordinal);
         Assert.Contains("  last30: \"Last 30 days\",\n", texts, StringComparison.Ordinal);
+        Assert.Contains("  allTime: \"All time\",\n", texts, StringComparison.Ordinal);
         Assert.Contains("  projectLabel: \"Project\",\n", texts, StringComparison.Ordinal);
         Assert.Contains("  allProjects: \"All projects\",\n", texts, StringComparison.Ordinal);
         Assert.Contains("  unknown: \"unknown\",\n", texts, StringComparison.Ordinal);
@@ -171,11 +172,12 @@ public sealed partial class HistoryWebAppTests
     }
 
     [Fact]
-    public async Task HistoryJs_ProjectSelectFiltersOnlyTheListAndIsKept()
+    public async Task HistoryJs_ProjectSelectFiltersTheListAndAllTimeAndIsKept()
     {
         string js = await Fetch("/history.js");
+        string room = await Fetch("/room.js");
 
-        Assert.Contains("const HistoryProjectKey = \"controlroom-history-project\";", js, StringComparison.Ordinal);
+        Assert.Contains("const HistoryProjectKey = \"controlroom-history-project\";", room, StringComparison.Ordinal);
         Assert.Contains("localStorage.setItem(HistoryProjectKey, name);", js, StringComparison.Ordinal);
         Assert.Contains("const wanted = select.options.length > 0 ? select.value : storedHistoryProject();", js,
             StringComparison.Ordinal);
@@ -184,8 +186,69 @@ public sealed partial class HistoryWebAppTests
         Assert.Contains("const jobs = historyData.jobs.filter((job) => chosen === \"\" || job.project === chosen);", js,
             StringComparison.Ordinal);
         string change = Between(js, "select.addEventListener(\"change\", () => {", "});");
+        Assert.Contains("renderHistoryAll();", change, StringComparison.Ordinal);
         Assert.Contains("renderHistoryList();", change, StringComparison.Ordinal);
         Assert.DoesNotContain("loadHistory", change, StringComparison.Ordinal);
+        Assert.DoesNotContain("renderHistory()", change, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task HistoryJs_AllTimeComesAfterLast30AndBeforeTheChart()
+    {
+        string js = await Fetch("/history.js");
+        string render = Between(js, "function renderHistory() {", "\n}\n");
+
+        int last7 = render.IndexOf("renderHistoryWindow(\"history-last7\"", StringComparison.Ordinal);
+        int last30 = render.IndexOf("renderHistoryWindow(\"history-last30\"", StringComparison.Ordinal);
+        int noRecent = render.IndexOf("HistoryTexts.noRecent", StringComparison.Ordinal);
+        int all = render.IndexOf("nodes.push(all);", StringComparison.Ordinal);
+        int chart = render.IndexOf("nodes.push(renderHistoryChart(data));", StringComparison.Ordinal);
+        Assert.True(last7 >= 0 && last30 > last7 && all > last30 && chart > all);
+        Assert.True(noRecent >= 0 && all > noRecent);
+        Assert.Contains("renderHistoryAll();", render, StringComparison.Ordinal);
+        Assert.DoesNotContain("if (recent) {\n    nodes.push(all);", render, StringComparison.Ordinal);
+
+        string block = Between(js, "function renderHistoryAll() {", "\n}\n");
+        Assert.Contains("renderHistoryWindow(\"history-all\", HistoryTexts.allTime, shown, \"all\")", block,
+            StringComparison.Ordinal);
+        Assert.Contains("if (lifetime.projects.length === 0 && lifetime.modes.length === 0) {", block,
+            StringComparison.Ordinal);
+        Assert.Contains("all.hidden = true;", block, StringComparison.Ordinal);
+        Assert.DoesNotContain("loadHistory", block, StringComparison.Ordinal);
+        Assert.Contains("const section = element(\"section\", \"history-window\");", js, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task HistoryJs_AllTimeFilterUsesTheProjectRowAndItsProjectModes()
+    {
+        string js = await Fetch("/history.js");
+        string filter = Between(js, "function historyLifetimeFor(lifetime, chosen) {", "\n}\n");
+
+        Assert.Contains("return { projects: lifetime.projects, modes: lifetime.modes };", filter,
+            StringComparison.Ordinal);
+        Assert.Contains("lifetime.projectModes.find((item) => item.name === chosen)", filter, StringComparison.Ordinal);
+        Assert.Contains("projects: lifetime.projects.filter((item) => item.name === chosen),", filter,
+            StringComparison.Ordinal);
+        Assert.Contains("modes: entry ? entry.modes : [],", filter, StringComparison.Ordinal);
+        Assert.Contains("const chosen = document.getElementById(\"history-project\").value;",
+            Between(js, "function renderHistoryAll() {", "\n}\n"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task HistoryJs_ReadsLifetimeTolerantly()
+    {
+        string js = await Fetch("/history.js");
+        string read = Between(js, "function readHistory(data) {", "\n}\n");
+        string lifetime = Between(js, "function readHistoryLifetime(value) {", "\n}\n");
+
+        Assert.DoesNotContain("data.lifetime", Between(read, "if (", ") {"), StringComparison.Ordinal);
+        Assert.Contains("lifetime: readHistoryLifetime(data.lifetime),", read, StringComparison.Ordinal);
+        Assert.Contains("const lifetime = value && typeof value === \"object\" ? value : {};", lifetime,
+            StringComparison.Ordinal);
+        Assert.Contains("projects: readHistoryLifetimeTotals(lifetime.projects),", lifetime, StringComparison.Ordinal);
+        Assert.Contains("modes: readHistoryLifetimeTotals(lifetime.modes),", lifetime, StringComparison.Ordinal);
+        Assert.Contains("asList(lifetime.projectModes).map(", lifetime, StringComparison.Ordinal);
+        Assert.Contains("all: readHistoryWindow(item && item.all),", js, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -204,13 +267,12 @@ public sealed partial class HistoryWebAppTests
     }
 
     [Fact]
-    public async Task AppCss_FitsEightNavLinksAndStylesTheView()
+    public async Task AppCss_FitsEightTabsInOneRowAndStylesTheView()
     {
         string css = await Fetch("/app.css");
 
-        Assert.Contains("/* Eight nav links fit in two rows of four at iPhone width (375 px). */", css,
-            StringComparison.Ordinal);
-        Assert.Contains("    flex: 1 1 calc((100% - 12px) / 4);\n", css, StringComparison.Ordinal);
+        Assert.DoesNotContain("two rows of four", css, StringComparison.Ordinal);
+        Assert.Contains("  flex: 1 1 0;\n", css, StringComparison.Ordinal);
         foreach (string rule in new[]
                  {
                      ".history-table {", ".history-svg {", ".history-legend {", ".history-select {", ".history-list {",
@@ -233,10 +295,12 @@ public sealed partial class HistoryWebAppTests
     public async Task ServiceWorker_CachesHistoryJsWithVersion15()
     {
         string js = await Fetch("/sw.js");
+        string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v16\";", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v22\";", room, StringComparison.Ordinal);
+        Assert.Contains("  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n", room, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/history", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("/api/history", room, StringComparison.Ordinal);
     }
 
     [Fact]

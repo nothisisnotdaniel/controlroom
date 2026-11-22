@@ -10,8 +10,9 @@ public sealed partial class TokenWebAppTests
     public async Task TokenJs_StoresTheTokenUnderItsKeyAndSendsItOnlyAsABearerHeader()
     {
         string js = await Fetch("/token.js");
+        string room = await Fetch("/room.js");
 
-        Assert.Contains("const TokenKey = \"controlroom-token\";", js, StringComparison.Ordinal);
+        Assert.Contains("const TokenKey = \"controlroom-token\";", room, StringComparison.Ordinal);
         Assert.Contains("localStorage.getItem(TokenKey)", js, StringComparison.Ordinal);
         Assert.Contains("localStorage.setItem(TokenKey, token)", js, StringComparison.Ordinal);
         Assert.Contains("localStorage.removeItem(TokenKey)", js, StringComparison.Ordinal);
@@ -107,7 +108,7 @@ public sealed partial class TokenWebAppTests
         int store = token.IndexOf("storeToken(token);", StringComparison.Ordinal);
         int hide = token.IndexOf("hideTokenView();\n  if (tokenSaved) {", StringComparison.Ordinal);
         Assert.True(prevent >= 0 && prevent < trim && trim < store && store < hide);
-        Assert.Contains("onTokenSaved(() => {\n  route();\n  load();\n  loadInboxCount();\n  loadTasksCount();\n});", app, StringComparison.Ordinal);
+        Assert.Contains("onTokenSaved(() => {\n  route();\n  load();\n  loadBacklogCounts();\n  loadJobCounts();\n});", app, StringComparison.Ordinal);
     }
 
     [Fact]

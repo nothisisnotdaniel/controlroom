@@ -7,7 +7,7 @@ namespace ControlRoom.Server.Tests;
 /// reload, the notice appearing and going away) is checked by hand.</summary>
 public sealed partial class LiveWebAppTests
 {
-    private static readonly string[] Scripts = ["/token.js", "/board.js", "/act.js", "/push.js", "/edit.js", "/inbox.js", "/tasks.js", "/search.js", "/capture.js", "/history.js", "/doctor.js", "/status.js", "/live.js", "/app.js"];
+    private static readonly string[] Scripts = ["/token.js", "/board.js", "/act.js", "/push.js", "/edit.js", "/counts.js", "/search.js", "/capture.js", "/history.js", "/doctor.js", "/status.js", "/releases.js", "/live.js", "/app.js"];
 
     [Fact]
     public async Task IndexHtml_LoadsLiveJsAfterEditJsAndBeforeAppJs()
@@ -98,7 +98,7 @@ public sealed partial class LiveWebAppTests
         Assert.Contains("section.dataset.project = name;", app, StringComparison.Ordinal);
         Assert.Contains("if (old && (!changed || sectionBusy(old))) {", app, StringComparison.Ordinal);
         Assert.Contains("keepOpenGroups(old, next);\n      old.replaceWith(next);", app, StringComparison.Ordinal);
-        Assert.Contains("group.open = before[index].open;", app, StringComparison.Ordinal);
+        Assert.Contains("group.open = before.get(group.dataset.group);", app, StringComparison.Ordinal);
         Assert.Contains("return section.querySelector(\".edit-title-form\") !== null", app, StringComparison.Ordinal);
         Assert.Contains("|| section.querySelector(\"details.edit-add[open]\") !== null", app, StringComparison.Ordinal);
         Assert.Contains("|| section.contains(document.activeElement);", app, StringComparison.Ordinal);
@@ -195,11 +195,13 @@ public sealed partial class LiveWebAppTests
     public async Task ServiceWorker_CachesLiveJsButNeverTheChangesRoute()
     {
         string js = await Fetch("/sw.js");
+        string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v16\";", js, StringComparison.Ordinal);
-        Assert.DoesNotContain("const CacheVersion = \"v9\";", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/edit.js\",\n  \"/inbox.js\",\n  \"/tasks.js\",\n  \"/search.js\",\n  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v22\";", room, StringComparison.Ordinal);
+        Assert.DoesNotContain("const CacheVersion = \"v9\";", room, StringComparison.Ordinal);
+        Assert.Contains("  \"/edit.js\",\n  \"/counts.js\",\n  \"/search.js\",\n  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/releases.js\",\n  \"/live.js\",\n", room, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/changes", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("/api/changes", room, StringComparison.Ordinal);
         Assert.Contains("return Shell.includes(url.pathname);", js, StringComparison.Ordinal);
     }
 

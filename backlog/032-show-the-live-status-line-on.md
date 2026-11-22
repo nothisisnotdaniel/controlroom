@@ -2,6 +2,8 @@
 
 As the ControlRoom user, I want the job page to show the same `Live · <time>` and `Can't reach the server.` line as the board, so that I notice when its live refresh has stopped.
 
+Category: ui
+
 ## What
 
 Add the board's status line to the job page in board.js, updated on each poll with the same fixed texts. Add tests for the success and failure texts.

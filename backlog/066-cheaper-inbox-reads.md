@@ -2,6 +2,8 @@
 
 As the operator, I want the inbox to load quickly however many follow-ups are waiting, so that the server stays light.
 
+Category: tidy-up
+
 ## What
 
 Each /api/inbox call reads every numbered [?] story (up to 1 MiB each) of every project. Read only the part of each story the inbox needs, or cache the result by the change fingerprint.

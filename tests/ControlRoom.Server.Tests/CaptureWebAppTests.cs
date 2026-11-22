@@ -1,19 +1,22 @@
 namespace ControlRoom.Server.Tests;
 
-/// <summary>The Capture view in <c>capture.js</c> and its hooks in <c>index.html</c>, <c>app.js</c>, <c>app.css</c> and
-/// <c>sw.js</c>, checked as text (there is no JS test runtime): nav link, fixed texts, request fields, the stored
-/// project, the Save rule and text-only rendering. Sending from the phone is checked by hand.</summary>
+/// <summary>The capture form in <c>capture.js</c>, back in its own view behind a Capture tab (#135), and its hooks in
+/// <c>index.html</c>, <c>app.js</c>, <c>app.css</c> and <c>sw.js</c>, checked as text (there is no JS test runtime):
+/// the tab and view, fixed texts, request fields, the stored project, the Save rule and text-only rendering. Sending from the phone is checked by hand.</summary>
 public sealed class CaptureWebAppTests
 {
     [Fact]
-    public async Task IndexHtml_HasTheCaptureLinkAfterSearchTheViewAndTheScriptAfterSearchJs()
+    public async Task IndexHtml_HasTheCaptureTabAfterBacklogsAndItsOwnViewAndLoadsCaptureJsAfterSearchJs()
     {
         string html = await Fetch("/index.html");
 
-        int search = html.IndexOf("<a href=\"#search\" data-view=\"search\">Search</a>", StringComparison.Ordinal);
-        int capture = html.IndexOf("<a href=\"#capture\" data-view=\"capture\">Capture</a>", StringComparison.Ordinal);
-        int navEnd = html.IndexOf("</nav>", StringComparison.Ordinal);
-        Assert.True(search >= 0 && capture > search && capture < navEnd);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(html, "href=\"#capture\""));
+        Assert.Contains("<a href=\"#capture\" data-view=\"capture\">", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tab-label\">Capture</span>", html, StringComparison.Ordinal);
+        Assert.True(html.IndexOf("data-view=\"backlogs\"", StringComparison.Ordinal)
+                    < html.IndexOf("data-view=\"capture\"", StringComparison.Ordinal));
+        Assert.True(html.IndexOf("data-view=\"capture\"", StringComparison.Ordinal)
+                    < html.IndexOf("data-view=\"history\"", StringComparison.Ordinal));
         Assert.Contains("<main id=\"capture\" hidden></main>", html, StringComparison.Ordinal);
         Assert.Contains(
             "<script src=\"/search.js\" defer></script>\n  <script src=\"/capture.js\" defer></script>\n"
@@ -21,13 +24,44 @@ public sealed class CaptureWebAppTests
     }
 
     [Fact]
-    public async Task AppJs_RoutesHashCaptureToTheCaptureViewTitledCapture()
+    public async Task AppJs_HashCaptureOpensTheCaptureViewTitledCaptureWithItsTabCurrent()
     {
         string app = await Fetch("/app.js");
 
         Assert.Contains("  if (hash === CaptureRoute) {\n    return \"capture\";\n  }", app, StringComparison.Ordinal);
-        Assert.Contains("  if (next === \"capture\") {\n    showCapture();\n    return;\n  }", app, StringComparison.Ordinal);
-        Assert.Contains("  capture: \"Capture\", history: \"History\", doctor: \"Health\" };", app, StringComparison.Ordinal);
+        Assert.Contains("capture: \"Capture\"", Between(app, "const ViewTitles = {", "};"), StringComparison.Ordinal);
+        Assert.Contains("\"capture\"", Between(app, "const Views = [", "];"), StringComparison.Ordinal);
+        string route = Between(app, "function route() {", "\n}\n");
+        Assert.Contains("  if (next === \"capture\") {\n    showCapture();\n    window.scrollTo(0, 0);\n    return;\n  }",
+            route, StringComparison.Ordinal);
+        // No redirect any more: the hash stays #capture, so showView marks the tab whose data-view is "capture".
+        Assert.DoesNotContain("fromCapture", app, StringComparison.Ordinal);
+        Assert.DoesNotContain("CaptureRoute)", route, StringComparison.Ordinal);
+        Assert.DoesNotContain("TabForView = { capture", app, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CaptureJs_BuildsTheFormIntoItsOwnViewWithoutAHeading()
+    {
+        string js = await Fetch("/capture.js");
+        string build = Between(js, "function buildCaptureView() {", "\n}\n");
+
+        Assert.Contains("const main = document.getElementById(\"capture\");", build, StringComparison.Ordinal);
+        Assert.Contains("main.replaceChildren(form, status);", build, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"h2\"", build, StringComparison.Ordinal);
+        Assert.DoesNotContain("inbox-capture", js, StringComparison.Ordinal);
+        Assert.Equal(1, Count(js, "replaceChildren(form, status)"));
+    }
+
+    [Fact]
+    public async Task AppCss_HasNoInboxCaptureCard()
+    {
+        string css = await Fetch("/app.css");
+
+        Assert.DoesNotContain("\n.capture {", css, StringComparison.Ordinal);
+        Assert.DoesNotContain("\n.capture-title {", css, StringComparison.Ordinal);
+        Assert.DoesNotContain(".inbox-", css, StringComparison.Ordinal);
+        Assert.DoesNotContain(".tasks-", css, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -39,7 +73,7 @@ public sealed class CaptureWebAppTests
         Assert.Contains("  projectLabel: \"Project\",\n", texts, StringComparison.Ordinal);
         Assert.Contains("  ideaLabel: \"Idea\",\n", texts, StringComparison.Ordinal);
         Assert.Contains("  save: \"Save\",\n", texts, StringComparison.Ordinal);
-        Assert.Contains("  saved: \"Saved as a draft. It waits in the Inbox.\",\n", texts, StringComparison.Ordinal);
+        Assert.Contains("  saved: \"Saved as a draft. It waits for approval in the backlog.\",\n", texts, StringComparison.Ordinal);
         Assert.Contains("const CaptureRoute = \"#capture\";", js, StringComparison.Ordinal);
     }
 
@@ -73,8 +107,9 @@ public sealed class CaptureWebAppTests
     public async Task CaptureJs_ListsReadableProjectsFromBacklogsAndPreselectsTheStoredOne()
     {
         string js = await Fetch("/capture.js");
+        string room = await Fetch("/room.js");
 
-        Assert.Contains("const CaptureProjectKey = \"controlroom-capture-project\";", js, StringComparison.Ordinal);
+        Assert.Contains("const CaptureProjectKey = \"controlroom-capture-project\";", room, StringComparison.Ordinal);
         Assert.Contains("localStorage.getItem(CaptureProjectKey)", js, StringComparison.Ordinal);
         Assert.Contains("localStorage.setItem(CaptureProjectKey, name);", js, StringComparison.Ordinal);
         string show = Between(js, "async function showCapture() {", "\n}\n");
@@ -101,12 +136,13 @@ public sealed class CaptureWebAppTests
             save, StringComparison.Ordinal);
         Assert.Contains(
             "  if (ok) {\n    storeCaptureProject(project);\n    area.value = \"\";\n"
-            + "    showCaptureStatus(CaptureTexts.saved, \"capture-saved\");\n    loadInboxCount();\n  }",
+            + "    showCaptureStatus(CaptureTexts.saved, \"capture-saved\");\n  }",
             save, StringComparison.Ordinal);
         Assert.Contains("if (changeBusy || captureSaving || project === \"\" || area.value.trim() === \"\") {", save,
             StringComparison.Ordinal);
         Assert.Contains("showEditNotice(ChangeErrors.unreachable, true);", save, StringComparison.Ordinal);
         Assert.Equal(1, Count(save, "area.value = \"\";"));
+        Assert.DoesNotContain("loadInbox", js, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -129,12 +165,13 @@ public sealed class CaptureWebAppTests
     }
 
     [Fact]
-    public async Task ServiceWorker_CachesCaptureJsWithVersion12()
+    public async Task ServiceWorker_CachesCaptureJsWithTheCurrentVersion()
     {
         string js = await Fetch("/sw.js");
+        string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v16\";", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/search.js\",\n  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v22\";", room, StringComparison.Ordinal);
+        Assert.Contains("  \"/search.js\",\n  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/releases.js\",\n  \"/live.js\",\n", room, StringComparison.Ordinal);
     }
 
     [Fact]

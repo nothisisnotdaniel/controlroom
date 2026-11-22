@@ -13,8 +13,8 @@ const BoardTexts = {
   recordUnreadable: "Can't read this record.",
   noRecords: "No records yet.",
   needsYou: "Needs you",
+  stuck: "Stuck",
   allProjects: "All projects",
-  task: "[h]",
   back: "Back",
   records: "Records",
   version: "ControlRoom ",
@@ -31,13 +31,33 @@ const BoardTexts = {
   channelStable: "Stable",
   channelDevelop: "Develop (prereleases)",
   channelFailed: "Can't change the update channel. Try again.",
+  updateInterval: "Check for updates",
+  interval30: "Every 30 minutes",
+  interval60: "Every hour",
+  interval120: "Every 2 hours",
+  interval360: "Every 6 hours",
+  interval720: "Every 12 hours",
+  intervalFailed: "Can't change the update interval. Try again.",
   jobState: "Job state",
   jobRound: " · round ",
   specCheck: "spec check",
   ci: "CI ",
   approveSent: "Approve sent",
   reworkSent: "Rework sent",
+  started: "Started ",
+  ended: " · ended ",
+  endedOnly: "Ended ",
+  took: " · took ",
+  running: " · running ",
+  underMinute: "< 1 min",
+  minutes: " min",
+  hours: " h",
+  agents: "Agents",
+  tok: " tok",
 };
+
+// The stages of a running job: its time runs from started to now, and a leftover ended is ignored.
+const RunningStages = ["spike", "spec", "build", "review", "approve"];
 
 const AutoUpdateRoute = "/api/update/settings";
 
@@ -65,7 +85,6 @@ const Verdict = /^(?:VERDICT: (PASS|CHANGES)|(APPROVE|ESCALATE))$/;
 
 let boardText = null;
 let boardJobs = [];
-let boardTasks = [];
 let boardScroll = 0;
 let boardPolling = false;
 let mergedOpen = false;
@@ -116,6 +135,115 @@ function parseJobHash(hash) {
 
 function formatTokens(count) {
   return count >= 1e6 ? (count / 1e6).toFixed(1) + "M" : Math.round(count / 1e3) + "k";
+}
+
+// Whole minutes, rounded down: "< 1 min", "4 min", "2 h", "1 h 12 min".
+function formatDuration(seconds) {
+  const minutes = Math.floor(Math.max(0, seconds) / 60);
+  if (minutes < 1) {
+    return BoardTexts.underMinute;
+  }
+  if (minutes < 60) {
+    return minutes + BoardTexts.minutes;
+  }
+  const rest = minutes % 60;
+  return Math.floor(minutes / 60) + BoardTexts.hours + (rest > 0 ? " " + rest + BoardTexts.minutes : "");
+}
+
+// A UTC record time in the browser's local time zone (no zone option given); timeOnly leaves out the date.
+function formatTime(date, timeOnly) {
+  const time = { hour: "2-digit", minute: "2-digit" };
+  return timeOnly
+    ? date.toLocaleTimeString([], time)
+    : date.toLocaleString([], { month: "short", day: "numeric", ...time });
+}
+
+// started or ended as a Date, or null when missing or not a time.
+function recordTime(value) {
+  const text = asText(value);
+  if (!text) {
+    return null;
+  }
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function sameLocalDay(a, b) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+// The times line of a card and the job page: "Started <start> · running <d>" for a running job, "Started <start>
+// · ended <end> · took <d>" for a finished one; a missing part is left out, never shown as 0. Null when the job
+// has neither time. The running part is a span with data-running-since, kept current by updateRunningTimes.
+function jobTimes(job, className) {
+  const started = recordTime(job.started);
+  const ended = recordTime(job.ended);
+  const running = RunningStages.includes(job.stage);
+  if (started === null && (ended === null || running)) {
+    return null;
+  }
+  const line = element("span", className);
+  if (started !== null) {
+    line.appendChild(element("span", null, BoardTexts.started + formatTime(started, false)));
+  }
+  if (running) {
+    const since = element("span", null, runningText(started, Date.now()));
+    since.dataset.runningSince = String(started.getTime());
+    line.appendChild(since);
+    return line;
+  }
+  if (ended !== null) {
+    const endText = started !== null && sameLocalDay(started, ended)
+      ? formatTime(ended, true)
+      : formatTime(ended, false);
+    line.appendChild(element("span", null, (started !== null ? BoardTexts.ended : BoardTexts.endedOnly) + endText));
+    if (started !== null && ended.getTime() >= started.getTime()) {
+      line.appendChild(element("span", null, BoardTexts.took + formatDuration((ended.getTime() - started.getTime()) / 1000)));
+    }
+  }
+  return line;
+}
+
+function runningText(started, now) {
+  return BoardTexts.running + formatDuration((now - started.getTime()) / 1000);
+}
+
+// Called by live.js after each check while the board or a job page is shown: every running time is recomputed
+// in place, with no refetch.
+function updateRunningTimes() {
+  const now = Date.now();
+  for (const span of document.querySelectorAll("[data-running-since]")) {
+    const since = Number(span.dataset.runningSince);
+    if (Number.isFinite(since)) {
+      span.textContent = runningText(new Date(since), now);
+    }
+  }
+}
+
+// The job page's Agents list: name, tokens when known and time when seconds is known (never 0 for unknown).
+function renderAgents(agents) {
+  const rows = agents.filter((agent) => agent && typeof agent === "object" && asText(agent.name));
+  if (rows.length === 0) {
+    return null;
+  }
+  const section = element("section", "job-agents");
+  section.setAttribute("aria-label", BoardTexts.agents);
+  section.appendChild(element("h2", null, BoardTexts.agents));
+  const list = element("ul", "agent-list");
+  for (const agent of rows) {
+    const parts = [asText(agent.name)];
+    const tokens = asNumber(agent.tokens);
+    if (tokens !== null) {
+      parts.push(formatTokens(tokens) + BoardTexts.tok);
+    }
+    const seconds = asNumber(agent.seconds);
+    if (seconds !== null) {
+      parts.push(formatDuration(seconds));
+    }
+    list.appendChild(element("li", "agent", parts.join(" · ")));
+  }
+  section.appendChild(list);
+  return section;
 }
 
 // Chip colours come from a fixed map, never from the value itself.
@@ -225,6 +353,9 @@ function renderCard(job) {
   }
   card.appendChild(head);
   card.appendChild(element("span", "card-title", asText(job.title) || id));
+  if (job.stage === "needs-human") {
+    card.appendChild(element("span", "chip chip-human card-request", BoardTexts.needsYou));
+  }
   const sent = requestChipText(job);
   if (sent) {
     card.appendChild(element("span", "chip chip-sent card-request", sent));
@@ -237,6 +368,11 @@ function renderCard(job) {
 
   if (asText(job.note)) {
     card.appendChild(element("span", "card-note", asText(job.note)));
+  }
+
+  const times = jobTimes(job, "card-times");
+  if (times) {
+    card.appendChild(times);
   }
 
   const foot = element("div", "card-foot");
@@ -273,47 +409,17 @@ function requestChipText(job) {
   return "";
 }
 
-function renderTask(task) {
-  const project = asText(task.project);
-  const number = asNumber(task.number);
-  let card;
-  if (number !== null) {
-    card = element("a", "card card-task");
-    card.href = storyHash(project, number);
-    card.addEventListener("click", () => {
-      openedFromList = true;
-    });
-  } else {
-    card = element("div", "card card-task");
-  }
-  const head = element("div", "card-head");
-  const name = element("span", "card-id");
-  name.appendChild(element("span", "card-project", project));
-  name.appendChild(element("span", null, " · " + BoardTexts.task + (number !== null ? " #" + number : "")));
-  head.appendChild(name);
-  card.appendChild(head);
-  card.appendChild(element("span", "card-title", asText(task.title)));
-  if (asText(task.rest)) {
-    card.appendChild(element("span", "card-rest", asText(task.rest)));
-  }
-  return card;
-}
-
 function sectionHeading(label, count) {
   return label + " (" + count + ")";
 }
 
-function renderNeedsYou(jobs, tasks) {
-  const section = element("section", "needs-you");
-  const count = jobs.length + tasks.length;
-  section.hidden = count === 0;
-  section.appendChild(element("h2", null, sectionHeading(BoardTexts.needsYou, count)));
+// Jobs waiting for the user (needs-human); no other tab shows them. The user's own [h] tasks are in the backlog, counted on the Backlogs tab.
+function renderStuck(jobs) {
+  const section = element("section", "stuck");
+  section.appendChild(element("h2", null, sectionHeading(BoardTexts.stuck, jobs.length)));
   const cards = element("div", "cards");
   for (const job of jobs) {
     cards.appendChild(renderCard(job));
-  }
-  for (const task of tasks) {
-    cards.appendChild(renderTask(task));
   }
   section.appendChild(cards);
   return section;
@@ -376,8 +482,8 @@ function renderBoard() {
   }
   renderFilter(names);
   const shown = selectedProject ? boardJobs.filter((job) => job.project === selectedProject) : boardJobs;
-  const tasks = selectedProject ? boardTasks.filter((task) => task.project === selectedProject) : boardTasks;
-  const nodes = [renderNeedsYou(shown.filter((job) => job.stage === "needs-human"), tasks)];
+  const stuck = shown.filter((job) => job.stage === "needs-human");
+  const nodes = stuck.length > 0 ? [renderStuck(stuck)] : [];
   if (boardJobs.length === 0) {
     nodes.push(element("p", "empty", BoardTexts.noJobs));
   } else {
@@ -410,6 +516,16 @@ function boardViewsVisible() {
   return !document.getElementById("board").hidden || !document.getElementById("job").hidden;
 }
 
+// The board answer as text; throws on a network error or an error status. The one /api/board request, used by
+// pollBoard and by the job counts on the Jobs tab (counts.js).
+async function fetchBoard() {
+  const response = await authFetch("/api/board", { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error("status");
+  }
+  return response.text();
+}
+
 // Fetches the board (driven by live.js when jobs or a backlog changed, and when the board or a job page is shown).
 // Returns true when the board was fetched, false when it was skipped or failed.
 async function pollBoard() {
@@ -421,16 +537,15 @@ async function pollBoard() {
     let text;
     let data;
     try {
-      const response = await authFetch("/api/board", { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error("status");
-      }
-      text = await response.text();
+      text = await fetchBoard();
       data = JSON.parse(text);
     } catch {
+      setJobCounts(null);
       setBoardStatus(false);
       return false;
     }
+    // The counts on the Jobs tab follow every answer read, over all projects (counts.js).
+    setJobCounts(countJobs(data && data.jobs));
     setBoardStatus(true);
     loadVersion();
     loadUpdate();
@@ -439,7 +554,6 @@ async function pollBoard() {
     }
     boardText = text;
     boardJobs = asList(data && data.jobs).filter((job) => job && typeof job === "object");
-    boardTasks = asList(data && data.tasks).filter((task) => task && typeof task === "object");
     renderBoard();
     refreshOpenJob();
     return true;
@@ -531,6 +645,9 @@ async function loadUpdate() {
     renderAutoUpdate(asText(data && data.current), data && typeof data.autoUpdate === "boolean" ? data.autoUpdate : null);
     renderUpdateChannel(asText(data && data.current),
       data && (data.channel === "stable" || data.channel === "develop") ? data.channel : null);
+    renderUpdateInterval(asText(data && data.current),
+      data && (data.channel === "stable" || data.channel === "develop") ? data.channel : null,
+      data && UpdateIntervals.includes(data.updateInterval) ? data.updateInterval : null);
     const latest = asText(data && data.latest);
     const command = asText(data && data.command);
     if (!data || data.available !== true || latest === "" || command === "") {
@@ -682,6 +799,67 @@ async function setUpdateChannel(select, note) {
   } catch {
     select.value = saved;
     note.textContent = BoardTexts.channelFailed;
+    note.hidden = false;
+  } finally {
+    select.disabled = false;
+  }
+}
+
+// The update interval choices in minutes, in the order the select shows them.
+const UpdateIntervals = [30, 60, 120, 360, 720];
+
+// The update interval choice after the channel select, in the same places only: it adds nothing on dev, when the
+// channel is null (a refused settings file) or when the interval is not one of the choices.
+function renderUpdateInterval(current, channel, interval) {
+  const box = document.getElementById("auto-update");
+  if (current === "" || current === "dev" || channel === null || interval === null || box.hidden) {
+    return;
+  }
+  const label = element("label", "update-channel update-interval");
+  const select = document.createElement("select");
+  select.className = "update-channel-select update-interval-select";
+  const texts = [BoardTexts.interval30, BoardTexts.interval60, BoardTexts.interval120, BoardTexts.interval360,
+    BoardTexts.interval720];
+  UpdateIntervals.forEach((minutes, index) => {
+    const option = element("option", null, texts[index]);
+    option.value = String(minutes);
+    select.append(option);
+  });
+  select.value = String(interval);
+  select.dataset.saved = String(interval);
+  const note = element("p", "auto-update-note");
+  note.setAttribute("role", "status");
+  note.setAttribute("aria-live", "polite");
+  note.hidden = true;
+  select.addEventListener("change", () => setUpdateInterval(select, note));
+  label.append(element("span", null, BoardTexts.updateInterval), select);
+  box.append(label, note);
+}
+
+// Sends only the chosen interval; on any error the choice goes back to the stored one and a fixed text is shown.
+async function setUpdateInterval(select, note) {
+  const wanted = Number(select.value);
+  const saved = select.dataset.saved;
+  select.disabled = true;
+  note.hidden = true;
+  try {
+    const response = await authFetch(AutoUpdateRoute, {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updateInterval: wanted }),
+    });
+    if (!response.ok) {
+      throw new Error("status");
+    }
+    const data = await response.json();
+    if (!data || data.updateInterval !== wanted) {
+      throw new Error("data");
+    }
+    select.dataset.saved = String(wanted);
+  } catch {
+    select.value = saved;
+    note.textContent = BoardTexts.intervalFailed;
     note.hidden = false;
   } finally {
     select.disabled = false;
@@ -842,9 +1020,17 @@ function renderJobPage(data) {
     asText(job.risk) ? job.risk + " risk" : "",
   ].filter((fact) => fact !== "");
   article.appendChild(element("p", "job-facts", facts.join(" · ")));
+  const times = jobTimes(job, "job-times");
+  if (times) {
+    article.appendChild(times);
+  }
   const state = renderJobState(job);
   if (state.childElementCount > 0) {
     article.appendChild(state);
+  }
+  const agents = renderAgents(asList(data && data.agents));
+  if (agents) {
+    article.appendChild(agents);
   }
   // The "Your decision" section (act.js), only for a needs-human job.
   const decision = typeof renderJobDecision === "function" ? renderJobDecision(data) : null;

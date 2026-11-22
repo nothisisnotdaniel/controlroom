@@ -141,9 +141,10 @@ public sealed class ActWebAppTests
     public async Task ServiceWorker_ListsActJs()
     {
         string js = await Fetch("/sw.js");
+        string room = await Fetch("/room.js");
 
-        Assert.Contains("  \"/board.js\",\n  \"/act.js\",\n", js, StringComparison.Ordinal);
-        Assert.Contains("const CacheVersion = \"v16\";", js, StringComparison.Ordinal);
+        Assert.Contains("  \"/board.js\",\n  \"/act.js\",\n", room, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v22\";", room, StringComparison.Ordinal);
     }
 
     [Fact]

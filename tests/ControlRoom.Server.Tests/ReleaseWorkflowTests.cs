@@ -1,4 +1,7 @@
+using System.Diagnostics;
 using System.Text.RegularExpressions;
+using System.Xml;
+using System.Xml.Linq;
 
 namespace ControlRoom.Server.Tests;
 
@@ -30,7 +33,12 @@ public sealed partial class ReleaseWorkflowTests
     {
         string yaml = Workflow();
 
-        string condition = Assert.Single(yaml.Split('\n'), line => line.TrimStart().StartsWith("if:", StringComparison.Ordinal));
+        // The job's if: (indented four spaces); the only other if: is the keychain cleanup's always().
+        string condition = Assert.Single(yaml.Split('\n'), line => line.StartsWith("    if:", StringComparison.Ordinal));
+        Assert.Equal(
+            ["if: always()"],
+            yaml.Split('\n').Where(line => line.TrimStart().StartsWith("if:", StringComparison.Ordinal)
+                && !line.StartsWith("    if:", StringComparison.Ordinal)).Select(line => line.Trim()));
         Assert.Equal(
             "if: github.event_name == 'push' || (github.event.pull_request.merged == true "
             + "&& github.event.pull_request.head.ref == 'develop' "
@@ -150,6 +158,50 @@ public sealed partial class ReleaseWorkflowTests
     }
 
     [Fact]
+    public void PackRoomKit_ComesAfterTheTestsAndShipsWithEveryRelease()
+    {
+        string yaml = Workflow();
+        string[] names = [.. StepName().Matches(yaml).Select(match => match.Groups["name"].Value)];
+        int test = Array.IndexOf(names, "Test");
+        int pack = Array.IndexOf(names, "Pack RoomKit");
+        Assert.True(test >= 0 && pack > test, "Pack RoomKit must come after Test");
+        Assert.True(pack < Array.IndexOf(names, "Checksums"), "Pack RoomKit must come before Checksums");
+        Assert.Equal(
+            "        run: dotnet pack src/RoomKit -c Release -p:Version=\"$RELEASE_VERSION\" -o dist\n",
+            Step(yaml, "Pack RoomKit").TrimEnd('\n') + "\n");
+
+        string sums = Step(yaml, "Checksums");
+        Assert.Contains("shasum -a 256 \"RoomKit.$RELEASE_VERSION.nupkg\" >> SHA256SUMS\n", sums, StringComparison.Ordinal);
+        Assert.Contains(
+            "subject-path: dist/controlroom-${{ env.RELEASE_VERSION }}-osx-arm64.tar.gz,dist/RoomKit.${{ env.RELEASE_VERSION }}.nupkg\n",
+            yaml, StringComparison.Ordinal);
+        // One gh release create for stable releases and prereleases alike (only $PRERELEASE differs).
+        Assert.Single(Regex.Matches(yaml, "gh release create "));
+        Assert.Contains(
+            "dist/SHA256SUMS \"dist/RoomKit.$RELEASE_VERSION.nupkg\" --title ", yaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("packages:", yaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("nuget push", yaml, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(2, Regex.Matches(yaml, "secrets\\.").Count);
+        Assert.Equal(3, Regex.Matches(yaml, "\n +uses: ").Count);
+    }
+
+    [Fact]
+    public void Pack_CopiesTheUpdaterScriptIntoTheTopFolderBeforeTar()
+    {
+        string pack = Step(Workflow(), "Pack");
+        string copy = "cp scripts/updater.sh \"$RUNNER_TEMP/pack/$NAME/updater.sh\"\n";
+        string mode = "chmod 0755 \"$RUNNER_TEMP/pack/$NAME/updater.sh\"\n";
+        string tar = "tar -czf \"dist/$NAME.tar.gz\" -C \"$RUNNER_TEMP/pack\" \"$NAME\"";
+        int move = pack.IndexOf("mv \"$RUNNER_TEMP/publish\" \"$RUNNER_TEMP/pack/$NAME\"", StringComparison.Ordinal);
+        int copied = pack.IndexOf(copy, StringComparison.Ordinal);
+        int moded = pack.IndexOf(mode, StringComparison.Ordinal);
+        int packed = pack.IndexOf(tar, StringComparison.Ordinal);
+        Assert.True(move >= 0 && copied > move && moded > copied && packed > moded,
+            "the Pack step must copy scripts/updater.sh (0755) into the top folder after the move and before tar");
+        Assert.Single(Regex.Matches(pack, "cp scripts/updater\\.sh "));
+    }
+
+    [Fact]
     public void GithubEnv_HoldsOnlyReleaseNamesThatNoMsBuildPropertyReads()
     {
         string yaml = Workflow();
@@ -197,6 +249,299 @@ public sealed partial class ReleaseWorkflowTests
     }
 
     [Fact]
+    public void SigningSteps_ComeBetweenPublishAndTheSmokeCheckWithTheKeychainRemovedAlways()
+    {
+        string yaml = Workflow();
+
+        string[] names = [.. StepName().Matches(yaml).Select(match => match.Groups["name"].Value)];
+        int publish = Array.IndexOf(names, "Publish");
+        Assert.True(publish >= 0);
+        Assert.Equal(
+            ["Publish", "Sign", "Verify signature", "Remove signing keychain", "Smoke check the published server"],
+            names[publish..(publish + 5)]);
+        Assert.StartsWith("        if: always()\n        run: |\n", Step(yaml, "Remove signing keychain"), StringComparison.Ordinal);
+        string remove = Step(yaml, "Remove signing keychain");
+        Assert.Contains("if [ -e \"$RUNNER_TEMP/signing.keychain-db\" ]; then", remove, StringComparison.Ordinal);
+        Assert.Contains("security delete-keychain \"$RUNNER_TEMP/signing.keychain-db\"", remove, StringComparison.Ordinal);
+        Assert.Contains("rm -f \"$RUNNER_TEMP/signing.p12\"", remove, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Secrets_ReachOnlyTheSignStepThroughItsEnv()
+    {
+        string yaml = Workflow();
+
+        Assert.Equal(2, Regex.Matches(yaml, Regex.Escape("${{ secrets.")).Count);
+        string sign = Step(yaml, "Sign");
+        Assert.StartsWith(
+            "        env:\n          SIGNING_CERT_P12: ${{ secrets.SIGNING_CERT_P12 }}\n"
+            + "          SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}\n        run: |\n",
+            sign, StringComparison.Ordinal);
+        Assert.All(RunBlocks(yaml), run => Assert.DoesNotContain("secrets.", run, StringComparison.Ordinal));
+        Assert.DoesNotContain("secrets.", Step(yaml, "Test"), StringComparison.Ordinal);
+        Assert.DoesNotContain("env:", Step(yaml, "Test"), StringComparison.Ordinal);
+        Assert.DoesNotContain("secrets", TopLevelBlock(yaml, "jobs:").Split("    steps:")[0], StringComparison.Ordinal);
+        Assert.DoesNotContain("set -x", yaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("echo \"$SIGNING_CERT", yaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Sign_WarnsWhenTheFileIsMissingAndFailsWhenItIsInvalidOrASecretIsEmpty()
+    {
+        string sign = Step(Workflow(), "Sign");
+        string[] order =
+        [
+            "if ! SHA1=\"$(sh .github/scripts/signing-cert.sh signing-cert.sha1)\"; then",
+            "exit 1",
+            "if [ -z \"$SHA1\" ]; then",
+            "echo \"::warning::signing-cert.sha1 is missing, so this build is only ad-hoc signed\"",
+            "exit 0",
+            "if [ -z \"$SIGNING_CERT_P12\" ] || [ -z \"$SIGNING_CERT_PASSWORD\" ]; then",
+            "echo \"signing-cert.sha1 is committed, but the SIGNING_CERT_P12 or SIGNING_CERT_PASSWORD secret is empty\" >&2",
+            "exit 1",
+            "KEYCHAIN=\"$RUNNER_TEMP/signing.keychain-db\"",
+        ];
+        AssertInOrder(sign, order);
+    }
+
+    [Fact]
+    public void Sign_UsesATempKeychainAndSignsTheLibrariesThenTheServerLast()
+    {
+        string sign = Step(Workflow(), "Sign");
+        string[] order =
+        [
+            "P12=\"$RUNNER_TEMP/signing.p12\"",
+            "trap 'rm -f \"$P12\"' EXIT",
+            "umask 077",
+            "KEYCHAIN_PASSWORD=\"$(openssl rand -hex 32)\"",
+            "printf '%s' \"$SIGNING_CERT_P12\" | base64 --decode > \"$P12\"",
+            "chmod 600 \"$P12\"",
+            "security create-keychain -p \"$KEYCHAIN_PASSWORD\" \"$KEYCHAIN\"",
+            "security unlock-keychain -p \"$KEYCHAIN_PASSWORD\" \"$KEYCHAIN\"",
+            "security import \"$P12\" -k \"$KEYCHAIN\" -f pkcs12 -P \"$SIGNING_CERT_PASSWORD\" -T /usr/bin/codesign > /dev/null",
+            "rm -f \"$P12\"",
+            "security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k \"$KEYCHAIN_PASSWORD\" \"$KEYCHAIN\" > /dev/null",
+            "for file in \"$PUBLISH\"/*.dylib \"$PUBLISH/createdump\"; do",
+            "codesign --force --options runtime --timestamp=none --keychain \"$KEYCHAIN\" --sign \"$SHA1\" \"$file\"",
+            "done",
+            "codesign --force --options runtime --timestamp=none --keychain \"$KEYCHAIN\" --sign \"$SHA1\" "
+                + "--identifier ControlRoom.Server --entitlements .github/signing/entitlements.plist "
+                + "-r='designated => identifier \"ControlRoom.Server\" and certificate leaf = H\"'\"$SHA1\"'\"' "
+                + "\"$PUBLISH/ControlRoom.Server\"",
+        ];
+        AssertInOrder(sign, order);
+        Assert.Contains("PUBLISH=\"$RUNNER_TEMP/publish\"", sign, StringComparison.Ordinal);
+        Assert.Equal(2, Regex.Matches(sign, "codesign --force").Count);
+    }
+
+    [Fact]
+    public void Sign_PutsTheKeychainOnTheSearchListAndChecksTheIdentityBeforeTheFirstCodesign()
+    {
+        string sign = Step(Workflow(), "Sign");
+        string[] order =
+        [
+            "security unlock-keychain -p \"$KEYCHAIN_PASSWORD\" \"$KEYCHAIN\"",
+            "sh .github/scripts/signing-keychain.sh add \"$KEYCHAIN\" || exit 1\n",
+            "security import \"$P12\"",
+            "security set-key-partition-list ",
+            "if ! sh .github/scripts/signing-keychain.sh check \"$KEYCHAIN\" \"$SHA1\"; then\n",
+            "echo \"The SIGNING_CERT_P12 secret holds no code-signing identity with the fingerprint in signing-cert.sha1 "
+                + "($SHA1)\" >&2\n",
+            "exit 1\n",
+            "fi\n",
+            "codesign --force",
+        ];
+        AssertInOrder(sign, order);
+        Assert.Single(Regex.Matches(sign, Regex.Escape("signing-keychain.sh add")));
+        Assert.Single(Regex.Matches(sign, Regex.Escape("signing-keychain.sh check")));
+        Assert.DoesNotContain("signing-keychain.sh remove", sign, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RemoveSigningKeychain_TakesItOffTheSearchListBeforeDeletingItAndOnlyWarnsOnFailure()
+    {
+        string remove = Step(Workflow(), "Remove signing keychain");
+        Assert.StartsWith("        if: always()\n        run: |\n", remove, StringComparison.Ordinal);
+        string[] order =
+        [
+            "if [ -e \"$RUNNER_TEMP/signing.keychain-db\" ]; then\n",
+            "sh .github/scripts/signing-keychain.sh remove \"$RUNNER_TEMP/signing.keychain-db\" || echo \"::warning::",
+            "security delete-keychain \"$RUNNER_TEMP/signing.keychain-db\"\n",
+            "fi\n",
+        ];
+        AssertInOrder(remove, order);
+        Assert.Single(Regex.Matches(remove, Regex.Escape("signing-keychain.sh")));
+    }
+
+    [Fact]
+    public void SigningKeychainScript_NeverSeesASecretOrPassword()
+    {
+        string yaml = Workflow();
+        string script = File.ReadAllText(Path.Combine(RepoFolder(), ".github", "scripts", "signing-keychain.sh"));
+
+        Assert.DoesNotContain("SIGNING_CERT", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("KEYCHAIN_PASSWORD", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("set -x", script, StringComparison.Ordinal);
+        Assert.DoesNotContain(" -p \"", script, StringComparison.Ordinal);
+        string[] calls = [.. yaml.Split('\n').Where(line => line.Contains("sh .github/scripts/signing-keychain.sh ", StringComparison.Ordinal)
+                && !line.TrimStart().StartsWith('#'))];
+        Assert.Equal(3, calls.Length);
+        Assert.All(calls, line =>
+        {
+            Assert.DoesNotContain("PASSWORD", line, StringComparison.Ordinal);
+            Assert.DoesNotContain("SIGNING_CERT_P12\"", line, StringComparison.Ordinal);
+            Assert.DoesNotContain("$P12", line, StringComparison.Ordinal);
+        });
+    }
+
+    [Fact]
+    public void VerifySignature_PinsTheCertificateChecksTheRequirementAndRuntimeAndRefusesUnsignedMachO()
+    {
+        string verify = Step(Workflow(), "Verify signature");
+        string[] order =
+        [
+            "if ! SHA1=\"$(sh .github/scripts/signing-cert.sh signing-cert.sha1)\"; then",
+            "exit 1",
+            "if [ -z \"$SHA1\" ]; then",
+            "exit 0",
+            "REQUIREMENT=\"designated => identifier \\\"ControlRoom.Server\\\" and certificate leaf = H\\\"$SHA1\\\"\"",
+            "for file in \"$PUBLISH\"/*.dylib \"$PUBLISH/createdump\" \"$PUBLISH/ControlRoom.Server\"; do",
+            "codesign --verify --strict -R=\"identifier \\\"ControlRoom.Server\\\" and certificate leaf = H\\\"$SHA1\\\"\" \"$file\"",
+            "codesign --verify --strict -R=\"certificate leaf = H\\\"$SHA1\\\"\" \"$file\"",
+            "INFO=\"$(codesign -dv \"$file\" 2>&1)\"",
+            "grep -Eq '^CodeDirectory .*flags=0x[0-9a-f]+\\([^)]*runtime[^)]*\\)'",
+            "DESIGNATED=\"$(codesign -d -r- \"$PUBLISH/ControlRoom.Server\" 2>&1)\"",
+            "grep -Fxiq \"$REQUIREMENT\"",
+            "find \"$PUBLISH\" -type f > \"$RUNNER_TEMP/publish-files\"",
+            "*/*) ;;",
+            "ControlRoom.Server | createdump | *.dylib) continue ;;",
+            "case \"$(file -b \"$file\")\" in",
+            "*Mach-O*)",
+            "exit 1",
+        ];
+        AssertInOrder(verify, order);
+        Assert.DoesNotContain("env:", verify, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(null, 0, "")]
+    [InlineData("0123456789abcdef0123456789abcdef01234567\n", 0, "0123456789abcdef0123456789abcdef01234567\n")]
+    [InlineData("0123456789ABCDEF0123456789abcdef01234567", 0, "0123456789ABCDEF0123456789abcdef01234567\n")]
+    [InlineData("0123456789abcdef0123456789abcdef0123456", 1, "")]
+    [InlineData("0123456789abcdef0123456789abcdef012345678", 1, "")]
+    [InlineData("0123456789abcdef0123456789abcdef01234567x", 1, "")]
+    [InlineData("0123456789abcdef0123456789abcdef01234567\n\n", 1, "")]
+    [InlineData("0123456789abcdef0123456789abcdef01234567\r\n", 1, "")]
+    [InlineData("0123456789abcdef0123456789abcdef0123456g", 1, "")]
+    [InlineData("", 1, "")]
+    [InlineData("symlink", 1, "")]
+    public async Task FingerprintRule_MissingIsOffValidPrintsAndInvalidFails(string? content, int exit, string output)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        string folder = Path.Combine(Path.GetTempPath(), "controlroom-sha1-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            string file = Path.Combine(folder, "signing-cert.sha1");
+            if (content == "symlink")
+            {
+                string target = Path.Combine(folder, "real");
+                File.WriteAllText(target, "0123456789abcdef0123456789abcdef01234567\n");
+                File.CreateSymbolicLink(file, target);
+            }
+            else if (content is not null)
+            {
+                File.WriteAllText(file, content);
+            }
+
+            ProcessStartInfo start = new("/bin/sh")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            };
+            start.ArgumentList.Add(Path.Combine(RepoFolder(), ".github", "scripts", "signing-cert.sh"));
+            start.ArgumentList.Add(file);
+            using Process process = Process.Start(start)!;
+            Task<string> stdout = process.StandardOutput.ReadToEndAsync();
+            Task<string> stderr = process.StandardError.ReadToEndAsync();
+            Assert.True(process.WaitForExit(TimeSpan.FromSeconds(30)), "signing-cert.sh did not exit within 30 s");
+            process.WaitForExit();
+
+            Assert.Equal(exit, process.ExitCode);
+            Assert.Equal(output, await stdout);
+            Assert.Equal(exit == 0 ? "" : file + " must be a regular file holding one 40-character SHA-1 fingerprint\n",
+                await stderr);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Entitlements_AreExactlyTheThreeHardenedRuntimeExceptions()
+    {
+        string path = Path.Combine(RepoFolder(), ".github", "signing", "entitlements.plist");
+        XmlReaderSettings settings = new() { DtdProcessing = DtdProcessing.Ignore };
+        using XmlReader reader = XmlReader.Create(path, settings);
+        XDocument document = XDocument.Load(reader);
+
+        Assert.Equal("plist", document.Root!.Name.LocalName);
+        XElement dict = Assert.Single(document.Root.Elements());
+        Assert.Equal("dict", dict.Name.LocalName);
+        XElement[] children = [.. dict.Elements()];
+        Assert.Equal(6, children.Length);
+        string[] keys = [.. children.Where((_, index) => index % 2 == 0).Select(element =>
+        {
+            Assert.Equal("key", element.Name.LocalName);
+            return element.Value;
+        })];
+        Assert.All(children.Where((_, index) => index % 2 == 1), element =>
+        {
+            Assert.Equal("true", element.Name.LocalName);
+            Assert.Empty(element.Nodes());
+        });
+        Assert.Equal(
+            ["com.apple.security.cs.allow-jit", "com.apple.security.cs.allow-unsigned-executable-memory",
+                "com.apple.security.cs.disable-library-validation"],
+            keys);
+    }
+
+    [Fact]
+    public void Readme_GivesTheOneTimeSigningSetup()
+    {
+        string text = File.ReadAllText(Path.Combine(RepoFolder(), "README.md"));
+        int start = text.IndexOf("\n## Signing\n", StringComparison.Ordinal);
+        Assert.True(start >= 0, "README has no ## Signing section");
+        int end = text.IndexOf("\n## ", start + 1, StringComparison.Ordinal);
+        string section = end < 0 ? text[start..] : text[start..end];
+        string[] order =
+        [
+            "Certificate Assistant",
+            "`ControlRoom Release`",
+            "Self-Signed Root",
+            "Code Signing",
+            "10 years",
+            "p12",
+            "gh secret set SIGNING_CERT_P12",
+            "gh secret set SIGNING_CERT_PASSWORD",
+            "SHA-1",
+            "signing-cert.sha1",
+            "`develop`",
+            "rm ControlRoom-Release.p12",
+            "scripts/launch-agent.sh install --release",
+            "System Settings > Privacy & Security > Files and Folders",
+            "Allow",
+        ];
+        AssertInOrder(section, order);
+    }
+
+    [Fact]
     public void ReadmeAndClaudeMd_DescribeTheReleaseInstallVersionAndAttestation()
     {
         string repo = RepoFolder();
@@ -210,6 +555,30 @@ public sealed partial class ReleaseWorkflowTests
             Assert.Contains("gh attestation verify", text, StringComparison.Ordinal);
             Assert.Contains("--repo " + Slug, text, StringComparison.Ordinal);
         }
+    }
+
+    private static void AssertInOrder(string text, string[] parts)
+    {
+        int last = -1;
+        foreach (string part in parts)
+        {
+            int index = text.IndexOf(part, last + 1, StringComparison.Ordinal);
+            Assert.True(index > last, "missing or out of order: " + part);
+            last = index;
+        }
+    }
+
+    /// <summary>The lines of step <paramref name="name"/> after its <c>- name:</c> line, up to the next step.</summary>
+    private static string Step(string yaml, string name)
+    {
+        string header = "\n      - name: " + name + "\n";
+        int start = yaml.IndexOf(header, StringComparison.Ordinal);
+        Assert.True(start >= 0, "missing step " + name);
+        start += header.Length;
+        int end = yaml.IndexOf("\n      - ", start, StringComparison.Ordinal);
+        string body = end < 0 ? yaml[start..] : yaml[start..(end + 1)];
+        // Drop the comment lines that introduce the next step.
+        return string.Join("\n", body.Split('\n').Where(line => !line.StartsWith("      #", StringComparison.Ordinal)));
     }
 
     private static string RepoFolder()
@@ -309,6 +678,9 @@ public sealed partial class ReleaseWorkflowTests
 
     [GeneratedRegex(@"^\s*echo ""(?<name>[A-Za-z_][A-Za-z0-9_]*)=[^""]*"" >> ""\$GITHUB_ENV""$")]
     private static partial Regex GithubEnvWrite();
+
+    [GeneratedRegex(@"^      - name: (?<name>.+)$", RegexOptions.Multiline)]
+    private static partial Regex StepName();
 
     [GeneratedRegex(@"^\s*(?<name>[A-Za-z_][A-Za-z0-9_]*):")]
     private static partial Regex EnvKey();

@@ -61,8 +61,8 @@ public sealed class NextAndBlockedWebAppTests
         string plan = Between(app, "function renderPlan(projectName, project) {", "\nfunction planSignature(");
         string waits = Between(app, "function renderWaitsFor(projectName, after) {", "\n}\n");
 
-        Assert.Contains("const group = element(\"section\", \"group waiting-group\");", plan, StringComparison.Ordinal);
-        Assert.Contains("group.appendChild(element(\"h3\", null, Texts.waiting + \" (\" + blocked.length + \")\"));", plan,
+        Assert.Contains("const group = element(\"details\", \"group waiting-group\");", plan, StringComparison.Ordinal);
+        Assert.Contains("group.appendChild(element(\"summary\", null, Texts.waiting + \" (\" + blocked.length + \")\"));", plan,
             StringComparison.Ordinal);
         Assert.Contains("if (blocked.length > 0) {", plan, StringComparison.Ordinal);
         Assert.Contains("row.appendChild(planItemLink(projectName, entry.number, entry.title));", plan, StringComparison.Ordinal);
@@ -101,7 +101,7 @@ public sealed class NextAndBlockedWebAppTests
 
         Assert.Contains("section.dataset.plan = planSignature(project);", app, StringComparison.Ordinal);
         Assert.Contains(
-            "return JSON.stringify([project.next || null, project.stopped === true, asList(project.blocked)]);", app,
+            "return JSON.stringify([project.next || null, project.stopped === true, asList(project.blocked), stop]);", app,
             StringComparison.Ordinal);
         Assert.Contains(
             "const changed = wanted.has(name) || (old !== undefined && old.dataset.plan !== planSignature(project));",

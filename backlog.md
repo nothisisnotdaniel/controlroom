@@ -20,9 +20,18 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#9](backlog/009-empty-titles-and-retry-hint.md) Empty titles and retry hint → 190-empty-titles-retry-hint
 - [x] [#10](backlog/010-ac-1-test-without-reflection.md) AC-1 test without reflection → 191-listen-test-no-reflection
 - [x] [#69](backlog/069-fix-ci-updatechecker-stopasync-throws-after.md) Fix CI: UpdateChecker.StopAsync throws after Dispose → 252-updatechecker-stop-dispose
-- [h] [#11](backlog/011-tailscale.md) Tailscale
-- [?] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone
-- [?] [#13](backlog/013-releases-overview.md) Releases overview
+- [x] [#11](backlog/011-tailscale.md) Tailscale
+- [x] [#98](backlog/098-updater-waits-for-launchd-before-starting.md) Updater waits for launchd before starting the new server → 300-updater-launchd-wait
+- [x] [#100](backlog/100-sign-release-builds-with-a-stable.md) Sign release builds with a stable identity → 301-sign-release-builds
+- [x] [#102](backlog/102-fix-the-release-sign-step-on.md) Fix the release Sign step on the macOS runner → 333-fix-release-signing
+- [x] [#101](backlog/101-set-up-the-release-signing-certificate.md) Set up the release signing certificate (after: #100)
+- [x] [#99](backlog/099-updater-checks-soon-after-install-and.md) Updater checks soon after install and retries after a skipped run → 337-updater-early-checks
+- [x] [#136](backlog/136-start-end-and-time-per-agent.md) Start, end and time per agent on job cards (after: factory#22) → 372-job-card-times
+- [x] [#138](backlog/138-number-of-active-and-blocked-jobs.md) Active and blocked job counts on the Jobs tab → 373-jobs-tab-badges
+- [x] [#142](backlog/142-update-interval-setting-30-minutes-by.md) Update interval setting, 30 minutes by default → 376-update-interval
+- [ ] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone (after: #139)
+- [ ] [#139](backlog/139-phone-start-spike.md) Phone start spike
+- [x] [#13](backlog/013-releases-overview.md) Releases overview → 375-releases-overview
 - [x] [#15](backlog/015-job-detail.md) Job detail (after: #2) → 248-job-detail-gaps
 - [x] [#16](backlog/016-live-updates.md) Live updates → 249-live-board-updates
 - [x] [#17](backlog/017-approval-inbox.md) Approval inbox (after: #4) → 251-approval-inbox
@@ -35,12 +44,12 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#23](backlog/023-costs-and-history.md) Costs and history (after: #2) → 264-costs-and-history
 - [x] [#24](backlog/024-doctor-view.md) Doctor view → 266-doctor-view
 - [x] [#25](backlog/025-ci-and-git-status.md) CI and git status → 269-ci-and-git-status
-- [ ] [#26](backlog/026-usage-view-spike.md) Usage view spike
-- [?] [#28](backlog/028-close-the-symlink-race-when-reading.md) Close the symlink race when reading story files
-- [?] [#29](backlog/029-drop-the-hand-written-equality-on.md) Drop the hand-written equality on BacklogEntry
+- [x] [#127](backlog/127-bottom-tab-bar-with-icons.md) Bottom tab bar with icons → 357-bottom-tab-bar
+- [x] [#28](backlog/028-close-the-symlink-race-when-reading.md) Close the symlink race when reading story files → 378-story-open-nofollow
+- [ ] [#29](backlog/029-drop-the-hand-written-equality-on.md) Drop the hand-written equality on BacklogEntry
 - [?] [#30](backlog/030-cap-the-bytes-read-per-board.md) Cap the bytes read per board and job response
-- [?] [#31](backlog/031-show-pending-reviewer-chips-with-a.md) Show pending reviewer chips with a text marker
-- [?] [#32](backlog/032-show-the-live-status-line-on.md) Show the live status line on the job page
+- [ ] [#31](backlog/031-show-pending-reviewer-chips-with-a.md) Show pending reviewer chips with a text marker
+- [x] [#126](backlog/126-backlog-position-in-the-story-view.md) Backlog position in the story view → 356-story-position
 - [?] [#33](backlog/033-refuse-a-token-folder-others-can.md) Refuse a token folder others can write to
 - [?] [#34](backlog/034-check-the-token-file-s-mode.md) Check the token file's mode and owner on the open handle
 - [?] [#35](backlog/035-keep-the-token-in-memory-when.md) Keep the token in memory when localStorage is unavailable
@@ -57,47 +66,94 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#46](backlog/046-update-available-notice.md) Update available notice (after: #45) → 228-update-available-notice
 - [x] [#47](backlog/047-automatic-updates.md) Automatic updates (after: #46) → 229-automatic-updates
 - [x] [#48](backlog/048-strict-semver-prerelease-identifiers-in-release.md) Strict SemVer prerelease identifiers in release tags → 270-strict-semver-prerelease
-- [?] [#49](backlog/049-verify-release-signatures-in-the-updater.md) Verify release signatures in the updater without gh
-- [?] [#50](backlog/050-updater-port-check-when-another-user.md) Updater port check when another user holds the port
+- [ ] [#49](backlog/049-verify-release-signatures-in-the-updater.md) Verify release signatures in the updater without gh
+- [ ] [#26](backlog/026-usage-view-spike.md) Usage view spike
 - [x] [#51](backlog/051-develop-prerelease-builds-and-an-opt.md) Develop prerelease builds and an opt-in develop update channel → 234-develop-prereleases-channel
 - [?] [#52](backlog/052-test-that-keeping-the-update-channel.md) Test that keeping the update channel starts no check
-- [?] [#53](backlog/053-keep-focus-on-the-channel-select.md) Keep focus on the channel select after saving
+- [ ] [#53](backlog/053-keep-focus-on-the-channel-select.md) Keep focus on the channel select after saving
 - [?] [#54](backlog/054-hint-that-the-develop-channel-installs.md) Hint that the develop channel installs unreleased builds
-- [?] [#55](backlog/055-limit-how-often-channel-changes-start.md) Limit how often channel changes start update checks
+- [ ] [#55](backlog/055-limit-how-often-channel-changes-start.md) Limit how often channel changes start update checks
 - [?] [#56](backlog/056-drop-a-develop-check-result-after.md) Drop a develop check result after switching back to stable
 - [?] [#57](backlog/057-filter-drafts-in-the-updater-s.md) Filter drafts in the updater's develop tag pick too
 - [?] [#58](backlog/058-guard-the-release-workflow-s-github.md) Guard the release workflow's GITHUB_ENV writes
 - [?] [#59](backlog/059-behaviour-tests-for-the-web-app.md) Behaviour tests for the web app's JavaScript
 - [?] [#60](backlog/060-calmer-colour-for-non-urgent-job.md) Calmer colour for non-urgent job notes
-- [?] [#61](backlog/061-check-that-the-job-page-refreshes.md) Check that the job page refreshes in place
+- [x] [#61](backlog/061-check-that-the-job-page-refreshes.md) Check that the job page refreshes in place
 - [?] [#62](backlog/062-refresh-version-and-update-info-on.md) Refresh version and update info on live changes
-- [?] [#63](backlog/063-browser-check-of-the-live-update.md) Browser check of the live-update notice
-- [?] [#64](backlog/064-keep-stale-story-marks-across-route.md) Keep stale story marks across route changes
-- [?] [#65](backlog/065-refresh-the-inbox-count-right-after.md) Refresh the inbox count right after any backlog change
+- [x] [#63](backlog/063-browser-check-of-the-live-update.md) Browser check of the live-update notice
+- [ ] [#32](backlog/032-show-the-live-status-line-on.md) Show the live status line on the job page
+- [ ] [#50](backlog/050-updater-port-check-when-another-user.md) Updater port check when another user holds the port
 - [?] [#66](backlog/066-cheaper-inbox-reads.md) Cheaper inbox reads
 - [?] [#67](backlog/067-retry-button-when-the-inbox-fails.md) Retry button when the inbox fails to load
-- [?] [#68](backlog/068-browser-check-of-the-approval-inbox.md) Browser check of the approval inbox
+- [x] [#68](backlog/068-browser-check-of-the-approval-inbox.md) Browser check of the approval inbox
 - [?] [#70](backlog/070-guard-updatechecker-startasync-after-dispose.md) Guard UpdateChecker.StartAsync after Dispose
 - [?] [#71](backlog/071-name-the-task-in-the-done.md) Name the task in the Done confirmation
 - [?] [#72](backlog/072-fill-the-search-project-filter-before.md) Fill the search project filter before the first search
-- [?] [#73](backlog/073-browser-check-of-the-search-view.md) Browser check of the Search view and five-link nav
+- [x] [#73](backlog/073-browser-check-of-the-search-view.md) Browser check of the Search view and five-link nav
 - [?] [#74](backlog/074-notice-when-a-live-search-refresh.md) Notice when a live search refresh fails
-- [?] [#75](backlog/075-browser-check-of-the-next-and.md) Browser check of the next and waiting view
-- [?] [#76](backlog/076-browser-check-of-add-note-on.md) Browser check of Add note on a story
+- [x] [#75](backlog/075-browser-check-of-the-next-and.md) Browser check of the next and waiting view
+- [x] [#76](backlog/076-browser-check-of-add-note-on.md) Browser check of Add note on a story
 - [?] [#77](backlog/077-refuse-invisible-unicode-format-characters-in.md) Refuse invisible Unicode format characters in written text
 - [?] [#78](backlog/078-character-counter-on-the-note-box.md) Character counter on the note box
 - [?] [#79](backlog/079-notes-section-end-ignores-headings-inside.md) Notes section end ignores headings inside code blocks
-- [?] [#80](backlog/080-ask-for-the-project-before-a.md) Ask for the project before a capture is saved
 - [?] [#81](backlog/081-escape-a-leading-in-captured-text.md) Escape a leading # in captured text
-- [?] [#82](backlog/082-browser-check-of-capture-and-the.md) Browser check of Capture and the two-row nav
-- [?] [#83](backlog/083-browser-check-of-approve-and-rework.md) Browser check of Approve and Rework on an escalated job
-- [?] [#84](backlog/084-browser-check-of-the-history-view.md) Browser check of the History view and seven-link nav
-- [?] [#85](backlog/085-distinct-chart-colours-for-more-than.md) Distinct chart colours for more than six modes
-- [?] [#86](backlog/086-add-the-empty-30-day-text.md) Add the empty 30-day text to the History spec
+- [x] [#82](backlog/082-browser-check-of-capture-and-the.md) Browser check of Capture and the two-row nav
+- [h] [#83](backlog/083-browser-check-of-approve-and-rework.md) Browser check of Approve and Rework on an escalated job
+- [x] [#84](backlog/084-browser-check-of-the-history-view.md) Browser check of the History view and seven-link nav
+- [ ] [#85](backlog/085-distinct-chart-colours-for-more-than.md) Distinct chart colours for more than six modes
+- [ ] [#86](backlog/086-add-the-empty-30-day-text.md) Add the empty 30-day text to the History spec
 - [?] [#87](backlog/087-cap-the-git-output-the-server.md) Cap the git output the server reads
 - [?] [#88](backlog/088-one-doctor-check-at-a-time.md) One doctor check at a time
-- [?] [#89](backlog/089-browser-check-of-the-health-view.md) Browser check of the Health view
+- [x] [#89](backlog/089-browser-check-of-the-health-view.md) Browser check of the Health view
 - [?] [#90](backlog/090-separate-the-parts-of-the-project.md) Separate the parts of the project status line
 - [?] [#91](backlog/091-tell-the-user-the-ci-link.md) Tell the user the CI link opens a new tab
 - [?] [#92](backlog/092-don-t-follow-a-symlinked-git.md) Don't follow a symlinked .git in ProjectGit
-- [?] [#93](backlog/093-browser-check-of-the-backlogs-status.md) Browser check of the Backlogs status line
+- [x] [#93](backlog/093-browser-check-of-the-backlogs-status.md) Browser check of the Backlogs status line
+- [x] [#94](backlog/094-edit-backlogs-while-a-job-runs.md) Edit backlogs while a job runs (after: factory#17) → 299-edit-backlog-during-jobs
+- [?] [#95](backlog/095-clean-up-the-backlog-branch-when.md) Clean up the backlog branch when its worktree cannot be made
+- [?] [#96](backlog/096-note-for-waiting-edits-when-the.md) Note for waiting edits when the backlog worktree cannot be read
+- [?] [#97](backlog/097-raise-the-contrast-of-muted-text.md) Raise the contrast of muted text
+- [?] [#103](backlog/103-keep-the-runner-keychain-search-list.md) Keep the runner keychain search list non-empty when removing the signing keychain
+- [?] [#104](backlog/104-give-signing-keychain-sh-check-its.md) Give signing-keychain.sh check its own message for a malformed fingerprint
+- [x] [#105](backlog/105-approve-and-drop-buttons-in-the.md) Approve and Drop buttons in the story view of a [?] item → 335-story-approve-drop
+- [x] [#106](backlog/106-project-picker-on-backlogs.md) Project picker on Backlogs → 340-backlog-project-picker
+- [x] [#107](backlog/107-collapsible-backlog-groups.md) Collapsible backlog groups → 342-collapsible-groups
+- [x] [#108](backlog/108-position-numbers-in-backlog-groups.md) Position numbers in backlog groups → 344-backlog-position-numbers
+- [x] [#109](backlog/109-drag-and-drop-to-reorder-backlog.md) Drag and drop to reorder backlog items → 345-backlog-drag-drop
+- [x] [#110](backlog/110-category-chip-on-backlog-items-and.md) Category chip on backlog items and stories (after: factory#20) → 346-category-chips
+- [?] [#111](backlog/111-decide-what-the-updater-does-when.md) Decide what the updater does when rmdir of its lock fails
+- [?] [#112](backlog/112-decide-what-the-updater-does-when.md) Decide what the updater does when kill in cleanup fails
+- [x] [#113](backlog/113-place-the-auto-stop-line-from.md) Place the auto stop line from the backlog view (after: factory#21; #109) → 348-stop-line-ui
+- [x] [#114](backlog/114-browser-check-of-the-backlogs-project.md) Browser check of the Backlogs project picker at phone width
+- [?] [#115](backlog/115-scroll-to-the-top-when-the.md) Scroll to the top when the Backlogs project changes
+- [?] [#116](backlog/116-correct-the-project-picker-when-the.md) Correct the project picker when the chosen project disappears while focused
+- [ ] [#117](backlog/117-drop-the-dead-group-h3-selector.md) Drop the dead .group h3 selector
+- [x] [#118](backlog/118-browser-check-of-collapsible-backlog-groups.md) Browser check of collapsible backlog groups at phone width
+- [?] [#119](backlog/119-one-position-per-item-in-open.md) One position per item in Open and Waiting
+- [?] [#120](backlog/120-refuse-a-target-field-on-backlog.md) Refuse a target field on backlog changes other than place
+- [?] [#121](backlog/121-announce-the-new-position-after-a.md) Announce the new position after a drag for screen readers
+- [x] [#122](backlog/122-try-drag-and-drop-by-hand.md) Try drag and drop by hand on iPhone and Mac
+- [x] [#123](backlog/123-browser-check-of-category-chips-at.md) Browser check of category chips at phone width and in dark mode
+- [x] [#124](backlog/124-check-the-stop-line-divider-on.md) Check the stop line divider on the iPhone in dark mode
+- [x] [#125](backlog/125-status-chip-in-the-story-view.md) Status chip in the story view → 352-story-status-chip
+- [ ] [#64](backlog/064-keep-stale-story-marks-across-route.md) Keep stale story marks across route changes
+- [ ] [#65](backlog/065-refresh-the-inbox-count-right-after.md) Refresh the inbox count right after any backlog change
+- [x] [#128](backlog/128-approve-or-drop-goes-back-from.md) Approve or Drop goes back from the story view → 355-approve-goes-back
+- [x] [#129](backlog/129-jobs-view-without-your-tasks.md) Jobs view without your tasks → 358-jobs-view-only-jobs
+- [x] [#130](backlog/130-check-the-bottom-tab-bar-on.md) Check the bottom tab bar on the iPhone
+- [x] [#131](backlog/131-lifetime-totals-in-history.md) Lifetime totals in History → 366-lifetime-totals
+- [x] [#132](backlog/132-capture-at-the-top-of-the.md) Capture at the top of the Inbox → 359-capture-in-inbox
+- [x] [#133](backlog/133-search-at-the-top-of-the.md) Search at the top of the Backlogs → 360-search-in-backlogs
+- [x] [#134](backlog/134-done-button-for-your-tasks-in.md) Done button for your tasks in the story view → 365-done-button-tasks
+- [x] [#135](backlog/135-leaner-bottom-bar-with-counts-on.md) Leaner bottom bar with counts on Backlogs → 362-leaner-bottom-bar
+- [x] [#137](backlog/137-updater-replaces-itself-with-each-release.md) Updater replaces itself with each release → 369-updater-self-update
+- [?] [#140](backlog/140-cap-the-tag-list-in-the.md) Cap the tag list in the releases overview
+- [?] [#141](backlog/141-loading-text-for-the-releases-block.md) Loading text for the releases block
+- [x] [#143](backlog/143-check-the-releases-block-on-the.md) Check the releases block on the iPhone
+- [?] [#144](backlog/144-settings-file-cap-fits-every-valid.md) Settings file cap fits every valid interval
+- [?] [#145](backlog/145-story-reads-on-linux-with-glibc.md) Story reads on Linux with glibc older than 2.33
+- [x] [#146](backlog/146-shared-roomkit-core-for-controlroom-and.md) Shared RoomKit core for ControlRoom and PlayRoom → 386-roomkit-shared-core
+- [?] [#147](backlog/147-show-and-edit-the-factory-backlog.md) Show and edit the factory backlog (after: factory#30)
+- [?] [#148](backlog/148-test-that-a-file-in-both.md) Test that a file in both wwwroot folders fails the build
+- [?] [#149](backlog/149-strict-mode-for-sw-js.md) Strict mode for sw.js
+- [?] [#150](backlog/150-check-job-ids-and-folders-from.md) Check job ids and folders from IJobFormat

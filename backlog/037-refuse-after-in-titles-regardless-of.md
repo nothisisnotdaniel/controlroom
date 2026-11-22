@@ -2,6 +2,8 @@
 
 As the ControlRoom user, I want a backlog title containing a variant of `(after:` to be refused, so that a title I type can never be read by job.py as a dependency marker.
 
+Category: bug
+
 ## What
 
 In `BacklogEditor` title validation for add and title edits, refuse any `(` followed by optional whitespace and `after:` in any case (for example `(After:`, `( after:`), matching how `factory/tools/job.py` parses the `(after: …)` suffix. Return the existing `invalid` error code. Add tests for each variant.

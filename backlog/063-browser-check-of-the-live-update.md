@@ -2,6 +2,8 @@
 
 As the operator, I want the live-update notice checked in a real browser, so that its layout and contrast are known to work in light and dark mode.
 
+Category: test
+
 ## What
 
 Open the board in a browser, trigger a live change and check the .live-notice layout (720px cap, card background, border), its dark-mode contrast and that screen readers announce it once.

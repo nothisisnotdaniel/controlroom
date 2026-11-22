@@ -2,6 +2,8 @@
 
 As the operator, I want the Search view and the five-link nav checked on an iPhone-width screen, so that the nav still fits and the view is usable in light and dark mode.
 
+Category: test
+
 ## What
 
 Open ControlRoom at 375 px and 360 px wide in light and dark mode with both count badges (Inbox, Tasks) showing; check the five nav links fit on one row or wrap cleanly, and that the Search field, mark and project filters and results are usable.

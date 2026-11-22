@@ -25,12 +25,36 @@ public sealed partial class UpdaterScriptTests
 
     private const string Develop = "{\"autoUpdate\":true,\"channel\":\"develop\"}\n";
 
+    /// <summary>How often a run waits 15 min while a job runs before it ends <c>job_running</c>.</summary>
+    private const int RetryWaits = 23;
+
+    /// <summary>The updater script and plist installed before each run (<c>0700</c>, <c>0644</c>).</summary>
+    private const string InstalledUpdater = "#!/bin/sh\n# installed updater\nexit 0\n";
+
+    private const string InstalledUpdaterPlist = "<plist>installed updater</plist>\n";
+
+    /// <summary>The <c>updater.sh</c> every release built by <c>AddRelease</c> carries unless a test picks another.</summary>
+    private const string ReleaseUpdater = "#!/bin/sh\n# release updater\nexit 0\n";
+
+    private const UnixFileMode ScriptMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+
+    private const UnixFileMode PlistMode =
+        UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead;
+
+    /// <summary>What the fake <c>sleep</c> records when neither the lock nor a result file exists.</summary>
+    private const string NothingHeld = "lock=no result=no";
+
     [Fact]
     public void SharedFunctions_AreTheSameAsInLaunchAgent()
     {
         string agent = File.ReadAllText(Path.Combine(UpdaterHome.RepoFolder(), "scripts", "launch-agent.sh"));
         string updater = File.ReadAllText(UpdaterHome.ScriptPath());
-        foreach (string name in new[] { "valid_tag", "latest_tag", "download", "check_and_extract" })
+        foreach (string name in new[]
+                 {
+                     "valid_tag", "latest_tag", "download", "check_and_extract", "fingerprint_file", "verify_signature",
+                     "xml_escape", "updater_plist", "number_greater", "text_greater", "semver_newer", "channel_tag",
+                     "develop_tag",
+                 })
         {
             string expected = Function(agent, name);
             Assert.Equal(expected, Function(updater, name));
@@ -59,7 +83,8 @@ public sealed partial class UpdaterScriptTests
 
         Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), line);
         Assert.Equal(
-            ["bootout " + home.Service, "bootstrap " + home.Domain + " " + home.ServerPlist, "print " + home.Service],
+            ["bootout " + home.Service, "print " + home.Service, "bootstrap " + home.Domain + " " + home.ServerPlist,
+                "print " + home.Service],
             home.AllLaunchctlCalls());
         Assert.Equal(["-nP -iTCP:8100 -sTCP:LISTEN -t"], home.LsofCalls());
         Assert.Equal("{\"version\":\"1.3.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
@@ -272,7 +297,7 @@ public sealed partial class UpdaterScriptTests
         AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
         Assert.Equal(30, home.CurlCalls().Count(call => call == HealthCall));
         Assert.Equal(28, home.SleepCalls().Count);
-        Assert.Equal(30, home.AllLaunchctlCalls().Count(call => call == "print " + home.Service));
+        Assert.Equal(32, home.AllLaunchctlCalls().Count(call => call == "print " + home.Service));
     }
 
     [Fact]
@@ -354,7 +379,7 @@ public sealed partial class UpdaterScriptTests
 
         if (running)
         {
-            AssertNothingDone(home, "job_running", " v1.2.0");
+            AssertNothingDone(home, "job_running", " v1.2.0", waits: RetryWaits);
         }
         else
         {
@@ -375,7 +400,7 @@ public sealed partial class UpdaterScriptTests
         string state = Path.Combine(home.Root, "factory", "jobs", "1-done", "state.json");
         File.SetUnixFileMode(state, UnixFileMode.None);
 
-        AssertNothingDone(home, "job_running", " v1.2.0");
+        AssertNothingDone(home, "job_running", " v1.2.0", waits: RetryWaits);
         File.SetUnixFileMode(state, UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }
 
@@ -509,7 +534,7 @@ public sealed partial class UpdaterScriptTests
         home.AddJob("1-done", "done");
         home.AddJob("2-active", stage);
 
-        AssertNothingDone(home, "job_running", " v1.2.0");
+        AssertNothingDone(home, "job_running", " v1.2.0", waits: RetryWaits);
         Assert.False(Directory.Exists(home.Lock));
     }
 
@@ -616,6 +641,179 @@ public sealed partial class UpdaterScriptTests
         home.SetRedirect(Releases + "/tag/v1.3.0");
 
         AssertNothingDone(home, "download_failed", " v1.2.0 v1.3.0", curlCalls: 2);
+    }
+
+    [Fact]
+    public void SigningOff_RunsNoCodesignAndUpdates()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+
+        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
+
+        Assert.Empty(home.CodesignCalls());
+        Assert.Equal("v1.3.0\n", File.ReadAllText(home.Marker));
+    }
+
+    [Theory]
+    [InlineData(ScriptFixtures.Fingerprint + "\n")]
+    [InlineData("0123456789ABCDEF0123456789abcdefABCDEF01")]
+    public void ValidSigningCopy_VerifiesEveryTopLevelNativeFileThenUpdates(string content)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.SetSigningCopy(content);
+        string fingerprint = content.TrimEnd('\n');
+
+        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
+
+        IReadOnlyList<string[]> calls = home.CodesignCalls();
+        string[] expected = ["ControlRoom.Server", "libSystem.Native.dylib", "createdump"];
+        Assert.Equal(expected.Length, calls.Count);
+        for (int index = 0; index < expected.Length; index++)
+        {
+            string requirement = index == 0
+                ? ScriptFixtures.ServerRequirement(fingerprint)
+                : ScriptFixtures.LibraryRequirement(fingerprint);
+            Assert.Equal(4, calls[index].Length);
+            Assert.Equal(["--verify", "--strict", requirement], calls[index][..3]);
+            Assert.StartsWith(System.IO.Path.Combine(home.Support, ".release."), calls[index][3], StringComparison.Ordinal);
+            Assert.EndsWith("/out/controlroom-1.3.0-osx-arm64/" + expected[index], calls[index][3], StringComparison.Ordinal);
+        }
+
+        AssertResult(home, "\"result\":\"updated\",\"version\":\"1.3.0\",\"previous\":\"1.2.0\"");
+        Assert.Empty(home.Leftovers());
+    }
+
+    [Theory]
+    [InlineData("short")]
+    [InlineData("long")]
+    [InlineData("junk")]
+    [InlineData("two-breaks")]
+    [InlineData("empty")]
+    [InlineData("symlink")]
+    [InlineData("mode-644")]
+    [InlineData("mode-400")]
+    [InlineData("folder")]
+    public void InvalidSigningCopy_IsCheckFailedLikeAFailingCheck(string fault)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        switch (fault)
+        {
+            case "short":
+                home.SetSigningCopy(ScriptFixtures.Fingerprint[1..] + "\n");
+                break;
+            case "long":
+                home.SetSigningCopy(ScriptFixtures.Fingerprint + "0");
+                break;
+            case "junk":
+                home.SetSigningCopy(ScriptFixtures.Fingerprint[..39] + "z\n");
+                break;
+            case "two-breaks":
+                home.SetSigningCopy(ScriptFixtures.Fingerprint + "\n\n");
+                break;
+            case "empty":
+                home.SetSigningCopy("");
+                break;
+            case "symlink":
+                string target = System.IO.Path.Combine(home.Path, "real-fingerprint");
+                File.WriteAllText(target, ScriptFixtures.Fingerprint + "\n");
+                File.SetUnixFileMode(target, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                File.CreateSymbolicLink(home.SigningCopy, target);
+                break;
+            case "mode-644":
+                home.SetSigningCopy(ScriptFixtures.Fingerprint + "\n");
+                File.SetUnixFileMode(home.SigningCopy,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
+                break;
+            case "mode-400":
+                home.SetSigningCopy(ScriptFixtures.Fingerprint + "\n");
+                File.SetUnixFileMode(home.SigningCopy, UnixFileMode.UserRead);
+                break;
+            default:
+                Directory.CreateDirectory(home.SigningCopy);
+                break;
+        }
+
+        IReadOnlyList<string> before = home.Snapshot("server");
+
+        Assert.Matches(LinePattern("check_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+        Assert.Empty(home.CodesignCalls());
+        Assert.Empty(home.LaunchctlCalls());
+        Assert.Equal(before, home.Snapshot("server"));
+        Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"check\"");
+        Assert.Empty(home.Leftovers());
+    }
+
+    [Fact]
+    public void FailingSignatureCheck_IsCheckFailedNeverBootsOutAndIsSkippedNextRun()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.SetSigningCopy(ScriptFixtures.Fingerprint + "\n");
+        home.SetCodesignExit(1);
+        IReadOnlyList<string> before = home.Snapshot("server");
+
+        Assert.Matches(LinePattern("check_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+        Assert.Single(home.CodesignCalls());
+        Assert.Empty(home.LaunchctlCalls());
+        Assert.Equal(before, home.Snapshot("server"));
+        Assert.False(Directory.Exists(home.Previous));
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"check\"");
+        Assert.Empty(home.Leftovers());
+
+        Assert.Matches(LinePattern("skipped_failed v1.2.0 v1.3.0"), home.RunOnce());
+        Assert.Single(home.CodesignCalls());
+        Assert.Empty(home.LaunchctlCalls());
+    }
+
+    [Fact]
+    public void SigningOnAndNoCodesignOnPath_IsCheckFailed()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.SetSigningCopy(ScriptFixtures.Fingerprint + "\n");
+
+        Assert.Matches(LinePattern("check_failed v1.2.0 v1.3.0"), home.RunOnceWithoutCodesign());
+
+        Assert.Empty(home.CodesignCalls());
+        Assert.Empty(home.LaunchctlCalls());
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"check\"");
+        Assert.Empty(home.Leftovers());
     }
 
     [Theory]
@@ -851,18 +1049,566 @@ public sealed partial class UpdaterScriptTests
         AssertNothingDone(home, "skipped_failed", " v1.2.0 v1.2.1-develop.4", curlCalls: 1);
     }
 
+    [Fact]
+    public void LingeringServiceAndOneFailedBootstrap_AreWaitedForAndRetriedBeforeTheHealthCheck()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.SetLinger(3);
+        home.FailBootstraps(1);
+
+        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
+
+        AssertResult(home, "\"result\":\"updated\",\"version\":\"1.3.0\",\"previous\":\"1.2.0\"");
+        string print = "launchctl print " + home.Service;
+        string bootstrap = "launchctl bootstrap " + home.Domain + " " + home.ServerPlist;
+        Assert.Equal(
+            ["launchctl bootout " + home.Service, print, "sleep 0.5", print, "sleep 0.5", print, "sleep 0.5", print,
+                bootstrap, "sleep 1", bootstrap, "health", print],
+            home.Events());
+        Assert.Equal(["0.5", "0.5", "0.5", "1"], home.SleepCalls());
+        Assert.Equal("v1.3.0\n", File.ReadAllText(home.Marker));
+    }
+
+    [Fact]
+    public void LingeringServiceWithAFirstTimeBootstrap_SleepsOnlyWhileItIsStillShown()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.SetLinger(2);
+
+        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
+
+        Assert.Equal(["0.5", "0.5"], home.SleepCalls());
+        Assert.Single(home.LaunchctlCalls(), call => call.StartsWith("bootstrap ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ServiceThatNeverGoes_IsWaitedForThirtyPollsThenBootstrappedAnyway()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.SetLinger(1000);
+
+        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
+
+        Assert.Equal(Enumerable.Repeat("0.5", 30), home.SleepCalls());
+        List<string> expected = ["launchctl bootout " + home.Service];
+        for (int poll = 0; poll < 30; poll++)
+        {
+            expected.Add("launchctl print " + home.Service);
+            expected.Add("sleep 0.5");
+        }
+
+        expected.Add("launchctl bootstrap " + home.Domain + " " + home.ServerPlist);
+        Assert.Equal(expected, home.Events().Take(expected.Count));
+    }
+
+    [Fact]
+    public void NewServerThatNeverBootstraps_IsBootstrapFailedWithoutAHealthPollForIt()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.FailBootstraps(6);
+
+        Assert.Matches(LinePattern("bootstrap_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"bootstrap_failed\"");
+        string bootstrap = "bootstrap " + home.Domain + " " + home.ServerPlist;
+        Assert.Equal(
+            ["bootout " + home.Service, .. Enumerable.Repeat(bootstrap, 6), "bootout " + home.Service, bootstrap],
+            home.LaunchctlCalls());
+        Assert.Equal(Enumerable.Repeat("1", 5), home.SleepCalls());
+        List<string> events = [.. home.Events()];
+        Assert.Single(events, call => call == "health");
+        Assert.True(events.IndexOf("health") > events.LastIndexOf("launchctl bootout " + home.Service));
+        Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
+        Assert.False(Directory.Exists(home.Previous));
+        Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
+        Assert.Empty(home.Leftovers());
+    }
+
+    [Fact]
+    public void BootstrapFailedRun_IsNotSkippedAndTheNextRunTriesTheSwapAgain()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.FailBootstraps(6);
+        Assert.Matches(LinePattern("bootstrap_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
+
+        AssertResult(home, "\"result\":\"updated\",\"version\":\"1.3.0\",\"previous\":\"1.2.0\"");
+        Assert.Equal("v1.3.0\n", File.ReadAllText(home.Marker));
+    }
+
+    [Fact]
+    public void OldServerThatNeverBootstrapsAfterABootstrapFailure_IsRollbackFailedWithoutHealthPolls()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.FailBootstraps(12);
+
+        Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
+        Assert.Equal(12, home.LaunchctlCalls().Count(call => call.StartsWith("bootstrap ", StringComparison.Ordinal)));
+        Assert.DoesNotContain(HealthCall, home.CurlCalls());
+    }
+
+    [Fact]
+    public void OldServerThatNeverBootstrapsAfterNoAnswer_IsRollbackFailedWithoutPollingItsHealth()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "9.9.9");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.FailBootstrapsPerBootout(0, 6);
+
+        Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
+        Assert.Equal(15, home.CurlCalls().Count(call => call == HealthCall));
+        IReadOnlyList<string> afterRollback = [.. home.Events().Reverse().TakeWhile(call => call != "launchctl bootout " + home.Service)];
+        Assert.Equal(6, afterRollback.Count(call => call.StartsWith("launchctl bootstrap ", StringComparison.Ordinal)));
+        Assert.DoesNotContain("health", afterRollback);
+    }
+
+    [Fact]
+    public void OldServerThatNeverBootstrapsAfterAFailedRename_IsRollbackFailedWithoutHealthPolls()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.FailMoveFrom("/controlroom-1.3.0-osx-arm64");
+        home.FailBootstraps(6);
+
+        Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
+        Assert.Equal(6, home.LaunchctlCalls().Count(call => call.StartsWith("bootstrap ", StringComparison.Ordinal)));
+        Assert.DoesNotContain(HealthCall, home.CurlCalls());
+        Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
+    }
+
+    [Fact]
+    public void RollbackAfterNoAnswer_WaitsAfterEveryBootoutAndRetriesEveryBootstrap()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "9.9.9");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.SetLinger(1);
+        home.FailBootstrapsPerBootout(1, 1);
+
+        Assert.Matches(LinePattern("rolled_back v1.2.0 v1.3.0"), home.RunOnce());
+
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"no_answer\"");
+        AssertWaitAndRetryAfterEveryBootout(home, bootouts: 2);
+        Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
+    }
+
+    [Fact]
+    public void SwapFailedAfterAFailedRename_WaitsAfterTheBootoutAndRetriesTheBootstrap()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.FailMoveFrom("/controlroom-1.3.0-osx-arm64");
+        home.SetLinger(1);
+        home.FailBootstraps(1);
+
+        Assert.Matches(LinePattern("swap_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"swap\"");
+        AssertWaitAndRetryAfterEveryBootout(home, bootouts: 1);
+        Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
+    }
+
+    [Fact]
+    public void SwapFailedAfterAFailedMarkerWrite_WaitsAfterEveryBootoutAndRetriesEveryBootstrap()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.FailMoveTo("/installed-release");
+        home.SetLinger(1);
+        home.FailBootstrapsPerBootout(1, 1);
+
+        Assert.Matches(LinePattern("swap_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"swap\"");
+        AssertWaitAndRetryAfterEveryBootout(home, bootouts: 2);
+    }
+
+    [Theory]
+    [InlineData("1")]
+    [InlineData("60")]
+    [InlineData("600")]
+    public void StartDelay_SleepsFirstThenRunsAsBefore(string delay)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.SetRedirect(Releases + "/tag/v1.2.0");
+
+        Assert.Matches(LinePattern("current v1.2.0 v1.2.0"), home.RunOnce("--start-delay", delay));
+        Assert.Equal([delay], home.SleepCalls());
+        Assert.Equal([NothingHeld], home.SleepStates());
+        Assert.Single(home.CurlCalls());
+    }
+
+    [Fact]
+    public void StartDelay_ComesBeforeEveryLaunchctlAndCurlCall()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+
+        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce("--start-delay", "60"));
+        IReadOnlyList<string> events = home.Events();
+        Assert.Equal("sleep 60", events[0]);
+        Assert.DoesNotContain("sleep 60", events.Skip(1));
+        Assert.Contains("launchctl bootout " + home.Service, events);
+        Assert.Equal(["60"], home.SleepCalls());
+        Assert.Equal([NothingHeld], home.SleepStates());
+    }
+
+    [Fact]
+    public void StartDelay_ReadsTheSettingOnlyAfterTheDelay()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.SetRedirect(Releases + "/tag/v1.2.0");
+        home.OnSleepWrite(1, home.Settings, "{\"autoUpdate\":false}\n");
+
+        Assert.Matches(LinePattern("off"), home.RunOnce("--start-delay", "60"));
+        Assert.Equal(["60"], home.SleepCalls());
+        Assert.Empty(home.CurlCalls());
+        Assert.Empty(home.AllLaunchctlCalls());
+    }
+
+    [Fact]
+    public void WithoutStartDelay_DoesNotSleepFirst()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.SetRedirect(Releases + "/tag/v1.2.0");
+
+        Assert.Matches(LinePattern("current v1.2.0 v1.2.0"), home.RunOnce());
+        Assert.Empty(home.SleepCalls());
+    }
+
+    [Theory]
+    [InlineData("--factory-root|ROOT|--start-delay|0")]
+    [InlineData("--factory-root|ROOT|--start-delay|601")]
+    [InlineData("--factory-root|ROOT|--start-delay|060")]
+    [InlineData("--factory-root|ROOT|--start-delay|6x")]
+    [InlineData("--factory-root|ROOT|--start-delay|-1")]
+    [InlineData("--factory-root|ROOT|--start-delay|")]
+    [InlineData("--factory-root|ROOT|--start-delay| 60")]
+    [InlineData("--factory-root|ROOT|--start-delay|1000")]
+    [InlineData("--factory-root|ROOT|--start-delay")]
+    [InlineData("--factory-root|ROOT|--start-delay|60|x")]
+    [InlineData("--factory-root|ROOT|--delay|60")]
+    [InlineData("--start-delay|60|--factory-root|ROOT")]
+    [InlineData("--factory-root|root|--start-delay|60")]
+    public void BadArgumentList_NeverSleepsAndIsJobRunning(string arguments)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddJob("1-active", "build");
+        home.SetRedirect(Releases + "/tag/v1.2.0");
+
+        AssertNothingDone(home, "job_running", " v1.2.0", arguments: arguments.Split('|'));
+        Assert.False(Directory.Exists(home.Lock));
+    }
+
+    [Fact]
+    public void StartDelayWithoutSleepOnPath_GoesOnAtOnce()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.SetRedirect(Releases + "/tag/v1.2.0");
+
+        Assert.Matches(LinePattern("current v1.2.0 v1.2.0"), home.RunOnceWithoutSleep("--start-delay", "60"));
+        Assert.Single(home.CurlCalls());
+    }
+
+    [Fact]
+    public void JobThatEndsDuringTheSecondWait_RunGoesOnAfterTwoWaitingLines()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddJob("1-active", "build");
+        home.SetRedirect(Releases + "/tag/v1.2.0");
+        home.OnSleepFinishJob(2, "1-active");
+
+        IReadOnlyList<string> lines = home.RunAll();
+
+        Assert.Equal(3, lines.Count);
+        Assert.Matches(LinePattern("waiting v1.2.0"), lines[0]);
+        Assert.Matches(LinePattern("waiting v1.2.0"), lines[1]);
+        Assert.Matches(LinePattern("current v1.2.0 v1.2.0"), lines[2]);
+        Assert.Equal(["900", "900"], home.SleepCalls());
+        Assert.Equal([NothingHeld, NothingHeld], home.SleepStates());
+        Assert.Single(home.CurlCalls());
+        Assert.False(File.Exists(home.Result));
+        Assert.False(Directory.Exists(home.Lock));
+    }
+
+    [Fact]
+    public void JobThatEndsDuringTheFirstWait_UpdatesAfterTheStartDelayAndOneWait()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddJob("1-active", "review");
+        home.AddRelease("1.3.0", "1.3.0");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+        home.OnSleepFinishJob(2, "1-active");
+
+        IReadOnlyList<string> lines = home.RunAll("--start-delay", "60");
+
+        Assert.Equal(2, lines.Count);
+        Assert.Matches(LinePattern("waiting v1.2.0"), lines[0]);
+        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), lines[1]);
+        Assert.Equal(["60", "900"], home.SleepCalls());
+        Assert.Equal([NothingHeld, NothingHeld], home.SleepStates());
+        AssertResult(home, "\"result\":\"updated\",\"version\":\"1.3.0\",\"previous\":\"1.2.0\"");
+        Assert.Empty(home.Leftovers());
+    }
+
+    [Fact]
+    public void JobThatNeverEnds_WaitsTwentyThreeTimesThenIsJobRunning()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddJob("1-active", "build");
+        home.SetRedirect(Releases + "/tag/v1.3.0");
+
+        AssertNothingDone(home, "job_running", " v1.2.0", waits: RetryWaits);
+        Assert.Empty(home.CurlCalls());
+        Assert.Equal(Enumerable.Repeat(NothingHeld, RetryWaits), home.SleepStates());
+        Assert.False(File.Exists(home.Result));
+        Assert.False(Directory.Exists(home.Lock));
+    }
+
+    [Fact]
+    public void LockTakenDuringAWait_IsBusyAndKeepsTheOtherRunsLock()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddJob("1-active", "build");
+        home.SetRedirect(Releases + "/tag/v1.2.0");
+        home.OnSleep(1, "mkdir " + UpdaterHome.Quote(home.Lock));
+
+        IReadOnlyList<string> lines = home.RunAll();
+
+        Assert.Equal(2, lines.Count);
+        Assert.Matches(LinePattern("waiting v1.2.0"), lines[0]);
+        Assert.Matches(LinePattern("busy v1.2.0"), lines[1]);
+        Assert.Equal(["900"], home.SleepCalls());
+        Assert.Equal([NothingHeld], home.SleepStates());
+        Assert.True(Directory.Exists(home.Lock));
+        Assert.Empty(home.CurlCalls());
+        Assert.Empty(home.AllLaunchctlCalls());
+    }
+
+    [Fact]
+    public void SettingTurnedOffDuringAWait_IsOffWithoutFurtherWaits()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddJob("1-active", "build");
+        home.OnSleepWrite(1, home.Settings, "{\"autoUpdate\":false}\n");
+
+        IReadOnlyList<string> lines = home.RunAll();
+
+        Assert.Equal(2, lines.Count);
+        Assert.Matches(LinePattern("waiting v1.2.0"), lines[0]);
+        Assert.Matches(LinePattern("off"), lines[1]);
+        Assert.Equal(["900"], home.SleepCalls());
+        Assert.Empty(home.CurlCalls());
+        Assert.False(Directory.Exists(home.Lock));
+    }
+
+    [Fact]
+    public void ReleaseMarkerGoneDuringAWait_IsNotReleaseWithoutFurtherWaits()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddJob("1-active", "build");
+        home.OnSleep(1, "rm -f " + UpdaterHome.Quote(home.Marker));
+
+        IReadOnlyList<string> lines = home.RunAll();
+
+        Assert.Equal(2, lines.Count);
+        Assert.Matches(LinePattern("waiting v1.2.0"), lines[0]);
+        Assert.Matches(LinePattern("not_release"), lines[1]);
+        Assert.Equal(["900"], home.SleepCalls());
+        Assert.Empty(home.CurlCalls());
+    }
+
+    [Fact]
+    public void RunningJobWithoutSleepOnPath_IsJobRunningWithoutWaiting()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using UpdaterHome home = new();
+        home.AddJob("1-active", "build");
+        home.SetRedirect(Releases + "/tag/v1.2.0");
+
+        Assert.Matches(LinePattern("job_running v1.2.0"), home.RunOnceWithoutSleep());
+        Assert.Empty(home.CurlCalls());
+        Assert.Empty(home.AllLaunchctlCalls());
+        Assert.False(Directory.Exists(home.Lock));
+    }
+
+    /// <summary>With one lingering <c>print</c> and one failing bootstrap per bootout: every bootout is followed by
+    /// print, sleep 0.5, print (gone), then bootstrap, sleep 1, bootstrap.</summary>
+    private static void AssertWaitAndRetryAfterEveryBootout(UpdaterHome home, int bootouts)
+    {
+        string bootout = "launchctl bootout " + home.Service;
+        string print = "launchctl print " + home.Service;
+        string bootstrap = "launchctl bootstrap " + home.Domain + " " + home.ServerPlist;
+        IReadOnlyList<string> events = home.Events();
+        List<int> starts = [.. Enumerable.Range(0, events.Count).Where(index => events[index] == bootout)];
+        Assert.Equal(bootouts, starts.Count);
+        foreach (int start in starts)
+        {
+            Assert.Equal(
+                [bootout, print, "sleep 0.5", print, bootstrap, "sleep 1", bootstrap],
+                events.Skip(start).Take(7));
+        }
+    }
+
     /// <summary>One run that must log <paramref name="word"/> (plus <paramref name="details"/>) and change nothing:
-    /// no launchctl call, the given number of curl calls, no result, HOME as before apart from the fakes' logs.</summary>
-    private static void AssertNothingDone(UpdaterHome home, string word, string details, int curlCalls = 0)
+    /// no launchctl call, the given number of curl calls, no result, HOME as before apart from the fakes' logs. Before
+    /// that last line it logs <paramref name="waits"/> <c>waiting</c> lines and makes as many <c>sleep 900</c> calls
+    /// (and no other). <paramref name="arguments"/> replaces the default <c>--factory-root &lt;root&gt;</c>.</summary>
+    private static void AssertNothingDone(
+        UpdaterHome home, string word, string details, int curlCalls = 0, int waits = 0, string[]? arguments = null)
     {
         IReadOnlyList<string> before = home.Snapshot("");
 
-        string line = home.RunOnce();
+        IReadOnlyList<string> lines = arguments is null ? home.RunAll() : home.RunAllWithArguments(arguments);
 
-        Assert.Matches(LinePattern(word + details), line);
+        Assert.Equal(waits + 1, lines.Count);
+        Assert.All(lines.Take(waits), line => Assert.Matches(LinePattern("waiting v1.2.0"), line));
+        Assert.Matches(LinePattern(word + details), lines[^1]);
         Assert.Empty(home.LaunchctlCalls());
         Assert.Equal(curlCalls, home.CurlCalls().Count);
-        Assert.Empty(home.SleepCalls());
+        Assert.Equal(Enumerable.Repeat("900", waits), home.SleepCalls());
         Assert.Equal(before, home.Snapshot(""));
     }
 
@@ -909,15 +1655,58 @@ public sealed partial class UpdaterScriptTests
     {
         private static readonly TimeSpan ProcessTimeout = TimeSpan.FromSeconds(60);
 
+        /// <summary>Logs its arguments (also to <c>order.log</c>). Each <c>bootstrap</c> logs the second line of
+        /// <c>&lt;support&gt;/updater.sh</c> to <c>bootstrap-updater.log</c>, each <c>bootout</c> the number of staged
+        /// <c>.updater.*</c> files to <c>bootout-staged.log</c>. <c>bootout</c> unloads the server, copies
+        /// <c>$HOME/linger</c> to <c>linger-left</c> and pops the first line of <c>bootstrap-fails-per-bootout</c> into
+        /// <c>bootstrap-fails</c>. <c>bootstrap</c> fails (stderr, exit 5) while the <c>bootstrap-fails</c> counter is
+        /// above 0 (counting it down), else loads the server. <c>print</c> shows the loaded server; after a bootout it
+        /// still shows it while the <c>linger-left</c> counter is above 0 (counting it down), else exits 113.
+        /// <c>print</c> of the updater's own label is logged only to <c>updater-print.log</c>: it shows
+        /// <c>runs = &lt;n&gt;</c> (one tab) from <c>$HOME/updater-runs</c>, prints <c>$HOME/updater-print</c> as it is
+        /// when that is set, and else exits 113 (like an agent launchd doesn't know).</summary>
         private const string FakeLaunchctl =
             "#!/bin/sh\n"
+            + "if [ \"$1\" = print ] && [ \"${2##*/}\" = local.controlroom.updater ]; then\n"
+            + "  printf '%s\\n' \"$*\" >> \"$HOME/updater-print.log\"\n"
+            + "  if [ -f \"$HOME/updater-print\" ]; then cat \"$HOME/updater-print\"; exit 0; fi\n"
+            + "  if [ -f \"$HOME/updater-runs\" ]; then\n"
+            + "    printf '\\tstate = running\\n\\truns = %s\\n\\tlast exit code = 0\\n' \"$(cat \"$HOME/updater-runs\")\"; exit 0\n"
+            + "  fi\n"
+            + "  exit 113\n"
+            + "fi\n"
             + "printf '%s\\n' \"$*\" >> \"$HOME/calls.log\"\n"
-            + "case $1 in bootstrap) : > \"$HOME/loaded\" ;; bootout) rm -f \"$HOME/loaded\" ;; esac\n"
+            + "printf 'launchctl %s\\n' \"$*\" >> \"$HOME/order.log\"\n"
+            + "support=\"$HOME/Library/Application Support/ControlRoom\"\n"
+            + "case $1 in\n"
+            + "  bootstrap) sed -n 2p \"$support/updater.sh\" >> \"$HOME/bootstrap-updater.log\" ;;\n"
+            + "  bootout) ls -A \"$support\" | grep -c '^\\.updater\\.' >> \"$HOME/bootout-staged.log\" ;;\n"
+            + "esac\n"
+            + "count() { if [ -f \"$HOME/$1\" ]; then cat \"$HOME/$1\"; else echo 0; fi; }\n"
+            + "case $1 in\n"
+            + "  bootstrap)\n"
+            + "    n=$(count bootstrap-fails)\n"
+            + "    if [ \"$n\" -gt 0 ]; then\n"
+            + "      echo $((n - 1)) > \"$HOME/bootstrap-fails\"\n"
+            + "      echo 'Bootstrap failed: 5: Input/output error' >&2; exit 5\n"
+            + "    fi\n"
+            + "    : > \"$HOME/loaded\" ;;\n"
+            + "  bootout)\n"
+            + "    rm -f \"$HOME/loaded\"\n"
+            + "    if [ -f \"$HOME/linger\" ]; then cat \"$HOME/linger\" > \"$HOME/linger-left\"; fi\n"
+            + "    plan=\"$HOME/bootstrap-fails-per-bootout\"\n"
+            + "    if [ -s \"$plan\" ]; then\n"
+            + "      head -n 1 \"$plan\" > \"$HOME/bootstrap-fails\"\n"
+            + "      tail -n +2 \"$plan\" > \"$plan.rest\"; cat \"$plan.rest\" > \"$plan\"; rm -f \"$plan.rest\"\n"
+            + "    fi ;;\n"
+            + "esac\n"
             + "if [ \"$1\" = print ]; then\n"
             + "  if [ -f \"$HOME/loaded\" ] && [ ! -f \"$HOME/not-running\" ]; then\n"
             + "    printf '\\tstate = running\\n\\tpid = 4242\\n\\tendpoints = {\\n\\t\\tpid = 7\\n\\t}\\n'; exit 0\n"
             + "  fi\n"
             + "  if [ -f \"$HOME/loaded\" ]; then printf '\\tstate = waiting\\n'; exit 0; fi\n"
+            + "  n=$(count linger-left)\n"
+            + "  if [ \"$n\" -gt 0 ]; then echo $((n - 1)) > \"$HOME/linger-left\"; printf '\\tstate = exiting\\n'; exit 0; fi\n"
             + "  exit 113\n"
             + "fi\n"
             + "exit 0\n";
@@ -931,9 +1720,20 @@ public sealed partial class UpdaterScriptTests
             + "if [ -f \"$HOME/loaded\" ]; then echo 4242; exit 0; fi\n"
             + "exit 1\n";
 
+        /// <summary>The fake clock: logs its arguments (also to <c>order.log</c>), records in <c>sleep-state.log</c>
+        /// whether the lock and the result file exist at that moment, runs the hook <c>sleep-hooks/&lt;n&gt;</c> for
+        /// its n-th call (counting from 1) when there is one, and returns at once.</summary>
         private const string FakeSleep =
             "#!/bin/sh\n"
             + "printf '%s\\n' \"$*\" >> \"$HOME/sleep.log\"\n"
+            + "printf 'sleep %s\\n' \"$*\" >> \"$HOME/order.log\"\n"
+            + "support=\"$HOME/Library/Application Support/ControlRoom\"\n"
+            + "lock=no; if [ -e \"$support/.update.lock\" ]; then lock=yes; fi\n"
+            + "result=no; if [ -e \"$support/update-result.json\" ]; then result=yes; fi\n"
+            + "printf 'lock=%s result=%s\\n' \"$lock\" \"$result\" >> \"$HOME/sleep-state.log\"\n"
+            + "n=$(wc -l < \"$HOME/sleep.log\")\n"
+            + "hook=\"$HOME/sleep-hooks/$((n + 0))\"\n"
+            + "if [ -f \"$hook\" ]; then /bin/sh \"$hook\"; fi\n"
             + "exit 0\n";
 
         /// <summary>Fails (exit 1) when the source ends with the text in <c>$HOME/mv-fail</c> or the target with the
@@ -966,6 +1766,7 @@ public sealed partial class UpdaterScriptTests
             + "  shift\n"
             + "done\n"
             + "if [ \"$url\" = http://127.0.0.1:8100/health ]; then\n"
+            + "  echo health >> \"$HOME/order.log\"\n"
             + "  health=\"$HOME/Library/Application Support/ControlRoom/server/health\"\n"
             + "  if [ -f \"$HOME/loaded\" ] && [ -f \"$health\" ]; then cat \"$health\"; exit 0; fi\n"
             + "  exit 7\n"
@@ -988,9 +1789,26 @@ public sealed partial class UpdaterScriptTests
             + "fi\n"
             + "exit 22\n";
 
+        /// <summary>The fake clock for <c>date +%s</c>: prints <c>$HOME/now</c> (every other call goes to the real
+        /// <c>/bin/date</c>, so the log lines keep their real UTC time) and logs each such call.</summary>
+        private const string FakeDate =
+            "#!/bin/sh\n"
+            + "if [ \"$#\" -eq 1 ] && [ \"$1\" = +%s ]; then\n"
+            + "  echo now >> \"$HOME/date.log\"\n"
+            + "  cat \"$HOME/now\"; exit 0\n"
+            + "fi\n"
+            + "exec /bin/date \"$@\"\n";
+
+        /// <summary>The fixed epoch the fake clock starts at.</summary>
+        public const long StartEpoch = 1800000000;
+
         private static readonly string[] HarnessFiles =
-            ["calls.log", "curl.log", "curl-stdin.log", "sleep.log", "lsof.log", "loaded", "redirect", "mv-fail",
-                "mv-fail-to", "lsof-out", "not-running", "list"];
+            ["updater-print.log", "updater-print", "updater-runs", "now", "date.log", "calls.log", "curl.log", "curl-stdin.log", "sleep.log", "lsof.log", "loaded", "redirect", "mv-fail",
+                "mv-fail-to", "lsof-out", "not-running", "list", "order.log", "linger", "linger-left", "bootstrap-fails",
+                "bootstrap-fails-per-bootout", "codesign.log", "codesign-exit", "codesign-fail-for", "sleep-state.log",
+                "bootstrap-updater.log", "bootout-staged.log"];
+
+        private const string HooksFolder = "sleep-hooks";
 
         public UpdaterHome()
             : this("v1.2.0")
@@ -1008,6 +1826,9 @@ public sealed partial class UpdaterScriptTests
             WriteExecutable(System.IO.Path.Combine(bin, "sleep"), FakeSleep);
             WriteExecutable(System.IO.Path.Combine(bin, "mv"), FakeMv);
             WriteExecutable(System.IO.Path.Combine(bin, "lsof"), FakeLsof);
+            WriteExecutable(System.IO.Path.Combine(bin, "date"), FakeDate);
+            SetNow(StartEpoch);
+            WriteExecutable(System.IO.Path.Combine(bin, "codesign"), ScriptFixtures.FakeCodesign);
             Directory.CreateDirectory(System.IO.Path.Combine(Root, "factory", "jobs"));
 
             Directory.CreateDirectory(Support);
@@ -1017,6 +1838,9 @@ public sealed partial class UpdaterScriptTests
             File.WriteAllText(System.IO.Path.Combine(Server, "health"), "{\"version\":\"" + installed[1..] + "\"}");
             Directory.CreateDirectory(System.IO.Path.GetDirectoryName(ServerPlist)!);
             File.WriteAllText(ServerPlist, "<plist/>\n");
+            WriteExecutable(UpdaterScript, InstalledUpdater);
+            File.WriteAllText(UpdaterPlist, InstalledUpdaterPlist);
+            File.SetUnixFileMode(UpdaterPlist, PlistMode);
             SetMarker(installed + "\n");
             SetSettings("{\"autoUpdate\":true}\n");
             WritePrivate(TokenFile, Token);
@@ -1037,14 +1861,30 @@ public sealed partial class UpdaterScriptTests
 
         public string Settings => System.IO.Path.Combine(Support, "settings.json");
 
+        /// <summary>The updater's stamp of its last real check.</summary>
+        public string Stamp => System.IO.Path.Combine(Support, "last-check");
+
         public string Result => System.IO.Path.Combine(Support, "update-result.json");
 
         public string Lock => System.IO.Path.Combine(Support, ".update.lock");
 
         public string TokenFile => System.IO.Path.Combine(Support, "access-token");
 
+        public string SigningCopy => System.IO.Path.Combine(Support, "signing-cert.sha1");
+
         public string ServerPlist =>
             System.IO.Path.Combine(Path, "Library", "LaunchAgents", "local.controlroom.server.plist");
+
+        public string UpdaterScript => System.IO.Path.Combine(Support, "updater.sh");
+
+        public string UpdaterScriptPrevious => System.IO.Path.Combine(Support, "updater.sh.previous");
+
+        public string UpdaterPlistPrevious => System.IO.Path.Combine(Support, "updater.plist.previous");
+
+        public string UpdaterPlist =>
+            System.IO.Path.Combine(Path, "Library", "LaunchAgents", "local.controlroom.updater.plist");
+
+        public string UpdaterLog => System.IO.Path.Combine(Path, "Library", "Logs", "ControlRoom", "updater.log");
 
         public string Domain { get; }
 
@@ -1067,20 +1907,128 @@ public sealed partial class UpdaterScriptTests
             return System.IO.Path.Combine(RepoFolder(), "scripts", "updater.sh");
         }
 
-        /// <summary>Runs the updater once; it must exit 0, write nothing to stderr and print one line, which is
-        /// returned.</summary>
-        public string RunOnce()
+        private string DefaultPath => System.IO.Path.Combine(Path, "bin") + ":/usr/bin:/bin:/usr/sbin:/sbin";
+
+        /// <summary>Runs the updater once with <c>--factory-root &lt;root&gt;</c> and then <paramref name="extra"/>; it
+        /// must exit 0, write nothing to stderr and print one line, which is returned.</summary>
+        public string RunOnce(params string[] extra)
+        {
+            return Single(Run(DefaultPath, [.. DefaultArguments(), .. extra]));
+        }
+
+        /// <summary>Runs the updater with <c>--factory-root &lt;root&gt;</c> and then <paramref name="extra"/> and
+        /// returns the whole run (exit code, output, errors) without checking it.</summary>
+        public ScriptRun RunRaw(params string[] extra)
         {
             Dictionary<string, string> environment = new()
             {
                 ["HOME"] = Path,
-                ["PATH"] = System.IO.Path.Combine(Path, "bin") + ":/usr/bin:/bin:/usr/sbin:/sbin",
+                ["PATH"] = DefaultPath,
+                ["SIGNING_CERT_SHA1"] = "ffffffffffffffffffffffffffffffffffffffff",
             };
-            ScriptRun run = RunProcess("/bin/sh", [ScriptPath(), "--factory-root", Root], environment);
+            return RunProcess("/bin/sh", [ScriptPath(), .. DefaultArguments(), .. extra], environment);
+        }
+
+        /// <summary>Like <see cref="RunOnce"/>, but returns every line it printed (each with its line break).</summary>
+        public IReadOnlyList<string> RunAll(params string[] extra)
+        {
+            return Run(DefaultPath, [.. DefaultArguments(), .. extra]);
+        }
+
+        /// <summary>Runs the updater with exactly <paramref name="arguments"/> (<c>ROOT</c> stands for the factory
+        /// root) and returns every line it printed.</summary>
+        public IReadOnlyList<string> RunAllWithArguments(string[] arguments)
+        {
+            return Run(DefaultPath, [.. arguments.Select(argument => argument == "ROOT" ? Root : argument)]);
+        }
+
+        /// <summary>Like <see cref="RunOnce"/>, with the fake <c>codesign</c> removed and the system programs only
+        /// through a folder of links that leaves <c>codesign</c> out (outside HOME).</summary>
+        public string RunOnceWithoutCodesign()
+        {
+            File.Delete(System.IO.Path.Combine(Path, "bin", "codesign"));
+            return Single(Run(LinkedPath("codesign"), DefaultArguments()));
+        }
+
+        /// <summary>Like <see cref="RunOnce"/>, with the fake <c>sleep</c> removed and the system programs only
+        /// through a folder of links that leaves <c>sleep</c> out, so no <c>sleep</c> is found.</summary>
+        public string RunOnceWithoutSleep(params string[] extra)
+        {
+            File.Delete(System.IO.Path.Combine(Path, "bin", "sleep"));
+            return Single(Run(LinkedPath("sleep"), [.. DefaultArguments(), .. extra]));
+        }
+
+        /// <summary>Runs <paramref name="command"/> (sh) inside the fake <c>sleep</c>'s <paramref name="call"/>-th
+        /// call (counting from 1), before it returns.</summary>
+        public void OnSleep(int call, string command)
+        {
+            string folder = System.IO.Path.Combine(Path, HooksFolder);
+            Directory.CreateDirectory(folder);
+            string hook = System.IO.Path.Combine(folder, call.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            File.AppendAllText(hook, command + "\n");
+        }
+
+        /// <summary>In the <paramref name="call"/>-th sleep, replaces the content of <paramref name="file"/> (keeping
+        /// its mode) with <paramref name="content"/>.</summary>
+        public void OnSleepWrite(int call, string file, string content)
+        {
+            string folder = System.IO.Path.Combine(Path, HooksFolder);
+            Directory.CreateDirectory(folder);
+            string source = System.IO.Path.Combine(folder, "content-" + Guid.NewGuid().ToString("N"));
+            File.WriteAllText(source, content);
+            OnSleep(call, "cat " + Quote(source) + " > " + Quote(file));
+        }
+
+        /// <summary>In the <paramref name="call"/>-th sleep, marks job <paramref name="id"/> <c>done</c>.</summary>
+        public void OnSleepFinishJob(int call, string id)
+        {
+            OnSleepWrite(call, System.IO.Path.Combine(Root, "factory", "jobs", id, "state.json"),
+                "{\n  \"id\": \"" + id + "\",\n  \"stage\": \"done\",\n  \"round\": 1\n}\n");
+        }
+
+        /// <summary>What the fake <c>sleep</c> saw at each call: <c>lock=yes|no result=yes|no</c>.</summary>
+        public IReadOnlyList<string> SleepStates()
+        {
+            return ReadLines("sleep-state.log");
+        }
+
+        public static string Quote(string path)
+        {
+            Assert.DoesNotContain("'", path, StringComparison.Ordinal);
+            return "'" + path + "'";
+        }
+
+        private string[] DefaultArguments()
+        {
+            return ["--factory-root", Root];
+        }
+
+        private string LinkedPath(string leaveOut)
+        {
+            string system = Path + "-system-bin";
+            ScriptFixtures.LinkSystemPrograms(system, leaveOut);
+            return System.IO.Path.Combine(Path, "bin") + ":" + system;
+        }
+
+        private static string Single(IReadOnlyList<string> lines)
+        {
+            return Assert.Single(lines);
+        }
+
+        private List<string> Run(string path, string[] arguments)
+        {
+            Dictionary<string, string> environment = new()
+            {
+                ["HOME"] = Path,
+                ["PATH"] = path,
+                // Must never turn the check on or off: only the support copy of signing-cert.sha1 does.
+                ["SIGNING_CERT_SHA1"] = "ffffffffffffffffffffffffffffffffffffffff",
+            };
+            ScriptRun run = RunProcess("/bin/sh", [ScriptPath(), .. arguments], environment);
             Assert.Equal(0, run.ExitCode);
             Assert.Equal("", run.Error);
-            Assert.Single(run.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries));
-            return run.Output;
+            Assert.EndsWith("\n", run.Output, StringComparison.Ordinal);
+            return [.. run.Output[..^1].Split('\n').Select(line => line + "\n")];
         }
 
         public void SetSettings(string? content)
@@ -1103,6 +2051,79 @@ public sealed partial class UpdaterScriptTests
             }
 
             WritePrivate(Marker, content);
+        }
+
+        /// <summary>Writes the support copy of the fingerprint (<c>0600</c>), or removes it for <c>null</c>.</summary>
+        public void SetSigningCopy(string? content)
+        {
+            if (content is null)
+            {
+                File.Delete(SigningCopy);
+                return;
+            }
+
+            WritePrivate(SigningCopy, content);
+        }
+
+        /// <summary>Every fake <c>codesign</c> call, its arguments split at tabs.</summary>
+        public IReadOnlyList<string[]> CodesignCalls()
+        {
+            return [.. ReadLines("codesign.log").Select(line => line.Split('\t'))];
+        }
+
+        /// <summary>The fake <c>codesign</c> exits with <paramref name="code"/>.</summary>
+        public void SetCodesignExit(int code)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "codesign-exit"),
+                code.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n");
+        }
+
+        /// <summary>Forgets the calls the fakes logged so far (launchctl, curl, sleep, clock, updater prints).</summary>
+        public void ResetLogs()
+        {
+            foreach (string name in new[] { "calls.log", "order.log", "curl.log", "sleep.log", "sleep-state.log", "date.log", "updater-print.log" })
+            {
+                File.Delete(System.IO.Path.Combine(Path, name));
+            }
+        }
+
+        /// <summary>The fake clock's <c>date +%s</c> answer.</summary>
+        public void SetNow(long epoch)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "now"),
+                epoch.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n");
+        }
+
+        /// <summary>The fake <c>launchctl print</c> of the updater shows <c>runs = <paramref name="runs"/></c>.</summary>
+        public void SetUpdaterRuns(int runs)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "updater-runs"),
+                runs.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        /// <summary>The fake <c>launchctl print</c> of the updater prints exactly <paramref name="text"/>.</summary>
+        public void SetUpdaterPrint(string text)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "updater-print"), text);
+        }
+
+        /// <summary>Writes the stamp with <paramref name="content"/> (<c>0600</c> unless <paramref name="mode"/>).</summary>
+        public void SetStamp(string content, UnixFileMode mode = UnixFileMode.UserRead | UnixFileMode.UserWrite)
+        {
+            File.WriteAllText(Stamp, content);
+            File.SetUnixFileMode(Stamp, mode);
+        }
+
+        /// <summary>The updater prints of the fake <c>launchctl</c>.</summary>
+        public IReadOnlyList<string> UpdaterPrints()
+        {
+            return ReadLines("updater-print.log");
+        }
+
+        /// <summary>How many times the updater asked the fake clock for <c>date +%s</c>.</summary>
+        public int ClockReads()
+        {
+            return ReadLines("date.log").Count;
         }
 
         public void SetResult(string content)
@@ -1137,6 +2158,44 @@ public sealed partial class UpdaterScriptTests
             File.WriteAllText(System.IO.Path.Combine(Path, "not-running"), "");
         }
 
+        /// <summary>After each bootout, <c>launchctl print</c> still shows the server for <paramref name="calls"/> more
+        /// calls.</summary>
+        public void SetLinger(int calls)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "linger"), calls.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n");
+        }
+
+        /// <summary>The next <paramref name="count"/> bootstraps fail with exit 5.</summary>
+        public void FailBootstraps(int count)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "bootstrap-fails"), count.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n");
+        }
+
+        /// <summary>The n-th bootout sets the failing-bootstrap counter to the n-th number.</summary>
+        public void FailBootstrapsPerBootout(params int[] counts)
+        {
+            File.WriteAllText(System.IO.Path.Combine(Path, "bootstrap-fails-per-bootout"),
+                string.Concat(counts.Select(count => count.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n")));
+        }
+
+        /// <summary>The launchctl, sleep and /health calls in the order they ran.</summary>
+        public IReadOnlyList<string> Events()
+        {
+            return ReadLines("order.log");
+        }
+
+        /// <summary>The second line of <c>updater.sh</c> at each bootstrap.</summary>
+        public IReadOnlyList<string> UpdaterAtBootstrap()
+        {
+            return ReadLines("bootstrap-updater.log");
+        }
+
+        /// <summary>How many staged <c>.updater.*</c> files the support folder held at each bootout.</summary>
+        public IReadOnlyList<string> StagedAtBootout()
+        {
+            return ReadLines("bootout-staged.log");
+        }
+
         /// <summary>What the fake <c>lsof</c> prints as the listening pids.</summary>
         public void SetListeners(string pids)
         {
@@ -1159,9 +2218,13 @@ public sealed partial class UpdaterScriptTests
         }
 
         /// <summary>Builds <c>release/controlroom-&lt;version&gt;-osx-arm64.tar.gz</c> (with a <c>health</c> file
-        /// holding <paramref name="health"/> as the version, or none) and <c>release/SHA256SUMS</c> with the real
-        /// <c>/usr/bin/tar</c>.</summary>
-        public void AddRelease(string version, string? health, bool badChecksum = false, bool symlinkEntry = false)
+        /// holding <paramref name="health"/> as the version, or none, and an <c>updater.sh</c> holding
+        /// <paramref name="updater"/> (<c>0755</c>), or none for <c>null</c>; <paramref name="updaterKind"/>
+        /// <c>folder</c> or <c>symlink</c> puts a folder or a symlink there instead) and <c>release/SHA256SUMS</c> with
+        /// the real <c>/usr/bin/tar</c>.</summary>
+        public void AddRelease(
+            string version, string? health, bool badChecksum = false, bool symlinkEntry = false,
+            string? updater = ReleaseUpdater, string updaterKind = "file")
         {
             string top = "controlroom-" + version + "-osx-arm64";
             string stage = System.IO.Path.Combine(Path, "stage-" + Guid.NewGuid().ToString("N"));
@@ -1169,6 +2232,10 @@ public sealed partial class UpdaterScriptTests
             Directory.CreateDirectory(System.IO.Path.Combine(folder, "wwwroot"));
             WriteExecutable(System.IO.Path.Combine(folder, "ControlRoom.Server"), "#!/bin/sh\nexit 0\n");
             File.WriteAllText(System.IO.Path.Combine(folder, "wwwroot", "index.html"), "<!doctype html>");
+            // Native files like a real publish: verify_signature checks the top-level ones, not wwwroot/nested.dylib.
+            File.WriteAllText(System.IO.Path.Combine(folder, "libSystem.Native.dylib"), "dylib");
+            File.WriteAllText(System.IO.Path.Combine(folder, "createdump"), "createdump");
+            File.WriteAllText(System.IO.Path.Combine(folder, "wwwroot", "nested.dylib"), "not checked");
             if (health is not null)
             {
                 File.WriteAllText(System.IO.Path.Combine(folder, "health"), "{\"version\":\"" + health + "\"}");
@@ -1177,6 +2244,22 @@ public sealed partial class UpdaterScriptTests
             if (symlinkEntry)
             {
                 File.CreateSymbolicLink(System.IO.Path.Combine(folder, "wwwroot", "link"), "/etc/hosts");
+            }
+
+            string updaterFile = System.IO.Path.Combine(folder, "updater.sh");
+            if (updaterKind == "folder")
+            {
+                Directory.CreateDirectory(updaterFile);
+            }
+            else if (updaterKind == "symlink")
+            {
+                File.CreateSymbolicLink(updaterFile, "/bin/sh");
+            }
+            else if (updater is not null)
+            {
+                File.WriteAllText(updaterFile, updater);
+                File.SetUnixFileMode(updaterFile, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                    | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
             }
 
             string release = System.IO.Path.Combine(Path, "release");
@@ -1231,16 +2314,23 @@ public sealed partial class UpdaterScriptTests
                 .. Directory.Exists(Lock) ? [Lock] : Array.Empty<string>()];
         }
 
-        /// <summary>Every file and folder under HOME (or the one support sub folder), apart from the fakes' files,
-        /// with its mode and content hash, sorted ordinally.</summary>
-        public IReadOnlyList<string> Snapshot(string supportFolder)
+        /// <summary>Every file and folder under HOME (or the one support sub folder), apart from the fakes' files
+        /// and (unless <paramref name="withStamp"/>) the <c>last-check</c> stamp every due run writes, with its mode
+        /// and content hash, sorted ordinally.</summary>
+        public IReadOnlyList<string> Snapshot(string supportFolder, bool withStamp = false)
         {
             string start = supportFolder.Length == 0 ? Path : System.IO.Path.Combine(Support, supportFolder);
             List<string> entries = [];
             foreach (string entry in Directory.EnumerateFileSystemEntries(start, "*", SearchOption.AllDirectories))
             {
                 string relative = System.IO.Path.GetRelativePath(Path, entry);
-                if (HarnessFiles.Contains(relative))
+                if (!withStamp && entry == Stamp)
+                {
+                    continue;
+                }
+
+                if (HarnessFiles.Contains(relative) || relative == HooksFolder
+                    || relative.StartsWith(HooksFolder + System.IO.Path.DirectorySeparatorChar, StringComparison.Ordinal))
                 {
                     continue;
                 }
@@ -1269,6 +2359,10 @@ public sealed partial class UpdaterScriptTests
             }
 
             Directory.Delete(Path, recursive: true);
+            if (Directory.Exists(Path + "-system-bin"))
+            {
+                Directory.Delete(Path + "-system-bin", recursive: true);
+            }
         }
 
         private static ScriptRun RunProcess(

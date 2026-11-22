@@ -18,6 +18,12 @@ const Texts = {
   spike: "Spike",
   waitsFor: "Waits for",
   missing: "No such item",
+  pending: "Edits wait for the running job and go into develop after it.",
+  project: "Project",
+  position: "position ",
+  storyPosition: "Position ",
+  stopLine: "Auto stops here",
+  stopsBefore: "Auto stops before #",
 };
 
 const Groups = [
@@ -29,7 +35,28 @@ const Groups = [
 
 const Marks = { " ": "[ ]", "?": "[?]", h: "[h]", x: "[x]" };
 
+// The nine story categories (job.py's order). Only a value from this list becomes a chip or a class name.
+const Categories = ["feature", "bug", "security", "ux", "ui", "tidy-up", "test", "ci", "docs"];
+
+// A backlog line's mark as the story's status (#125). Only a mark in this map becomes a status chip or a class name.
+const StoryStatuses = {
+  x: { key: "done", label: "Done" },
+  "?": { key: "unapproved", label: "Unapproved" },
+  " ": { key: "open", label: "Open" },
+  h: { key: "user", label: "Your task" },
+};
+
 const StoryRoute = "#story/";
+
+// The project shown on Backlogs, kept on this device: only a project name, never the token.
+const BacklogProjectKey = "controlroom-backlog-project";
+
+// Each group's open or closed state per project, kept on this device as {"<project>":{"<group>":true|false}}
+// (true is open): only project names and group keys, never the token or backlog text.
+const BacklogGroupsKey = "controlroom-backlog-groups";
+
+// Readable project names of the last backlogs answer, in response order.
+let readableProjects = [];
 
 // Set when the app itself opened the story view, so Back can go back in history.
 let openedFromList = false;
@@ -117,13 +144,121 @@ function renderDependencies(projectName, after) {
   return line;
 }
 
-function renderNumberedLine(projectName, version, entry, number) {
+// A story's category as a chip (span.category-chip.category-<name>, the name as text), or null for no category or
+// a value outside the fixed list.
+function categoryChip(value) {
+  if (typeof value !== "string" || !Categories.includes(value)) {
+    return null;
+  }
+  const chip = document.createElement("span");
+  chip.className = "category-chip category-" + value;
+  chip.textContent = value;
+  return chip;
+}
+
+// A story's status as a chip (span.status-chip.status-<key>, a visually-hidden "Status: " and the label as text),
+// or null for a mark outside the fixed map.
+function statusChip(mark) {
+  if (typeof mark !== "string" || !Object.hasOwn(StoryStatuses, mark)) {
+    return null;
+  }
+  const status = StoryStatuses[mark];
+  const chip = element("span", "status-chip status-" + status.key);
+  chip.appendChild(element("span", "visually-hidden", "Status: "));
+  chip.append(status.label);
+  return chip;
+}
+
+// Puts a status chip in a story header: after the title, or after the category chip right under it.
+function placeStatusChip(article, chip) {
+  const title = article.querySelector(":scope > .story-title");
+  if (title === null) {
+    return;
+  }
+  const next = title.nextElementSibling;
+  const anchor = next !== null && next.classList.contains("category-chip") ? next : title;
+  anchor.after(chip);
+}
+
+// The status chip of the shown story, from its backlog line's mark (edit.js's showStoryDecision); no chip when mark
+// is null (the line can't be found).
+function showStoryStatus(mark) {
+  const article = document.querySelector("#story .story");
+  if (article === null) {
+    return;
+  }
+  const old = article.querySelector(":scope > .status-chip");
+  if (old !== null) {
+    old.remove();
+  }
+  const chip = mark === null ? null : statusChip(mark);
+  if (chip !== null) {
+    placeStatusChip(article, chip);
+  }
+}
+
+// A story's place in its backlog group (#126) as text: "Position N", or null for anything but a whole number >= 1.
+function storyPosition(position) {
+  if (!Number.isInteger(position) || position < 1) {
+    return null;
+  }
+  return element("span", "story-position", Texts.storyPosition + String(position));
+}
+
+// Puts the position in a story header right after the status chip, or after the category chip or the title when
+// there is no status chip.
+function placeStoryPosition(article, node) {
+  const status = article.querySelector(":scope > .status-chip");
+  if (status !== null) {
+    status.after(node);
+    return;
+  }
+  const title = article.querySelector(":scope > .story-title");
+  if (title === null) {
+    return;
+  }
+  const next = title.nextElementSibling;
+  const anchor = next !== null && next.classList.contains("category-chip") ? next : title;
+  anchor.after(node);
+}
+
+// The position of the shown story, from the same /api/backlogs lookup as the status chip (edit.js's
+// showStoryDecision); none when position is null (the line can't be found).
+function showStoryPosition(position) {
+  const article = document.querySelector("#story .story");
+  if (article === null) {
+    return;
+  }
+  const old = article.querySelector(":scope > .story-position");
+  if (old !== null) {
+    old.remove();
+  }
+  const node = position === null ? null : storyPosition(position);
+  if (node !== null) {
+    placeStoryPosition(article, node);
+  }
+}
+
+// The 1-based place of a line in its group; a screen reader hears "position N", the eye sees only the digit.
+function positionElement(position) {
+  const node = element("span", "position");
+  node.appendChild(element("span", "visually-hidden", Texts.position));
+  node.append(String(position));
+  return node;
+}
+
+function renderNumberedLine(projectName, version, entry, number, position) {
   const item = element("li", "numbered");
   const head = element("a", "head");
   head.href = storyHash(projectName, number);
+  head.appendChild(positionElement(position));
   head.appendChild(element("span", "mark", Marks[asText(entry.mark)] || Marks[" "]));
   head.appendChild(element("span", "number", "#" + number));
   head.appendChild(titleElement(entry.title));
+  const chip = categoryChip(entry.category);
+  if (chip !== null) {
+    head.appendChild(chip);
+  }
   if (entry.waiting === true) {
     head.appendChild(element("span", "badge badge-waiting", Texts.waiting));
   }
@@ -148,8 +283,13 @@ function renderNumberedLine(projectName, version, entry, number) {
   return item;
 }
 
-// The edit row (edit.js) of a line that is not done; shown only while the project is in edit mode.
+// The edit row (edit.js) of a line that is not done, and the drag handle (edit.js) at the start of a [ ] or [?]
+// line; both shown only while the project is in edit mode.
 function appendEditRow(item, projectName, version, entry) {
+  const handle = dragHandle(projectName, version, entry);
+  if (handle !== null) {
+    item.prepend(...handle);
+  }
   const row = editRow(projectName, version, entry);
   if (row !== null) {
     item.appendChild(row);
@@ -158,13 +298,16 @@ function appendEditRow(item, projectName, version, entry) {
 
 function renderLines(projectName, version, entries) {
   const list = element("ul", "lines");
+  let position = 0;
   for (const entry of entries) {
+    position += 1;
     const number = asNumber(entry && entry.number);
     if (number !== null) {
-      list.appendChild(renderNumberedLine(projectName, version, entry, number));
+      list.appendChild(renderNumberedLine(projectName, version, entry, number, position));
       continue;
     }
     const item = element("li");
+    item.appendChild(positionElement(position));
     item.appendChild(titleElement(entry && entry.title));
     const rest = asText(entry && entry.rest);
     if (rest !== "") {
@@ -178,16 +321,99 @@ function renderLines(projectName, version, entries) {
 
 function renderGroup(projectName, version, group, entries) {
   const heading = group.label + " (" + entries.length + ")";
-  if (group.collapsed) {
-    const details = element("details", "group");
-    details.appendChild(element("summary", null, heading));
-    details.appendChild(renderLines(projectName, version, entries));
-    return details;
+  const details = element("details", "group");
+  details.appendChild(element("summary", null, heading));
+  details.appendChild(renderLines(projectName, version, entries));
+  foldGroup(details, projectName, group.key);
+  return details;
+}
+
+// The auto stop line as a divider of the Open list: a fixed text, no position number (the rows keep theirs). The
+// separator role is on the label, so the edit controls next to it (edit.js) stay reachable for screen readers.
+function renderStopLine(projectName, version, line) {
+  const item = element("li", "stop-line");
+  item.dataset.line = String(line);
+  const label = element("span", "stop-line-label", Texts.stopLine);
+  label.setAttribute("role", "separator");
+  label.setAttribute("aria-label", Texts.stopLine);
+  item.appendChild(label);
+  appendStopEdit(item, projectName, version, line);
+  return item;
+}
+
+// Puts the divider before the first Open row whose line is after the stop line, else at the end of the list. Without
+// a stop line, the edit controls that add one (edit.js): Stop after this on every [ ] row and Add stop line.
+function placeStopLine(details, projectName, version, stopLine, entries) {
+  const list = details.querySelector(":scope > .lines");
+  const rows = [...list.children];
+  if (stopLine !== null) {
+    const below = entries.findIndex((entry) => {
+      const line = asNumber(entry && entry.line);
+      return line !== null && line > stopLine;
+    });
+    list.insertBefore(renderStopLine(projectName, version, stopLine), below < 0 ? null : rows[below]);
+    return;
   }
-  const section = element("section", "group");
-  section.appendChild(element("h3", null, heading));
-  section.appendChild(renderLines(projectName, version, entries));
-  return section;
+  entries.forEach((entry, index) => appendStopAfter(rows[index], projectName, version, entry));
+  const add = addStopButton(projectName, version, entries);
+  if (add !== null) {
+    details.appendChild(add);
+  }
+}
+
+// Without a stored state only Done (collapsed in Groups) starts closed; the plan's Waiting group starts open.
+function groupDefaultOpen(key) {
+  const group = Groups.find((entry) => entry.key === key);
+  return !(group && group.collapsed === true);
+}
+
+function isObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// The stored states as an object without a prototype; a failed read, invalid JSON or a non-object counts as
+// nothing stored.
+function storedGroupStates() {
+  let states;
+  try {
+    states = JSON.parse(localStorage.getItem(BacklogGroupsKey));
+  } catch {
+    return Object.create(null);
+  }
+  return Object.assign(Object.create(null), isObject(states) ? states : {});
+}
+
+// The stored state of one project's group (own properties only, booleans only), else the default.
+function groupOpen(projectName, key) {
+  const states = storedGroupStates();
+  const project = Object.hasOwn(states, projectName) ? states[projectName] : null;
+  const open = isObject(project) && Object.hasOwn(project, key) ? project[key] : null;
+  return typeof open === "boolean" ? open : groupDefaultOpen(key);
+}
+
+// Stores one project's group state and keeps every other stored entry.
+function storeGroupOpen(projectName, key, open) {
+  const states = storedGroupStates();
+  const old = Object.hasOwn(states, projectName) ? states[projectName] : null;
+  const project = Object.assign(Object.create(null), isObject(old) ? old : {});
+  project[key] = open;
+  states[projectName] = project;
+  try {
+    localStorage.setItem(BacklogGroupsKey, JSON.stringify(states));
+  } catch {
+    // Private mode or storage off: the group still folds for this page.
+  }
+}
+
+// Names the group, opens or closes it from the stored state (else the default) and stores each change by the user.
+function foldGroup(details, projectName, key) {
+  details.dataset.group = key;
+  details.open = groupOpen(projectName, key);
+  details.addEventListener("toggle", () => {
+    if (details.open !== groupOpen(projectName, key)) {
+      storeGroupOpen(projectName, key, details.open);
+    }
+  });
 }
 
 // A link "#N Title" to a story; the title is set as text.
@@ -237,22 +463,30 @@ function renderPlan(projectName, project) {
     if (item.spike === true) {
       next.appendChild(element("span", "badge badge-spike", Texts.spike));
     }
+    // Auto (/factory auto) takes no item below the stop line, so it stops before this one.
+    if (item.belowStop === true) {
+      next.appendChild(element("span", "next-stop", Texts.stopsBefore + number));
+    }
   } else {
     next.textContent = Texts.nothingReady;
   }
   plan.appendChild(next);
   const blocked = asList(project.blocked).filter((entry) => asNumber(entry && entry.number) !== null);
   if (blocked.length > 0) {
-    const group = element("section", "group waiting-group");
-    group.appendChild(element("h3", null, Texts.waiting + " (" + blocked.length + ")"));
+    const group = element("details", "group waiting-group");
+    group.appendChild(element("summary", null, Texts.waiting + " (" + blocked.length + ")"));
     const list = element("ul", "lines");
+    let position = 0;
     for (const entry of blocked) {
+      position += 1;
       const row = element("li");
+      row.appendChild(positionElement(position));
       row.appendChild(planItemLink(projectName, entry.number, entry.title));
       row.appendChild(renderWaitsFor(projectName, asList(entry.after)));
       list.appendChild(row);
     }
     group.appendChild(list);
+    foldGroup(group, projectName, "waiting");
     plan.appendChild(group);
   }
   return plan;
@@ -264,7 +498,8 @@ function planSignature(project) {
   if (!project || project.readable !== true) {
     return "";
   }
-  return JSON.stringify([project.next || null, project.stopped === true, asList(project.blocked)]);
+  const stop = asNumber(project.stopLine);
+  return JSON.stringify([project.next || null, project.stopped === true, asList(project.blocked), stop]);
 }
 
 function renderProject(project) {
@@ -272,10 +507,15 @@ function renderProject(project) {
   const name = asText(project && project.name);
   section.dataset.project = name;
   section.dataset.plan = planSignature(project);
+  section.hidden = backlogSectionHidden(name);
   const version = asText(project && project.version);
   const head = element("div", "project-head");
   head.appendChild(element("h2", null, asText(project && project.name)));
   section.appendChild(head);
+  // Edits go to the backlog branch while a job runs; a fixed text, never git output.
+  if (project && project.pending === true) {
+    section.appendChild(element("p", "backlog-pending", Texts.pending));
+  }
   if (!project || project.readable !== true) {
     section.appendChild(element("p", "error", Texts.unreadable));
     return section;
@@ -284,12 +524,18 @@ function renderProject(project) {
     head.appendChild(editToggle(name, section));
   }
   section.appendChild(statusLine(name));
+  section.appendChild(releaseBlock(name));
   section.appendChild(renderPlan(name, project));
   let shown = 0;
+  const stopLine = asNumber(project.stopLine);
   for (const group of Groups) {
     const entries = asList(project[group.key]);
-    if (entries.length > 0) {
+    const open = group.key === "open";
+    if (entries.length > 0 || (open && stopLine !== null)) {
       section.appendChild(renderGroup(name, version, group, entries));
+      if (open) {
+        placeStopLine(section.lastElementChild, name, version, stopLine, entries);
+      }
       shown += 1;
     }
   }
@@ -303,9 +549,129 @@ function renderProject(project) {
   return section;
 }
 
+// Replaces the backlog under the search box; the box (#133) stays the first child, so its field keeps text and focus.
 function show(nodes) {
-  const main = document.getElementById("backlogs");
-  main.replaceChildren(...nodes);
+  const box = backlogSearchBox();
+  for (const child of [...document.getElementById("backlogs").children]) {
+    if (child !== box) {
+      child.remove();
+    }
+  }
+  box.after(...nodes);
+}
+
+// The stored choice; a failed read counts as nothing stored.
+function storedBacklogProject() {
+  try {
+    return localStorage.getItem(BacklogProjectKey);
+  } catch {
+    return null;
+  }
+}
+
+function storeBacklogProject(name) {
+  try {
+    localStorage.setItem(BacklogProjectKey, name);
+  } catch {
+    // Private mode or storage off: the picker still works for this page.
+  }
+}
+
+function readableNames(projects) {
+  return projects.filter((project) => project && project.readable === true).map((project) => asText(project.name));
+}
+
+// The stored project when it is readable, else the first readable one (not stored); null when none is readable.
+function chosenBacklogProject() {
+  const stored = storedBacklogProject();
+  if (stored !== null && readableProjects.includes(stored)) {
+    return stored;
+  }
+  return readableProjects.length > 0 ? readableProjects[0] : null;
+}
+
+// Only the chosen project's section is shown; with no readable project every section is.
+function backlogSectionHidden(name) {
+  const chosen = chosenBacklogProject();
+  return chosen !== null && name !== chosen;
+}
+
+function fillBacklogPicker(select) {
+  const options = readableProjects.map((name) => {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = name;
+    return option;
+  });
+  select.replaceChildren(...options);
+  select.value = chosenBacklogProject();
+}
+
+function renderBacklogPicker() {
+  const picker = element("div", "backlog-picker");
+  const label = element("label", null, Texts.project);
+  label.htmlFor = "backlog-project";
+  const select = document.createElement("select");
+  select.id = "backlog-project";
+  fillBacklogPicker(select);
+  select.addEventListener("change", () => {
+    storeBacklogProject(select.value);
+    applyBacklogChoice();
+  });
+  picker.append(label, select);
+  return picker;
+}
+
+// Sets the select and the hidden state of the existing sections from the choice, without a new fetch.
+function applyBacklogChoice() {
+  const chosen = chosenBacklogProject();
+  const select = document.getElementById("backlog-project");
+  if (select !== null && chosen !== null && select.value !== chosen && document.activeElement !== select) {
+    select.value = chosen;
+  }
+  for (const section of document.querySelectorAll("#backlogs > section.project")) {
+    section.hidden = backlogSectionHidden(section.dataset.project);
+  }
+}
+
+// A story link into another readable project makes it the choice (route()); unknown names change nothing.
+function chooseBacklogProject(name) {
+  if (!readableProjects.includes(name)) {
+    return;
+  }
+  storeBacklogProject(name);
+  applyBacklogChoice();
+}
+
+// After a live refresh: the picker follows the readable list. Its options are rebuilt only when the names changed,
+// and never while the select has focus (the next refresh tries again).
+function updateBacklogPicker(main) {
+  const picker = main.querySelector(":scope > div.backlog-picker");
+  if (readableProjects.length === 0) {
+    if (picker !== null) {
+      picker.remove();
+    }
+    return;
+  }
+  if (picker === null) {
+    backlogSearchBox().after(renderBacklogPicker());
+    return;
+  }
+  const select = picker.querySelector("select");
+  if (document.activeElement === select) {
+    return;
+  }
+  const names = Array.from(select.options, (option) => option.value);
+  if (JSON.stringify(names) !== JSON.stringify(readableProjects)) {
+    fillBacklogPicker(select);
+  }
+}
+
+// The picker (when a project is readable) and every section; renderProject hides all but the chosen one.
+function showProjects(projects) {
+  readableProjects = readableNames(projects);
+  const sections = projects.map(renderProject);
+  show(readableProjects.length > 0 ? [renderBacklogPicker(), ...sections] : sections);
 }
 
 // The backlogs response; throws on a network error or an error status.
@@ -330,13 +696,13 @@ async function load() {
     show([element("p", "empty", Texts.noProjects)]);
     return;
   }
-  show(projects.map(renderProject));
+  showProjects(projects);
 }
 
 // Live refresh (live.js): only the sections of the named projects, and those whose plan signature changed, are
-// replaced, each in place, so scroll, edit mode and an open Done group stay. A section with an open Add or title
-// form, or with focus inside, is left alone; its name is returned so the next check tries again. A failed request
-// returns every name.
+// replaced, each in place, so scroll, edit mode and every group's open or closed state stay. A section with an open
+// Add or title form, or with focus inside, is left alone; its name is returned so the next check tries again. A
+// failed request returns every name.
 async function refreshBacklogs(names) {
   let data;
   try {
@@ -346,6 +712,7 @@ async function refreshBacklogs(names) {
   }
   const main = document.getElementById("backlogs");
   const projects = asList(data && data.projects);
+  readableProjects = readableNames(projects);
   const sections = new Map();
   for (const section of main.querySelectorAll(":scope > section.project")) {
     sections.set(section.dataset.project, section);
@@ -353,10 +720,15 @@ async function refreshBacklogs(names) {
   const scroll = window.scrollY;
   if (sections.size === 0) {
     // The list shows a fixed text (loading, error or no projects): show it whole.
-    show(projects.length === 0 ? [element("p", "empty", Texts.noProjects)] : projects.map(renderProject));
+    if (projects.length === 0) {
+      show([element("p", "empty", Texts.noProjects)]);
+    } else {
+      showProjects(projects);
+    }
     restoreListScroll(main, scroll);
     return [];
   }
+  const picker = main.querySelector(":scope > div.backlog-picker");
   const wanted = new Set(names);
   const left = [];
   const listed = new Set();
@@ -379,8 +751,10 @@ async function refreshBacklogs(names) {
       old.replaceWith(next);
     } else if (previous) {
       previous.after(next);
+    } else if (picker !== null) {
+      picker.after(next);
     } else {
-      main.prepend(next);
+      backlogSearchBox().after(next);
     }
     previous = next;
   }
@@ -395,6 +769,9 @@ async function refreshBacklogs(names) {
   }
   if (main.querySelector(":scope > section.project") === null) {
     show([element("p", "empty", Texts.noProjects)]);
+  } else {
+    updateBacklogPicker(main);
+    applyBacklogChoice();
   }
   restoreListScroll(main, scroll);
   return left;
@@ -413,14 +790,17 @@ function sectionBusy(section) {
     || section.contains(document.activeElement);
 }
 
-// The new section's collapsed groups (Done) keep the open state of the old ones.
+// Each group of the new section keeps the open state of the old section's group with the same name, even when
+// storage fails; a group that newly appears keeps its stored state or default.
 function keepOpenGroups(old, next) {
-  const before = old.querySelectorAll("details.group");
-  const after = next.querySelectorAll("details.group");
-  if (before.length === after.length) {
-    after.forEach((group, index) => {
-      group.open = before[index].open;
-    });
+  const before = new Map();
+  for (const group of old.querySelectorAll("details.group")) {
+    before.set(group.dataset.group, group.open);
+  }
+  for (const group of next.querySelectorAll("details.group")) {
+    if (before.has(group.dataset.group)) {
+      group.open = before.get(group.dataset.group);
+    }
   }
 }
 
@@ -555,6 +935,7 @@ async function loadStory(target) {
   ]);
   // Move focus into the story so keyboard and screen-reader users don't stay on the hidden list.
   title.focus({ preventScroll: true });
+  showStoryDecision(target, data);
 }
 
 function renderStoryArticle(data) {
@@ -563,6 +944,10 @@ function renderStoryArticle(data) {
   const title = element("h1", "story-title", heading);
   title.tabIndex = -1;
   article.appendChild(title);
+  const chip = categoryChip(data && data.category);
+  if (chip !== null) {
+    article.appendChild(chip);
+  }
   for (const block of asList(data && data.blocks)) {
     article.appendChild(renderBlock(block));
   }
@@ -608,6 +993,14 @@ async function refreshStory() {
   const scroll = window.scrollY;
   const article = renderStoryArticle(data);
   const focusedTitle = old.contains(document.activeElement);
+  const status = old.querySelector(":scope > .status-chip");
+  if (status !== null) {
+    placeStatusChip(article, status);
+  }
+  const position = old.querySelector(":scope > .story-position");
+  if (position !== null) {
+    placeStoryPosition(article, position);
+  }
   old.replaceWith(article);
   const reload = () => loadStory(target);
   for (const [selector, make] of [[".edit-story-button", storyEditButton], [".add-note-button", storyNoteButton]]) {
@@ -624,13 +1017,19 @@ async function refreshStory() {
   if (focusedTitle) {
     article.querySelector(".story-title").focus({ preventScroll: true });
   }
+  showStoryDecision(target, data);
   window.scrollTo(0, scroll);
   return true;
 }
 
-const Views = ["backlogs", "board", "inbox", "tasks", "search", "capture", "history", "doctor", "job", "story"];
-const ViewTitles = { backlogs: "Backlogs", board: "Jobs", inbox: "Inbox", tasks: "Tasks", search: "Search",
-  capture: "Capture", history: "History", doctor: "Health" };
+const Views = ["backlogs", "board", "capture", "history", "doctor", "job", "story"];
+const ViewTitles = { backlogs: "Backlogs", board: "Jobs", capture: "Capture", history: "History", doctor: "Health" };
+const BacklogsRoute = "#backlogs";
+// The old Inbox and Tasks tabs (#135): their items are in the backlog now, so bookmarks open the Backlogs.
+const InboxRoute = "#inbox";
+const TasksRoute = "#tasks";
+// A page without its own tab marks the tab it belongs to: a job is on the Jobs board, a story in a backlog.
+const TabForView = { job: "board", story: "backlogs" };
 let currentView = null;
 
 function viewFor(hash) {
@@ -640,14 +1039,13 @@ function viewFor(hash) {
   if (parseJobHash(hash) !== null) {
     return "job";
   }
-  if (hash === InboxRoute) {
-    return "inbox";
-  }
-  if (hash === TasksRoute) {
-    return "tasks";
-  }
+  // The old Search tab: the search field is now at the top of the Backlogs, so bookmarks open the Backlogs.
   if (hash === SearchRoute) {
-    return "search";
+    return "backlogs";
+  }
+  // The old Inbox and Tasks tabs: their items are in the backlog, so bookmarks open the Backlogs too.
+  if (hash === InboxRoute || hash === TasksRoute) {
+    return "backlogs";
   }
   if (hash === CaptureRoute) {
     return "capture";
@@ -667,24 +1065,37 @@ function showView(name) {
   for (const view of Views) {
     document.getElementById(view).hidden = blocked || view !== name;
   }
-  // The wide board view widens the header too, so the nav lines up with the board's left edge.
+  // The wide board view widens the header too, so the title lines up with the board's left edge.
   document.body.classList.toggle("view-board", !blocked && name === "board");
   const top = document.getElementById("top");
   top.hidden = blocked || !(name in ViewTitles);
   if (!top.hidden) {
     document.getElementById("top-title").textContent = ViewTitles[name];
-    for (const link of document.querySelectorAll(".nav a")) {
-      if (link.dataset.view === name) {
-        link.setAttribute("aria-current", "page");
-      } else {
-        link.removeAttribute("aria-current");
-      }
+  }
+  // The bottom tab bar is on every view, the job and story pages too; only the token view hides it.
+  document.querySelector(".tab-bar").hidden = blocked;
+  const current = TabForView[name] || name;
+  for (const link of document.querySelectorAll(".tab-bar a")) {
+    if (link.dataset.view === current) {
+      link.setAttribute("aria-current", "page");
+    } else {
+      link.removeAttribute("aria-current");
     }
   }
 }
 
 function route() {
   const next = viewFor(location.hash);
+  // #search becomes #backlogs in place, with the search field at the top focused.
+  const fromSearch = location.hash === SearchRoute;
+  if (fromSearch) {
+    history.replaceState(null, "", BacklogsRoute);
+  }
+  // #inbox and #tasks become #backlogs in place too (no new history entry), scrolled to the top.
+  const fromOldTab = location.hash === InboxRoute || location.hash === TasksRoute;
+  if (fromOldTab) {
+    history.replaceState(null, "", BacklogsRoute);
+  }
   // Keep the scroll position of the list being left, so Back returns to it.
   if (currentView === "backlogs" && next !== "backlogs") {
     listScroll = window.scrollY;
@@ -692,17 +1103,8 @@ function route() {
   if (currentView === "board" && next !== "board") {
     rememberBoardScroll();
   }
-  if (currentView === "inbox" && next !== "inbox") {
-    rememberInboxScroll();
-  }
-  if (currentView === "tasks" && next !== "tasks") {
-    rememberTasksScroll();
-  }
-  if (currentView === "search" && next !== "search") {
-    rememberSearchScroll();
-  }
   currentView = next;
-  hideEditNotice();
+  routeEditNotice();
   if (next !== "story") {
     storyRequest += 1;
     openedFromList = false;
@@ -715,7 +1117,11 @@ function route() {
   liveRouteChanged();
   if (next === "story") {
     window.scrollTo(0, 0);
-    loadStory(parseStoryHash(location.hash));
+    const target = parseStoryHash(location.hash);
+    if (target !== null) {
+      chooseBacklogProject(target.project);
+    }
+    loadStory(target);
     return;
   }
   if (next === "job") {
@@ -726,20 +1132,9 @@ function route() {
     showBoard();
     return;
   }
-  if (next === "inbox") {
-    showInbox();
-    return;
-  }
-  if (next === "tasks") {
-    showTasks();
-    return;
-  }
-  if (next === "search") {
-    showSearch();
-    return;
-  }
   if (next === "capture") {
     showCapture();
+    window.scrollTo(0, 0);
     return;
   }
   if (next === "history") {
@@ -750,7 +1145,17 @@ function route() {
     showDoctor();
     return;
   }
+  if (fromOldTab) {
+    listScroll = 0;
+  }
   showStatus();
+  showReleases();
+  showSearch();
+  if (fromSearch) {
+    window.scrollTo(0, 0);
+    focusSearch();
+    return;
+  }
   window.scrollTo(0, listScroll);
 }
 
@@ -762,12 +1167,13 @@ function registerServiceWorker() {
   navigator.serviceWorker.register("/sw.js").catch(() => undefined);
 }
 
-// After Save: show the current view again and reload its data, the backlogs and the inbox and tasks counts.
+// After Save: show the current view again and reload its data, the backlogs and the counts on the Backlogs and Jobs
+// tabs.
 onTokenSaved(() => {
   route();
   load();
-  loadInboxCount();
-  loadTasksCount();
+  loadBacklogCounts();
+  loadJobCounts();
 });
 if (!hasToken()) {
   showTokenView(false);
@@ -775,7 +1181,7 @@ if (!hasToken()) {
 window.addEventListener("hashchange", route);
 route();
 load();
-loadInboxCount();
-loadTasksCount();
+loadBacklogCounts();
+loadJobCounts();
 startLiveChecks();
 registerServiceWorker();

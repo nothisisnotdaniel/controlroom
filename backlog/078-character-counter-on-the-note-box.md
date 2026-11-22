@@ -2,6 +2,8 @@
 
 As the operator, I want to see how many characters my note has left, so that a long note is not cut off without warning.
 
+Category: ux
+
 ## What
 
 The note textarea in edit.js has maxlength 1000 and silently stops at the limit. Show a small remaining-characters count near it, readable in light and dark mode.

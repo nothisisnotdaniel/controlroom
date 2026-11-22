@@ -2,6 +2,8 @@
 
 As the ControlRoom owner, I want each /api/board and /api/job response to stop reading after a fixed total byte budget, so that a folder full of large records can't make one request read and parse many megabytes.
 
+Category: security
+
 ## What
 
 Add a total byte budget per response in BoardEndpoint and JobEndpoint (for example 8 MiB for /api/job and 4 MiB for /api/board). When the budget runs out, return the rest of the records as not readable (the existing `readable: false`) instead of reading them. Add tests with a temp factory root whose records go over the budget.

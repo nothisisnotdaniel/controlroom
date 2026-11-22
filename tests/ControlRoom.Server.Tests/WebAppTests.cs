@@ -17,7 +17,7 @@ public sealed partial class WebAppTests
         Assert.Contains("<meta name=\"color-scheme\" content=\"light dark\">", html, StringComparison.Ordinal);
         Assert.Contains("<script src=\"/app.js\" defer></script>", html, StringComparison.Ordinal);
         Assert.Contains("<link rel=\"stylesheet\" href=\"/app.css\">", html, StringComparison.Ordinal);
-        Assert.Equal(14, ScriptTag().Matches(html).Count);
+        Assert.Equal(15, ScriptTag().Matches(html).Count);
         Assert.DoesNotContain("<style", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("style=", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(" on", AttributeStarts(html), StringComparison.Ordinal);
@@ -230,8 +230,8 @@ public sealed partial class WebAppTests
 
         Assert.Contains("element(\"details\", \"group\")", js, StringComparison.Ordinal);
         Assert.Contains("element(\"summary\", null, heading)", js, StringComparison.Ordinal);
-        Assert.DoesNotContain("details.open", js, StringComparison.Ordinal);
-        Assert.Contains("if (group.collapsed) {", js, StringComparison.Ordinal);
+        Assert.Contains("details.open = groupOpen(projectName, key);", js, StringComparison.Ordinal);
+        Assert.Contains("return !(group && group.collapsed === true);", js, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -271,14 +271,13 @@ public sealed partial class WebAppTests
     }
 
     [Fact]
-    public async Task IndexHtml_HasTheTopNavAndBoardAndJobViewsWithBoardJsBeforeAppJs()
+    public async Task IndexHtml_HasTheTabBarAndBoardAndJobViewsWithBoardJsBeforeAppJs()
     {
         string html = await Fetch("/index.html");
 
-        Assert.Contains("<nav class=\"nav\" aria-label=\"Sections\">", html, StringComparison.Ordinal);
-        int jobs = html.IndexOf("<a href=\"#jobs\" data-view=\"board\">Jobs</a>", StringComparison.Ordinal);
-        int backlogs = html.IndexOf(
-            "<a href=\"#backlogs\" data-view=\"backlogs\">Backlogs</a>", StringComparison.Ordinal);
+        Assert.Contains("<nav class=\"nav tab-bar\" aria-label=\"Sections\">", html, StringComparison.Ordinal);
+        int jobs = html.IndexOf("<a href=\"#jobs\" data-view=\"board\">", StringComparison.Ordinal);
+        int backlogs = html.IndexOf("<a href=\"#backlogs\" data-view=\"backlogs\">", StringComparison.Ordinal);
         Assert.True(jobs >= 0 && jobs < backlogs);
         Assert.Contains("<main id=\"board\" hidden>", html, StringComparison.Ordinal);
         Assert.Contains("<main id=\"job\" hidden></main>", html, StringComparison.Ordinal);
@@ -295,12 +294,12 @@ public sealed partial class WebAppTests
     {
         string js = await Fetch("/app.js");
 
-        Assert.Contains("const Views = [\"backlogs\", \"board\", \"inbox\", \"tasks\", \"search\", \"capture\", \"history\", \"doctor\", \"job\", \"story\"];", js, StringComparison.Ordinal);
+        Assert.Contains("const Views = [\"backlogs\", \"board\", \"capture\", \"history\", \"doctor\", \"job\", \"story\"];", js, StringComparison.Ordinal);
         Assert.Contains("if (parseStoryHash(hash)) {", js, StringComparison.Ordinal);
         Assert.Contains("if (parseJobHash(hash) !== null) {", js, StringComparison.Ordinal);
         Assert.Contains("return hash === BoardRoute ? \"board\" : \"backlogs\";", js, StringComparison.Ordinal);
         Assert.Contains("showJob(parseJobHash(location.hash));", js, StringComparison.Ordinal);
-        Assert.Contains("loadStory(parseStoryHash(location.hash));", js, StringComparison.Ordinal);
+        Assert.Contains("const target = parseStoryHash(location.hash);\n    if (target !== null) {\n      chooseBacklogProject(target.project);\n    }\n    loadStory(target);", js, StringComparison.Ordinal);
         Assert.Contains("rememberBoardScroll();", js, StringComparison.Ordinal);
         Assert.Contains("window.scrollTo(0, listScroll);", js, StringComparison.Ordinal);
         Assert.Contains("link.setAttribute(\"aria-current\", \"page\");", js, StringComparison.Ordinal);
@@ -368,7 +367,7 @@ public sealed partial class WebAppTests
     }
 
     [Fact]
-    public async Task BoardJs_RendersNeedsYouThenStagesInOrderWithCounts()
+    public async Task BoardJs_RendersStuckThenStagesInOrderWithCounts()
     {
         string js = await Fetch("/board.js");
 
@@ -382,12 +381,8 @@ public sealed partial class WebAppTests
         Assert.All(positions, position => Assert.True(position >= 0));
         Assert.Equal(positions.Order(), positions);
         Assert.Contains("needsYou: \"Needs you\"", js, StringComparison.Ordinal);
-        Assert.Contains(
-            "const nodes = [renderNeedsYou(shown.filter((job) => job.stage === \"needs-human\"), tasks)];", js,
-            StringComparison.Ordinal);
-        Assert.Contains("section.hidden = count === 0;", js, StringComparison.Ordinal);
+        Assert.Contains("const nodes = stuck.length > 0 ? [renderStuck(stuck)] : [];", js, StringComparison.Ordinal);
         Assert.Contains("return label + \" (\" + count + \")\";", js, StringComparison.Ordinal);
-        Assert.Contains("card.href = storyHash(project, number);", js, StringComparison.Ordinal);
         Assert.Contains("job.stage === \"needs-human\" ? \"card card-human\" : \"card\"", js, StringComparison.Ordinal);
     }
 
@@ -432,7 +427,6 @@ public sealed partial class WebAppTests
         Assert.Contains("allProjects: \"All projects\"", js, StringComparison.Ordinal);
         Assert.Contains("filter.hidden = names.length < 2;", js, StringComparison.Ordinal);
         Assert.Contains("if (selectedProject && !names.includes(selectedProject)) {", js, StringComparison.Ordinal);
-        Assert.Contains("boardTasks.filter((task) => task.project === selectedProject)", js, StringComparison.Ordinal);
         Assert.Contains("boardJobs.filter((job) => job.project === selectedProject)", js, StringComparison.Ordinal);
     }
 
@@ -602,7 +596,7 @@ public sealed partial class WebAppTests
 
         foreach (string rule in new[]
                  {
-                     ".nav a {", ".needs-you {", ".card-human {", ".chip-pass {", ".chip-changes {", ".tab {",
+                     ".tab-bar a {", ".stuck {", ".card-human {", ".chip-pass {", ".chip-changes {", ".tab {",
                      ".filter-button {", ".story-table {", "--human:", "--pass-fg:", "--changes-fg:",
                      ".view-board .top {",
                  })
@@ -660,7 +654,7 @@ public sealed partial class WebAppTests
         Assert.Contains("project: projectName, version: version, line: line", js, StringComparison.Ordinal);
         Assert.Contains("storyVersion: storyVersion", js, StringComparison.Ordinal);
         Assert.Contains("version: found.version", js, StringComparison.Ordinal);
-        foreach (string action in new[] { "approve", "drop", "up", "down", "top", "title", "add", "story" })
+        foreach (string action in new[] { "approve", "drop", "top", "place", "title", "add", "story" })
         {
             Assert.Contains("action: \"" + action + "\"", js, StringComparison.Ordinal);
         }
@@ -677,7 +671,7 @@ public sealed partial class WebAppTests
 
         foreach (string label in new[]
                  {
-                     "approve: \"Approve\"", "drop: \"Drop\"", "up: \"Up\"", "down: \"Down\"",
+                     "approve: \"Approve\"", "drop: \"Drop\"", "move: \"Move\"",
                      "toTop: \"To top\"", "editTitle: \"Edit title\"", "editStory: \"Edit story\"",
                      "save: \"Save\"", "add: \"Add item\"",
                  })
@@ -836,6 +830,33 @@ public sealed partial class WebAppTests
         Assert.True(from >= 0, start);
         int end = text.IndexOf("\n}\n", from, StringComparison.Ordinal);
         return end < 0 ? text[from..] : text[from..end];
+    }
+
+    [Fact]
+    public async Task EditJs_HasTheWorktreeFailedText()
+    {
+        string js = await Fetch("/edit.js");
+
+        Assert.Contains("worktree_failed: \"Could not prepare the backlog branch. Nothing was changed.\"", js,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AppJs_ShowsTheFixedPendingTextOnlyForAPendingProject()
+    {
+        string js = await Fetch("/app.js");
+
+        Assert.Contains("pending: \"Edits wait for the running job and go into develop after it.\"", js,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "  section.appendChild(head);\n"
+            + "  // Edits go to the backlog branch while a job runs; a fixed text, never git output.\n"
+            + "  if (project && project.pending === true) {\n"
+            + "    section.appendChild(element(\"p\", \"backlog-pending\", Texts.pending));\n"
+            + "  }\n",
+            js,
+            StringComparison.Ordinal);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(js, @"Texts\.pending\b"));
     }
 
     private static async Task<string> Fetch(string path)

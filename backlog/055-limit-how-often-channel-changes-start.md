@@ -2,6 +2,8 @@
 
 As a ControlRoom user, I want repeated update-channel flips to start at most one GitHub check per short gap, so that the anonymous GitHub quota is not used up.
 
+Category: feature
+
 ## What
 
 POST settings in UpdateEndpoint.cs starts Task.Run(checker.CheckSafely) on every channel change. Overlapping checks are skipped, but back-to-back flips each start one. Add a minimum gap between channel-change checks, like PushTestLimiter.

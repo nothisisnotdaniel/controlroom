@@ -2,6 +2,8 @@
 
 As the operator, I want the History view and the seven-link nav checked on an iPhone-width screen, so that I know the totals, chart and job list are readable in light and dark mode.
 
+Category: test
+
 ## What
 
 Open ControlRoom at 375 px and 360 px wide in light and dark mode with the Inbox count badge showing; check the seven nav links fit or wrap cleanly, the 7- and 30-day totals, the tokens chart and the job list are readable, and the project filter works.

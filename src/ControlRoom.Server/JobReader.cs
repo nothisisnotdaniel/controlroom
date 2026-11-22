@@ -8,12 +8,20 @@ namespace ControlRoom.Server;
 /// <summary>A job folder under <c>factory/jobs</c>: its name (the job id) and full path.</summary>
 internal sealed record JobFolder(string Id, string Path);
 
+/// <summary>One agent of a job's <c>tokens</c> map: its key, the sum of its <c>input</c>, <c>cacheRead</c> and
+/// <c>output</c> (<c>null</c> when it has no valid count) and its whole <c>seconds</c> (<c>null</c> when missing or not a
+/// non-negative integer, never 0 for unknown).</summary>
+internal sealed record JobAgent(string Name, long? Tokens, long? Seconds);
+
 /// <summary>One job as the board shows it, mapped field by field from its <c>state.json</c>. A field that is
 /// missing or of the wrong type is <c>null</c> (or an empty list or map); fields it doesn't know are dropped.
 /// <c>CiStatus</c>, <c>CiUrl</c> and <c>CiSha</c> come from <c>ci.status</c>, <c>ci.url</c> and <c>ci.sha</c> (the
 /// last two never in a job's JSON), <c>Tokens</c> is the sum of <c>input</c>, <c>cacheRead</c> and
 /// <c>output</c> over every agent in <c>tokens</c> (<c>null</c> when no agent gives a valid count). <c>Updated</c> is
-/// <c>updated</c> when it is exactly <c>YYYY-MM-DDTHH:MM:SSZ</c> (UTC); it is never sent in a job's JSON. <c>Request</c> is the action of a pending <c>human.json</c>
+/// <c>updated</c> when it is exactly <c>YYYY-MM-DDTHH:MM:SSZ</c> (UTC); it is never sent in a job's JSON. <c>Started</c>
+/// and <c>Ended</c> are <c>started</c> and <c>ended</c> under the same rule, as that string (else <c>null</c>).
+/// <c>Agents</c> is one <see cref="JobAgent"/> per object in <c>tokens</c>, in file order; it is never in a job's JSON
+/// (only <c>GET /api/job</c> sends it, as <c>agents</c>). <c>Request</c> is the action of a pending <c>human.json</c>
 /// (<c>approve</c>, <c>rework</c> or <c>unreadable</c>), filled by <see cref="JobAction.WithRequest"/> only for a
 /// <c>needs-human</c> job.</summary>
 internal sealed record JobSummary(
@@ -37,7 +45,10 @@ internal sealed record JobSummary(
     string? Request = null,
     [property: JsonIgnore] DateTimeOffset? Updated = null,
     [property: JsonIgnore] string? CiUrl = null,
-    [property: JsonIgnore] string? CiSha = null);
+    [property: JsonIgnore] string? CiSha = null,
+    string? Started = null,
+    string? Ended = null,
+    [property: JsonIgnore] IReadOnlyList<JobAgent>? Agents = null);
 
 /// <summary>Reads the jobs folder <c>&lt;root&gt;/factory/jobs</c>. The folder is refused when <c>factory</c> or
 /// <c>jobs</c> is a symlink; only job folders that are not symlinks and whose name matches
@@ -193,7 +204,10 @@ internal static partial class JobReader
                 Request: null,
                 Updated: Updated(state),
                 CiUrl: CiText(state, "url"),
-                CiSha: CiText(state, "sha"));
+                CiSha: CiText(state, "sha"),
+                Started: TimeText(state, "started"),
+                Ended: TimeText(state, "ended"),
+                Agents: Agents(state));
         }
     }
 
@@ -284,7 +298,20 @@ internal static partial class JobReader
     /// <c>YYYY-MM-DDTHH:MM:SSZ</c> that is a real date and time; <c>null</c> otherwise.</summary>
     private static DateTimeOffset? Updated(JsonElement state)
     {
-        string? text = Text(state, "updated");
+        return Time(state, "updated");
+    }
+
+    /// <summary>The field as its string when <see cref="Time"/> accepts it; <c>null</c> otherwise.</summary>
+    private static string? TimeText(JsonElement state, string name)
+    {
+        return Time(state, name) is null ? null : Text(state, name);
+    }
+
+    /// <summary>The field as a UTC time, only when it is a string of exactly the form <c>YYYY-MM-DDTHH:MM:SSZ</c> that
+    /// is a real date and time; <c>null</c> otherwise.</summary>
+    private static DateTimeOffset? Time(JsonElement state, string name)
+    {
+        string? text = Text(state, name);
         if (text is null || !UpdatedPattern().IsMatch(text))
         {
             return null;
@@ -317,25 +344,72 @@ internal static partial class JobReader
         bool known = false;
         foreach (JsonProperty agent in tokens.EnumerateObject())
         {
-            if (agent.Value.ValueKind != JsonValueKind.Object)
+            if (AgentTokens(agent.Value) is long value)
             {
-                continue;
-            }
-
-            foreach (string name in new[] { "input", "cacheRead", "output" })
-            {
-                if (agent.Value.TryGetProperty(name, out JsonElement count)
-                    && count.ValueKind == JsonValueKind.Number
-                    && count.TryGetInt64(out long value)
-                    && value >= 0)
-                {
-                    known = true;
-                    total = total > long.MaxValue - value ? long.MaxValue : total + value;
-                }
+                known = true;
+                total = total > long.MaxValue - value ? long.MaxValue : total + value;
             }
         }
 
         return known ? total : null;
+    }
+
+    /// <summary>One agent per object in <c>tokens</c>, in file order; empty when <c>tokens</c> is not an
+    /// object.</summary>
+    private static List<JobAgent> Agents(JsonElement state)
+    {
+        List<JobAgent> agents = [];
+        if (Property(state, "tokens") is not { ValueKind: JsonValueKind.Object } tokens)
+        {
+            return agents;
+        }
+
+        foreach (JsonProperty agent in tokens.EnumerateObject())
+        {
+            if (agent.Value.ValueKind == JsonValueKind.Object)
+            {
+                agents.Add(new JobAgent(agent.Name, AgentTokens(agent.Value), AgentSeconds(agent.Value)));
+            }
+        }
+
+        return agents;
+    }
+
+    /// <summary>The saturating sum of an agent's valid <c>input</c>, <c>cacheRead</c> and <c>output</c>; <c>null</c>
+    /// when the agent is not an object or has no valid count.</summary>
+    private static long? AgentTokens(JsonElement agent)
+    {
+        if (agent.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        long total = 0;
+        bool known = false;
+        foreach (string name in new[] { "input", "cacheRead", "output" })
+        {
+            if (agent.TryGetProperty(name, out JsonElement count)
+                && count.ValueKind == JsonValueKind.Number
+                && count.TryGetInt64(out long value)
+                && value >= 0)
+            {
+                known = true;
+                total = total > long.MaxValue - value ? long.MaxValue : total + value;
+            }
+        }
+
+        return known ? total : null;
+    }
+
+    /// <summary>An agent's <c>seconds</c> when it is a non-negative integer; <c>null</c> otherwise.</summary>
+    private static long? AgentSeconds(JsonElement agent)
+    {
+        return agent.TryGetProperty("seconds", out JsonElement seconds)
+            && seconds.ValueKind == JsonValueKind.Number
+            && seconds.TryGetInt64(out long value)
+            && value >= 0
+                ? value
+                : null;
     }
 
     [GeneratedRegex(@"\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\z", RegexOptions.CultureInvariant)]

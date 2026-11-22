@@ -2,6 +2,8 @@
 
 As the ControlRoom developer, I want BacklogEntry to use record equality, so that adding a field can't silently be left out of a hand-written Equals.
 
+Category: tidy-up
+
 ## What
 
 Give `BacklogEntry.After` a value-equal list type (for example an `EquatableArray` or `ImmutableArray` wrapper with value equality) and remove the hand-written `Equals`/`GetHashCode`. Keep every existing test passing.

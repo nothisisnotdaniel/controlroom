@@ -2,6 +2,8 @@
 
 As the ControlRoom owner, I want the launch-agent.sh usage text to list the --tailnet-host option, so that I can find it from the script itself without reading the README.
 
+Category: docs
+
 ## What
 
 Change the usage line printed by `scripts/launch-agent.sh` (bad or missing arguments) to show `install [--tailnet-host <name>]|uninstall|status`, and update `LaunchAgentScriptTests.BadArguments_PrintUsageExitTwoAndChangeNothing` to expect the new text.

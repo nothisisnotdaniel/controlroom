@@ -14,37 +14,55 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
   <link rel="stylesheet" href="/app.css">
+  <script src="/room.js" defer></script>
   <script src="/token.js" defer></script>
   <script src="/board.js" defer></script>
   <script src="/act.js" defer></script>
   <script src="/push.js" defer></script>
   <script src="/edit.js" defer></script>
-  <script src="/inbox.js" defer></script>
-  <script src="/tasks.js" defer></script>
+  <script src="/counts.js" defer></script>
   <script src="/search.js" defer></script>
   <script src="/capture.js" defer></script>
   <script src="/history.js" defer></script>
   <script src="/doctor.js" defer></script>
   <script src="/status.js" defer></script>
+  <script src="/releases.js" defer></script>
   <script src="/live.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
 <body>
   <header class="top" id="top">
-    <nav class="nav" aria-label="Sections">
-      <a href="#jobs" data-view="board">Jobs</a>
-      <a href="#backlogs" data-view="backlogs">Backlogs</a>
-      <a href="#inbox" data-view="inbox">Inbox<span class="nav-count" id="inbox-count" hidden></span></a>
-      <a href="#tasks" data-view="tasks">Tasks<span class="nav-count" id="tasks-count" hidden></span></a>
-      <a href="#search" data-view="search">Search</a>
-      <a href="#capture" data-view="capture">Capture</a>
-      <a href="#history" data-view="history">History</a>
-      <a href="#doctor" data-view="doctor">Health</a>
-    </nav>
     <h1 id="top-title">Backlogs</h1>
   </header>
   <p class="live-notice" id="live-notice" role="status" hidden></p>
+  <nav class="nav tab-bar" aria-label="Sections">
+    <a href="#jobs" data-view="board">
+      <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM9 4v16M15 4v16"/></svg>
+      <span class="tab-label">Jobs</span>
+      <span class="nav-count nav-count-running" id="running-count" hidden></span>
+      <span class="nav-count nav-count-blocked" id="blocked-count" hidden></span>
+    </a>
+    <a href="#backlogs" data-view="backlogs">
+      <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+      <span class="tab-label">Backlogs</span>
+      <span class="nav-count nav-count-tasks" id="tasks-count" hidden></span>
+      <span class="nav-count nav-count-approval" id="approval-count" hidden></span>
+    </a>
+    <a href="#capture" data-view="capture">
+      <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM12 8v8M8 12h8"/></svg>
+      <span class="tab-label">Capture</span>
+    </a>
+    <a href="#history" data-view="history">
+      <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM12 7v5l3 2"/></svg>
+      <span class="tab-label">History</span>
+    </a>
+    <a href="#doctor" data-view="doctor">
+      <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      <span class="tab-label">Health</span>
+    </a>
+  </nav>
   <main id="backlogs">
+    <div class="backlog-search" id="backlog-search"></div>
     <p class="status">Loading…</p>
   </main>
   <main id="board" hidden>
@@ -63,9 +81,6 @@
     <p class="app-version" id="app-version" hidden></p>
     <div class="auto-update" id="auto-update" hidden></div>
   </main>
-  <main id="inbox" hidden></main>
-  <main id="tasks" hidden></main>
-  <main id="search" hidden></main>
   <main id="capture" hidden></main>
   <main id="history" hidden></main>
   <main id="doctor" hidden></main>

@@ -2,6 +2,8 @@
 
 As the user, I want to confirm on a real browser that an open job page updates when its job changes, so that I can trust what it shows while a job runs.
 
+Category: test
+
 ## What
 
 Open a running job's page in a browser (Mac and iPhone), wait for its board entry to change, and check that the state section shows the new values while the selected tab and scroll position stay (job 248 AC-7). Report anything off as a new item.

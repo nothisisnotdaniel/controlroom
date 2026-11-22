@@ -2,6 +2,8 @@
 
 As the ControlRoom user in a private browser window, I want the web app to keep my token for the open page when it can't store it, so that the token view doesn't come back right after I save.
 
+Category: bug
+
 ## What
 
 In wwwroot/token.js, keep the token in a module variable as a fallback when `localStorage` throws, and have `readToken` return it. Fix the comment to match. Add a WebApp test for the fallback.

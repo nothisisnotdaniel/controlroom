@@ -2,6 +2,8 @@
 
 As the ControlRoom user, I want the install command to tell me how to check that the server is running, so that I know the next step without opening the README.
 
+Category: docs
+
 ## What
 
 After a successful `scripts/launch-agent.sh install`, print one more fixed line such as `Check it with: scripts/launch-agent.sh status`. Update the test that pins the install output and the README example.

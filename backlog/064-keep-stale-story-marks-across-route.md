@@ -2,6 +2,8 @@
 
 As the operator, I want a story change seen while the story was hidden to still count, so that no change is silently dropped.
 
+Category: bug
+
 ## What
 
 live.js liveRouteChanged clears staleStories on every route change. Keep the marks for stories not yet re-opened, or document why clearing is safe.

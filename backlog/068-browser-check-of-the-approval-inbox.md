@@ -2,6 +2,8 @@
 
 As the operator, I want the inbox checked on an iPhone in light and dark mode, so that its layout and badge contrast are known to work.
 
+Category: test
+
 ## What
 
 Open the Inbox on an iPhone-width screen in light and dark mode; check the nav count badge contrast (--accent on --primary-fg), the 44px tap targets and the wrapping nav.

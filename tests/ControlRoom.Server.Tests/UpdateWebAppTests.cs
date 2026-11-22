@@ -80,13 +80,16 @@ public sealed class UpdateWebAppTests
     public async Task ServiceWorker_MapsTheUpdateKind()
     {
         string js = await Fetch("/sw.js");
+        string room = await Fetch("/room.js");
 
         Assert.Contains("update: \"Update available\",", js, StringComparison.Ordinal);
         Assert.Contains("} else if (kind === \"update\") {", js, StringComparison.Ordinal);
         Assert.Contains(
             "const version = PushVersionPattern.test(pushField(data, \"version\")) ? pushField(data, \"version\") : \"\";",
             js, StringComparison.Ordinal);
-        Assert.Contains("body = version ? \"ControlRoom \" + version : \"\";", js, StringComparison.Ordinal);
+        // The "ControlRoom " prefix moved to room.js as a named constant (spec Scope); the body is built the same way.
+        Assert.Contains("body = version ? PushUpdatePrefix + version : \"\";", js, StringComparison.Ordinal);
+        Assert.Contains("const PushUpdatePrefix = \"ControlRoom \";", room, StringComparison.Ordinal);
         Assert.Contains("tag = \"update:\" + version;", js, StringComparison.Ordinal);
         Assert.Contains("let url = \"/#jobs\";", js, StringComparison.Ordinal);
         Assert.Contains("const PushVersionPattern = /^(0|[1-9][0-9]{0,8})\\.", js, StringComparison.Ordinal);

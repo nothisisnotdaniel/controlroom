@@ -283,8 +283,8 @@ public sealed class ProjectStatusEndpointTests
         TempFactoryRoot.InitGit(root.Path, "main");
         TempFactoryRoot.Git(root.Path, "branch", "develop");
 
-        Assert.Null(await ControlRoom.Server.ProjectGit.AheadOfMain(inner));
-        Assert.Equal(0, await ControlRoom.Server.ProjectGit.AheadOfMain(root.Path));
+        Assert.Null(await RoomKit.ProjectGit.AheadOfMain(inner));
+        Assert.Equal(0, await RoomKit.ProjectGit.AheadOfMain(root.Path));
     }
 
     [Fact]
@@ -312,9 +312,13 @@ public sealed class ProjectStatusEndpointTests
     public void Source_StartsOnlyGitAndNoHttpClient()
     {
         string folder = AccessTokenTests.SourceFolder();
-        foreach (string file in new[] { "ProjectStatusEndpoint.cs", "ProjectGit.cs" })
+        foreach (string file in new[]
         {
-            string source = File.ReadAllText(Path.Combine(folder, file));
+            Path.Combine(folder, "ProjectStatusEndpoint.cs"),
+            Path.Combine(AccessTokenTests.KitSourceFolder(), "ProjectGit.cs"),
+        })
+        {
+            string source = File.ReadAllText(file);
             Assert.DoesNotContain("\"gh\"", source, StringComparison.Ordinal);
             Assert.DoesNotContain("\"curl\"", source, StringComparison.Ordinal);
             Assert.DoesNotContain("HttpClient", source, StringComparison.Ordinal);
@@ -324,7 +328,7 @@ public sealed class ProjectStatusEndpointTests
         string endpoint = File.ReadAllText(Path.Combine(folder, "ProjectStatusEndpoint.cs"));
         Assert.DoesNotContain("ProcessStartInfo", endpoint, StringComparison.Ordinal);
         Assert.DoesNotContain("Process.", endpoint, StringComparison.Ordinal);
-        string git = File.ReadAllText(Path.Combine(folder, "ProjectGit.cs"));
+        string git = File.ReadAllText(Path.Combine(AccessTokenTests.KitSourceFolder(), "ProjectGit.cs"));
         Assert.Contains("ProcessStartInfo start = new(\"git\")", git, StringComparison.Ordinal);
         Assert.Contains("[\"rev-list\", \"--count\", \"refs/heads/main..refs/heads/\" + Branch]", git, StringComparison.Ordinal);
     }

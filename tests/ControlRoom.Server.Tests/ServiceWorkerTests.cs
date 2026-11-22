@@ -9,14 +9,14 @@ public sealed partial class ServiceWorkerTests
 {
     private static readonly string[] ShellPaths =
     [
-        "/", "/index.html", "/app.css", "/app.js", "/board.js", "/act.js", "/edit.js", "/inbox.js", "/tasks.js", "/search.js", "/capture.js", "/history.js", "/doctor.js", "/status.js", "/live.js", "/push.js", "/token.js", "/manifest.webmanifest", "/icons/apple-touch-icon.png",
+        "/", "/index.html", "/app.css", "/app.js", "/board.js", "/act.js", "/edit.js", "/counts.js", "/search.js", "/capture.js", "/history.js", "/doctor.js", "/status.js", "/releases.js", "/live.js", "/push.js", "/token.js", "/room.js", "/manifest.webmanifest", "/icons/apple-touch-icon.png",
         "/icons/icon-192.png", "/icons/icon-512.png",
     ];
 
     [Fact]
     public async Task Shell_IsExactlyTheFixedList()
     {
-        string js = await Fetch();
+        string js = await Fetch("/room.js");
 
         Match list = ShellList().Match(js);
         Assert.True(list.Success);
@@ -29,9 +29,10 @@ public sealed partial class ServiceWorkerTests
     public async Task Cache_IsVersionedAndOldCachesAreDeletedOnActivate()
     {
         string js = await Fetch();
+        string room = await Fetch("/room.js");
 
-        Assert.Matches(VersionConstant(), js);
-        Assert.Contains("const CacheName = \"controlroom-shell-\" + CacheVersion;", js, StringComparison.Ordinal);
+        Assert.Matches(VersionConstant(), room);
+        Assert.Contains("const CacheName = \"controlroom-shell-\" + CacheVersion;", room, StringComparison.Ordinal);
         Assert.Contains("cache.addAll(Shell)", js, StringComparison.Ordinal);
         int activate = js.IndexOf("addEventListener(\"activate\"", StringComparison.Ordinal);
         Assert.True(activate >= 0);
@@ -45,15 +46,17 @@ public sealed partial class ServiceWorkerTests
     public async Task Cache_VersionIsBumpedForTheEditScript()
     {
         string js = await Fetch();
+        string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v16\";", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/edit.js\",\n", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/inbox.js\",\n", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/live.js\",\n", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/push.js\",\n", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/board.js\",\n", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/token.js\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v22\";", room, StringComparison.Ordinal);
+        Assert.Contains("  \"/edit.js\",\n", room, StringComparison.Ordinal);
+        Assert.Contains("  \"/counts.js\",\n", room, StringComparison.Ordinal);
+        Assert.Contains("  \"/live.js\",\n", room, StringComparison.Ordinal);
+        Assert.Contains("  \"/push.js\",\n", room, StringComparison.Ordinal);
+        Assert.Contains("  \"/board.js\",\n", room, StringComparison.Ordinal);
+        Assert.Contains("  \"/token.js\",\n", room, StringComparison.Ordinal);
         Assert.DoesNotContain("Authorization", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("Authorization", room, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -146,12 +149,12 @@ public sealed partial class ServiceWorkerTests
         }
     }
 
-    private static async Task<string> Fetch()
+    private static async Task<string> Fetch(string path = "/sw.js")
     {
         using TempFactoryRoot root = new();
         using ServerFactory factory = new(root.Path);
         using HttpClient client = factory.CreateClient();
-        return await client.GetStringAsync("/sw.js");
+        return await client.GetStringAsync(path);
     }
 
     [GeneratedRegex("const Shell = \\[([^\\]]*)\\];")]

@@ -2,6 +2,8 @@
 
 As the ControlRoom user, I want the page to keep my place after a change, so that I can make several edits in a row without finding my spot again.
 
+Category: ux
+
 ## What
 
 After a successful backlog change, when the project view reloads, put the focus back on the control that was used (or on the moved item's matching button) and keep the Add form open if it was open, with its fields cleared. Keep screen reader announcements of the notice working.

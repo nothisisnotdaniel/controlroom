@@ -12,12 +12,14 @@ public sealed partial class DoctorWebAppTests
     {
         string html = await Fetch("/index.html");
 
-        const string Link = "<a href=\"#doctor\" data-view=\"doctor\">Health</a>";
-        int history = html.IndexOf("<a href=\"#history\" data-view=\"history\">History</a>", StringComparison.Ordinal);
+        const string Link = "<a href=\"#doctor\" data-view=\"doctor\">";
+        const string Tail = "<span class=\"tab-label\">Health</span>\n    </a>\n  ";
+        int history = html.IndexOf("<a href=\"#history\" data-view=\"history\">", StringComparison.Ordinal);
         int health = html.IndexOf(Link, StringComparison.Ordinal);
         int navEnd = html.IndexOf("</nav>", StringComparison.Ordinal);
         Assert.True(history >= 0 && health > history && health < navEnd);
-        Assert.Equal("\n    ", html[(health + Link.Length)..navEnd]);
+        Assert.EndsWith(Tail, html[health..navEnd], StringComparison.Ordinal);
+        Assert.DoesNotContain("nav-count", html[health..navEnd], StringComparison.Ordinal);
         Assert.Contains("<main id=\"doctor\" hidden></main>", html, StringComparison.Ordinal);
         Assert.DoesNotContain("doctor-count", html, StringComparison.Ordinal);
     }
@@ -29,8 +31,8 @@ public sealed partial class DoctorWebAppTests
 
         Assert.Contains(
             "<script src=\"/history.js\" defer></script>\n  <script src=\"/doctor.js\" defer></script>\n"
-            + "  <script src=\"/status.js\" defer></script>\n  <script src=\"/live.js\" defer></script>", html, StringComparison.Ordinal);
-        Assert.Equal(14, ScriptTag().Matches(html).Count);
+            + "  <script src=\"/status.js\" defer></script>\n  <script src=\"/releases.js\" defer></script>\n  <script src=\"/live.js\" defer></script>", html, StringComparison.Ordinal);
+        Assert.Equal(15, ScriptTag().Matches(html).Count);
     }
 
     [Fact]
@@ -185,12 +187,11 @@ public sealed partial class DoctorWebAppTests
     }
 
     [Fact]
-    public async Task AppCss_FitsEightNavLinksAndStylesTheView()
+    public async Task AppCss_FitsEightTabsInOneRowAndStylesTheView()
     {
         string css = await Fetch("/app.css");
 
-        Assert.Contains("/* Eight nav links fit in two rows of four at iPhone width (375 px). */", css,
-            StringComparison.Ordinal);
+        Assert.DoesNotContain("two rows of four", css, StringComparison.Ordinal);
         foreach (string rule in new[]
                  {
                      ".doctor-section {", ".doctor-heading {", ".doctor-help {", ".doctor-list {", ".doctor-item {",
@@ -205,10 +206,12 @@ public sealed partial class DoctorWebAppTests
     public async Task ServiceWorker_CachesDoctorJsWithVersion15AndNeverTheApi()
     {
         string js = await Fetch("/sw.js");
+        string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v16\";", js, StringComparison.Ordinal);
-        Assert.Contains("  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/live.js\",\n", js, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v22\";", room, StringComparison.Ordinal);
+        Assert.Contains("  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/releases.js\",\n  \"/live.js\",\n", room, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/doctor", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("/api/doctor", room, StringComparison.Ordinal);
     }
 
     [Fact]

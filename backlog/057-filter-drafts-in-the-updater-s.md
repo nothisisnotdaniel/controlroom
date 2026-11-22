@@ -2,6 +2,8 @@
 
 As a ControlRoom maintainer, I want the updater and the server to pick the newest develop release the same way, so that the two parsers can't drift apart.
 
+Category: bug
+
 ## What
 
 scripts/updater.sh develop_tag doesn't filter by draft, but the server's ParseList does. Anonymous calls never see drafts (AC-11), so this is only for consistency: either filter drafts in the updater as well or note the difference in a comment.
