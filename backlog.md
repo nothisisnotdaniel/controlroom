@@ -152,3 +152,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#143](backlog/143-check-the-releases-block-on-the.md) Check the releases block on the iPhone
 - [?] [#144](backlog/144-settings-file-cap-fits-every-valid.md) Settings file cap fits every valid interval
 - [?] [#145](backlog/145-story-reads-on-linux-with-glibc.md) Story reads on Linux with glibc older than 2.33
+- [ ] [#146](backlog/146-shared-roomkit-core-for-controlroom-and.md) Shared RoomKit core for ControlRoom and PlayRoom
