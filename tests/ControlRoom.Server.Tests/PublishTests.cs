@@ -28,5 +28,6 @@ public sealed class PublishTests
         Assert.True(File.Exists(Path.Combine(published, "room.js")));
         Assert.True(File.Exists(Path.Combine(copy.Output, "ControlRoom.Server.dll")));
         Assert.True(File.Exists(Path.Combine(copy.Output, "RoomKit.dll")));
+        Assert.Empty(Directory.GetFiles(copy.Output, "*.staticwebassets.runtime.json", SearchOption.AllDirectories));
     }
 }
