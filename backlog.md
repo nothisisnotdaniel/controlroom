@@ -159,3 +159,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#150](backlog/150-check-job-ids-and-folders-from.md) Check job ids and folders from IJobFormat
 - [?] [#151](backlog/151-extract-roomkit-to-its-own-repository.md) Extract RoomKit to its own repository
 - [ ] [#152](backlog/152-windows-executables-for-controlroom.md) Windows executables for ControlRoom
+- [ ] [#153](backlog/153-modular-roomkit-core-with-an-opt.md) Modular RoomKit core with an opt-in factory module (after: #147)
