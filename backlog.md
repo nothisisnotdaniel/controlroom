@@ -29,6 +29,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#136](backlog/136-start-end-and-time-per-agent.md) Start, end and time per agent on job cards (after: factory#22) → 372-job-card-times
 - [x] [#138](backlog/138-number-of-active-and-blocked-jobs.md) Active and blocked job counts on the Jobs tab → 373-jobs-tab-badges
 - [x] [#142](backlog/142-update-interval-setting-30-minutes-by.md) Update interval setting, 30 minutes by default → 376-update-interval
+- [ ] [#152](backlog/152-windows-executables-for-controlroom.md) Windows executables for ControlRoom
 - [ ] [#153](backlog/153-modular-roomkit-core-with-an-opt.md) Modular RoomKit core with an opt-in factory module (after: #147)
 - [ ] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone (after: #139)
 - [ ] [#139](backlog/139-phone-start-spike.md) Phone start spike
@@ -159,4 +160,3 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#149](backlog/149-strict-mode-for-sw-js.md) Strict mode for sw.js
 - [?] [#150](backlog/150-check-job-ids-and-folders-from.md) Check job ids and folders from IJobFormat
 - [?] [#151](backlog/151-extract-roomkit-to-its-own-repository.md) Extract RoomKit to its own repository
-- [ ] [#152](backlog/152-windows-executables-for-controlroom.md) Windows executables for ControlRoom
