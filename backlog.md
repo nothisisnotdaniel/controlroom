@@ -97,7 +97,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#78](backlog/078-character-counter-on-the-note-box.md) Character counter on the note box
 - [?] [#79](backlog/079-notes-section-end-ignores-headings-inside.md) Notes section end ignores headings inside code blocks
 - [?] [#81](backlog/081-escape-a-leading-in-captured-text.md) Escape a leading # in captured text
-- [h] [#82](backlog/082-browser-check-of-capture-and-the.md) Browser check of Capture and the two-row nav
+- [x] [#82](backlog/082-browser-check-of-capture-and-the.md) Browser check of Capture and the two-row nav
 - [h] [#83](backlog/083-browser-check-of-approve-and-rework.md) Browser check of Approve and Rework on an escalated job
 - [h] [#84](backlog/084-browser-check-of-the-history-view.md) Browser check of the History view and seven-link nav
 - [ ] [#85](backlog/085-distinct-chart-colours-for-more-than.md) Distinct chart colours for more than six modes
