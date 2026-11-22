@@ -134,7 +134,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#121](backlog/121-announce-the-new-position-after-a.md) Announce the new position after a drag for screen readers
 - [x] [#122](backlog/122-try-drag-and-drop-by-hand.md) Try drag and drop by hand on iPhone and Mac
 - [h] [#123](backlog/123-browser-check-of-category-chips-at.md) Browser check of category chips at phone width and in dark mode
-- [h] [#124](backlog/124-check-the-stop-line-divider-on.md) Check the stop line divider on the iPhone in dark mode
+- [x] [#124](backlog/124-check-the-stop-line-divider-on.md) Check the stop line divider on the iPhone in dark mode
 - [x] [#125](backlog/125-status-chip-in-the-story-view.md) Status chip in the story view → 352-story-status-chip
 - [ ] [#64](backlog/064-keep-stale-story-marks-across-route.md) Keep stale story marks across route changes
 - [ ] [#65](backlog/065-refresh-the-inbox-count-right-after.md) Refresh the inbox count right after any backlog change
