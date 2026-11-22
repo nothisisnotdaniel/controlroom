@@ -29,6 +29,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#136](backlog/136-start-end-and-time-per-agent.md) Start, end and time per agent on job cards (after: factory#22) → 372-job-card-times
 - [x] [#138](backlog/138-number-of-active-and-blocked-jobs.md) Active and blocked job counts on the Jobs tab → 373-jobs-tab-badges
 - [x] [#142](backlog/142-update-interval-setting-30-minutes-by.md) Update interval setting, 30 minutes by default → 376-update-interval
+- [ ] [#147](backlog/147-show-and-edit-the-factory-backlog.md) Show and edit the factory backlog (after: factory#30)
 - [ ] [#152](backlog/152-windows-executables-for-controlroom.md) Windows executables for ControlRoom
 - [ ] [#153](backlog/153-modular-roomkit-core-with-an-opt.md) Modular RoomKit core with an opt-in factory module (after: #147)
 - [ ] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone (after: #139)
@@ -155,7 +156,6 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#144](backlog/144-settings-file-cap-fits-every-valid.md) Settings file cap fits every valid interval
 - [?] [#145](backlog/145-story-reads-on-linux-with-glibc.md) Story reads on Linux with glibc older than 2.33
 - [x] [#146](backlog/146-shared-roomkit-core-for-controlroom-and.md) Shared RoomKit core for ControlRoom and PlayRoom → 386-roomkit-shared-core
-- [ ] [#147](backlog/147-show-and-edit-the-factory-backlog.md) Show and edit the factory backlog (after: factory#30)
 - [?] [#148](backlog/148-test-that-a-file-in-both.md) Test that a file in both wwwroot folders fails the build
 - [?] [#149](backlog/149-strict-mode-for-sw-js.md) Strict mode for sw.js
 - [?] [#150](backlog/150-check-job-ids-and-folders-from.md) Check job ids and folders from IJobFormat
