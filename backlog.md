@@ -155,7 +155,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#141](backlog/141-loading-text-for-the-releases-block.md) Loading text for the releases block
 - [x] [#143](backlog/143-check-the-releases-block-on-the.md) Check the releases block on the iPhone
 - [?] [#144](backlog/144-settings-file-cap-fits-every-valid.md) Settings file cap fits every valid interval
-- [?] [#145](backlog/145-story-reads-on-linux-with-glibc.md) Story reads on Linux with glibc older than 2.33
+- [ ] [#145](backlog/145-story-reads-on-linux-with-glibc.md) Story reads on Linux with glibc older than 2.33
 - [x] [#146](backlog/146-shared-roomkit-core-for-controlroom-and.md) Shared RoomKit core for ControlRoom and PlayRoom → 386-roomkit-shared-core
 - [ ] [#148](backlog/148-test-that-a-file-in-both.md) Test that a file in both wwwroot folders fails the build
 - [ ] [#149](backlog/149-strict-mode-for-sw-js.md) Strict mode for sw.js
