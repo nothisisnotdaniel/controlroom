@@ -159,5 +159,5 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#146](backlog/146-shared-roomkit-core-for-controlroom-and.md) Shared RoomKit core for ControlRoom and PlayRoom → 386-roomkit-shared-core
 - [?] [#148](backlog/148-test-that-a-file-in-both.md) Test that a file in both wwwroot folders fails the build
 - [?] [#149](backlog/149-strict-mode-for-sw-js.md) Strict mode for sw.js
-- [?] [#150](backlog/150-check-job-ids-and-folders-from.md) Check job ids and folders from IJobFormat
+- [ ] [#150](backlog/150-check-job-ids-and-folders-from.md) Check job ids and folders from IJobFormat
 - [ ] [#151](backlog/151-extract-roomkit-to-its-own-repository.md) Extract RoomKit to its own repository
