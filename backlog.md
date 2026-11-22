@@ -154,3 +154,6 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#145](backlog/145-story-reads-on-linux-with-glibc.md) Story reads on Linux with glibc older than 2.33
 - [x] [#146](backlog/146-shared-roomkit-core-for-controlroom-and.md) Shared RoomKit core for ControlRoom and PlayRoom → 386-roomkit-shared-core
 - [?] [#147](backlog/147-show-and-edit-the-factory-backlog.md) Show and edit the factory backlog (after: factory#30)
+- [?] [#148](backlog/148-test-that-a-file-in-both.md) Test that a file in both wwwroot folders fails the build
+- [?] [#149](backlog/149-strict-mode-for-sw-js.md) Strict mode for sw.js
+- [?] [#150](backlog/150-check-job-ids-and-folders-from.md) Check job ids and folders from IJobFormat
