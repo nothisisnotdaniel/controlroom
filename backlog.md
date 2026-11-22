@@ -91,7 +91,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#72](backlog/072-fill-the-search-project-filter-before.md) Fill the search project filter before the first search
 - [h] [#73](backlog/073-browser-check-of-the-search-view.md) Browser check of the Search view and five-link nav
 - [?] [#74](backlog/074-notice-when-a-live-search-refresh.md) Notice when a live search refresh fails
-- [h] [#75](backlog/075-browser-check-of-the-next-and.md) Browser check of the next and waiting view
+- [x] [#75](backlog/075-browser-check-of-the-next-and.md) Browser check of the next and waiting view
 - [h] [#76](backlog/076-browser-check-of-add-note-on.md) Browser check of Add note on a story
 - [?] [#77](backlog/077-refuse-invisible-unicode-format-characters-in.md) Refuse invisible Unicode format characters in written text
 - [?] [#78](backlog/078-character-counter-on-the-note-box.md) Character counter on the note box
