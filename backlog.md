@@ -30,8 +30,8 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#138](backlog/138-number-of-active-and-blocked-jobs.md) Active and blocked job counts on the Jobs tab → 373-jobs-tab-badges
 - [x] [#142](backlog/142-update-interval-setting-30-minutes-by.md) Update interval setting, 30 minutes by default → 376-update-interval
 - [ ] [#147](backlog/147-show-and-edit-the-factory-backlog.md) Show and edit the factory backlog (after: factory#30)
-- [ ] [#152](backlog/152-windows-executables-for-controlroom.md) Windows executables for ControlRoom
 - [ ] [#153](backlog/153-modular-roomkit-core-with-an-opt.md) Modular RoomKit core with an opt-in factory module (after: #147)
+- [ ] [#152](backlog/152-windows-executables-for-controlroom.md) Windows executables for ControlRoom
 - [ ] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone (after: #139)
 - [ ] [#139](backlog/139-phone-start-spike.md) Phone start spike
 - [x] [#13](backlog/013-releases-overview.md) Releases overview → 375-releases-overview
