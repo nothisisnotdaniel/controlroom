@@ -358,7 +358,23 @@ if ($Scenario -in 'lifecycle','sample') {
         Expect ([IO.File]::ReadAllText((Join-Path $Support 'server/updater.ps1'))) 'updater v1.2.0'
         Expect $history.Count 1
     }
-} elseif ($Scenario -in 'result-retry','failed-result-retry') {
+} elseif ($Scenario -eq 'invalid-pending') {
+    $stage = New-ReleaseWork
+    Write-PrivateText 'update-result.json' '{"prior":true}'
+    $valid = '{"run":"20261123T120000Z","result":"update_failed","version":"1.3.0","reason":"check"}'
+    foreach ($bad in '{}', ('[' + $valid + ']'), $valid.Replace('1.3.0','bad'), $valid.Replace('check','bad'),
+        $valid.Replace('"reason"', '"Reason"'), $valid.Replace('"check"', '"swap","reason":"check"')) {
+        $pending = $bad + [char]10
+        Write-PrivateText 'pending-result.json' $pending $stage
+        $refused = $false
+        try { Invoke-RoomUpdate $factory | Out-Null } catch { $refused = $_.Exception.Message -ceq 'Invalid staged update result.' }
+        Expect $refused $true
+        Expect (Read-PrivateText 'pending-result.json' 4KB $stage) $pending
+        Expect (Read-PrivateText 'update-result.json' 4KB) '{"prior":true}'
+        Expect (Marker) $old
+        Expect (ListCount) 0
+    }
+} elseif ($Scenario -in 'result-retry','result-before-marker','failed-result-retry') {
     Write-PrivateText 'update-result.json' '{"prior":true}'
     $held = [IO.File]::Open($resultPath, 'Open', 'Read', 'Read')
     if ($Scenario -eq 'failed-result-retry') { $archiveProblem = 'redirect' }
@@ -371,13 +387,16 @@ if ($Scenario -in 'lifecycle','sample') {
     $stage = @(Get-ChildItem -LiteralPath $Support -Directory -Filter 'stage-*')
     Expect $stage.Count 1
     Expect ([IO.File]::Exists((Join-Path $stage[0].FullName 'pending-result.json'))) $true
-    if ($Scenario -eq 'result-retry') {
+    $pending = Read-PrivateText 'pending-result.json' 4KB $stage[0].FullName
+    if ($Scenario -ne 'failed-result-retry') {
         Expect ([IO.File]::ReadAllText((Join-Path $stage[0].FullName 'previous/updater.ps1'))) 'updater v1.2.0'
     }
+    if ($Scenario -eq 'result-before-marker') { Write-PrivateText 'installed-release' ($old + [char]10) }
     $clock = $clock.AddMinutes(1)
     Expect (Invoke-RoomUpdate $factory) 'not_due'
     Expect (ListCount) 1
-    $expectedMarker = if ($Scenario -eq 'result-retry') { $offered } else { $old }
+    Expect (Read-PrivateText 'update-result.json' 4KB) $pending
+    $expectedMarker = if ($Scenario -eq 'failed-result-retry') { $old } else { $offered }
     Expect (Marker) $expectedMarker
     Expect @(Get-ChildItem -LiteralPath $Support -Filter 'stage-*').Count 0
 } else {

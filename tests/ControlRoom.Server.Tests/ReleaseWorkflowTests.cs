@@ -55,8 +55,9 @@ public sealed partial class ReleaseWorkflowTests
         Assert.Equal(4, Regex.Matches(yaml, "permissions:").Count);
         foreach (string job in new[] { "version", "windows", "release" })
         {
-            string[] lines = yaml.Split('\n').SkipWhile(line => line != "  " + job + ":").Skip(1)
-                .TakeWhile(line => line.Length == 0 || line.StartsWith("    ", StringComparison.Ordinal)).ToArray();
+            string[] lines = yaml.Split('\n').Where(line => !string.IsNullOrWhiteSpace(line) && !line.TrimStart().StartsWith('#'))
+                .SkipWhile(line => line != "  " + job + ":").Skip(1)
+                .TakeWhile(line => line.StartsWith("    ", StringComparison.Ordinal)).ToArray();
             Assert.Single(lines, line => line == "    permissions:");
             string[] grants = [.. lines.SkipWhile(line => line != "    permissions:").Skip(1)
                 .TakeWhile(line => line.StartsWith("      ", StringComparison.Ordinal)).Select(line => line.Trim())];
@@ -246,10 +247,9 @@ public sealed partial class ReleaseWorkflowTests
             "InformationalVersion", "Configuration", "Target",
         ];
 
-        string[] scripts = [.. RunBlocks(yaml).SelectMany(block => block.Split('\n'))
-            .Where(line => !line.TrimStart().StartsWith('#'))];
-        Assert.DoesNotContain(scripts, line => line.Contains("GITHUB_ENV", StringComparison.OrdinalIgnoreCase));
-        string[] envLines = [.. scripts.Where(line => line.Contains("GITHUB_OUTPUT", StringComparison.OrdinalIgnoreCase))];
+        string[] lines = [.. yaml.Split('\n').Where(line => !line.TrimStart().StartsWith('#'))];
+        Assert.DoesNotContain(lines, line => line.Contains("GITHUB_ENV", StringComparison.OrdinalIgnoreCase));
+        string[] envLines = [.. lines.Where(line => line.Contains("GITHUB_OUTPUT", StringComparison.OrdinalIgnoreCase))];
         string[] written = [.. envLines.Select(line => GithubOutputWrite().Match(line)).Where(match => match.Success)
             .Select(match => match.Groups["name"].Value)];
         Assert.Equal(envLines.Length, written.Length);

@@ -37,6 +37,28 @@ public sealed class WindowsTokenTests
     }
 
     [Fact]
+    public void TokenLookupSeparatesMissingFilesFromRefusedPaths()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TempTokenFolder tokens = new();
+        Assert.Equal(TokenFileState.Missing, AccessToken.Read(tokens.TokenFile).State);
+        DirectoryInfo folder = new FileInfo(tokens.TokenFile).Directory!;
+        WindowsPrivateFiles.CreateDirectory(folder);
+        Assert.Equal(TokenFileState.Missing, AccessToken.Read(tokens.TokenFile).State);
+        using (AccessToken.CreatePrivateFile(tokens.TokenFile))
+        {
+            Assert.Equal(TokenFileState.Invalid, AccessToken.Read(tokens.TokenFile).State);
+        }
+
+        Assert.Equal(TokenFileState.Invalid, AccessToken.Read(tokens.TokenFile + ":extra").State);
+        Assert.Equal(TokenFileState.Invalid, AccessToken.Read(Path.Combine(tokens.TokenFile, "child")).State);
+    }
+
+    [Fact]
     public void VerifiedDirectoryStaysPinnedThroughTokenReplacement()
     {
         if (!OperatingSystem.IsWindows())

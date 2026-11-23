@@ -22,6 +22,8 @@ public sealed class WindowsReleaseTests
     [InlineData("linked-stamp", null, null)]
     [InlineData("linked-jobs", null, null)]
     [InlineData("result-retry", "1.3.0", null)]
+    [InlineData("result-before-marker", "1.3.0", null)]
+    [InlineData("invalid-pending", null, null)]
     [InlineData("failed-result-retry", "1.3.0", "check")]
     [InlineData("rollback", "1.3.0", "rollback_failed")]
     [InlineData("start", "1.3.0", "bootstrap_failed")]
