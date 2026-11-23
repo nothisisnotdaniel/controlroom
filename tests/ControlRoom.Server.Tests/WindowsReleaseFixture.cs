@@ -10,6 +10,22 @@ internal static class WindowsReleaseFixture
 
     public static void Run(string fixture, string scripts, string scenario, FakeTime clock)
     {
+        if (OperatingSystem.IsWindows() && scenario == "linked-stamp")
+        {
+            string support = Path.Combine(fixture, "ControlRoom");
+            WindowsPrivateFiles.CreateDirectory(new DirectoryInfo(support));
+            string target = Path.Combine(fixture, "stamp-target");
+            File.WriteAllText(target, clock.GetUtcNow().ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture));
+            File.CreateSymbolicLink(Path.Combine(support, "last-check"), target);
+        }
+
+        if (scenario == "linked-jobs")
+        {
+            string root = Directory.CreateDirectory(Path.Combine(fixture, "scan root")).FullName;
+            string target = Directory.CreateDirectory(Path.Combine(fixture, "real job store")).FullName;
+            Directory.CreateSymbolicLink(Path.Combine(root, "factory"), target);
+        }
+
         string shell = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
         ProcessStartInfo start = new(shell)
         {

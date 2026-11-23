@@ -143,7 +143,9 @@ public sealed class WebAssetSplitTests
         {
             develop[i] = develop[i]
                 .Replace("let tag = \"controlroom\";", "let tag = PushDefaultTag;", StringComparison.Ordinal)
-                .Replace("\"ControlRoom \" + version", "PushUpdatePrefix + version", StringComparison.Ordinal);
+                .Replace("\"ControlRoom \" + version", "PushUpdatePrefix + version", StringComparison.Ordinal)
+                .Replace("The old version didn't come back. Check the Mac.",
+                    "The old version didn't restart. Check the computer running the server.", StringComparison.Ordinal);
         }
 
         develop.Insert(0, "importScripts(\"/room.js\");");

@@ -32,8 +32,54 @@ public sealed class WindowsTokenTests
         Assert.NotEqual(first, AccessToken.Read(tokens.TokenFile).Token);
         Assert.Equal(AccessToken.Generate(buffer => buffer.Fill(11)) + "\n", output.ToString());
         AssertPrivate(new FileInfo(tokens.TokenFile).GetAccessControl());
-        Assert.Contains(@".\controlroom.exe token", AccessToken.CreatedText, StringComparison.Ordinal);
-        Assert.Contains(@".\controlroom.exe token --new", AccessToken.InvalidText, StringComparison.Ordinal);
+        Assert.Contains(@".\controlroom.exe token", AccessToken.CreatedText(null), StringComparison.Ordinal);
+        Assert.Contains(@".\controlroom.exe token --new --TokenFile ", AccessToken.InvalidText(tokens.TokenFile), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void VerifiedDirectoryStaysPinnedThroughTokenReplacement()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TempTokenFolder tokens = new();
+        DirectoryInfo folder = new FileInfo(tokens.TokenFile).Directory!;
+        WindowsPrivateFiles.CreateDirectory(folder);
+        File.WriteAllText(tokens.TokenFile, AccessToken.Generate(buffer => buffer.Fill(10)));
+        string moved = Path.Combine(tokens.Path, "previous-folder");
+        string next = AccessToken.Generate(buffer => buffer.Fill(11));
+        using (FileStream parent = WindowsPrivateFiles.OpenDirectory(folder))
+        {
+            Assert.Throws<IOException>(() => Directory.Move(folder.FullName, moved));
+            WindowsPrivateFiles.Replace(parent, Path.GetFileName(tokens.TokenFile), System.Text.Encoding.ASCII.GetBytes(next));
+            Assert.Equal(next, AccessToken.Read(tokens.TokenFile).Token);
+        }
+
+        Directory.Move(folder.FullName, moved);
+        Directory.CreateDirectory(folder.FullName);
+        Assert.False(File.Exists(tokens.TokenFile));
+        Assert.Equal(next, File.ReadAllText(Path.Combine(moved, Path.GetFileName(tokens.TokenFile))));
+    }
+
+    [Fact]
+    public void TokenRotationLetsAnExistingReaderFinishWithItsOriginalBytes()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TempTokenFolder tokens = new();
+        string? old = AccessToken.Replace(tokens.TokenFile, buffer => buffer.Fill(1));
+        Assert.NotNull(old);
+        using FileStream opened = File.Open(tokens.TokenFile, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+        using StreamReader reader = new(opened);
+        string? next = AccessToken.Replace(tokens.TokenFile, buffer => buffer.Fill(2));
+        Assert.NotNull(next);
+        Assert.Equal(old + "\n", reader.ReadToEnd());
+        Assert.Equal(next, AccessToken.Read(tokens.TokenFile).Token);
     }
 
     [Fact]

@@ -54,6 +54,11 @@ For Tailscale, append `-TailnetHost desk.example.ts.net` with your own host. Ins
 
 ```powershell
 .\launch-agent.ps1 status
+```
+
+To uninstall, run the following command.
+
+```powershell
 .\launch-agent.ps1 uninstall
 ```
 

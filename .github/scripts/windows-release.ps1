@@ -7,9 +7,17 @@ if ($LASTEXITCODE -ne 0) { throw 'Windows publish failed.' }
 
 [void][IO.Directory]::CreateDirectory("$PWD/dist")
 $zip = "$PWD/dist/controlroom-$release-win-x64.zip"
-[IO.Compression.ZipFile]::CreateFromDirectory($publish, $zip)
+$package = Join-Path $env:RUNNER_TEMP 'windows-package'
+[void][IO.Directory]::CreateDirectory($package)
+foreach ($name in 'controlroom.exe','launch-agent.ps1','updater.ps1','wwwroot') {
+    Copy-Item -LiteralPath (Join-Path $publish $name) -Destination $package -Recurse
+}
+[IO.Compression.ZipFile]::CreateFromDirectory($package, $zip)
 $extracted = Join-Path $env:RUNNER_TEMP 'extracted release'
 [IO.Compression.ZipFile]::ExtractToDirectory($zip, $extracted)
+if (Get-ChildItem -LiteralPath $extracted -Recurse -File -Force -Filter '*.dll') {
+    throw 'The Windows ZIP contains a loose assembly or runtime library.'
+}
 foreach ($file in 'controlroom.exe','launch-agent.ps1','updater.ps1','wwwroot/index.html','wwwroot/app.css') {
     if (![IO.File]::Exists((Join-Path $extracted $file))) { throw "Missing release file $file" }
 }

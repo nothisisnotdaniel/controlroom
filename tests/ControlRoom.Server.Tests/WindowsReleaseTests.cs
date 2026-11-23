@@ -1,3 +1,6 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
+
 namespace ControlRoom.Server.Tests;
 
 public sealed class WindowsReleaseTests
@@ -10,10 +13,20 @@ public sealed class WindowsReleaseTests
     [InlineData("develop", "1.4.0-develop.12", null)]
     [InlineData("archive", "1.3.0", "check")]
     [InlineData("wrong-listener", "1.3.0", "no_answer")]
+    [InlineData("health-array", "1.3.0", "no_answer")]
+    [InlineData("health-list", "1.3.0", "no_answer")]
+    [InlineData("health-bytes", "1.3.0", "no_answer")]
+    [InlineData("release-bytes", null, null)]
+    [InlineData("release-pages", null, null)]
+    [InlineData("job-scan", null, null)]
+    [InlineData("linked-stamp", null, null)]
+    [InlineData("linked-jobs", null, null)]
+    [InlineData("result-retry", "1.3.0", null)]
+    [InlineData("failed-result-retry", "1.3.0", "check")]
     [InlineData("rollback", "1.3.0", "rollback_failed")]
     [InlineData("start", "1.3.0", "bootstrap_failed")]
     [InlineData("swap", "1.3.0", "swap")]
-    public void Scripts_ManageOnlyTheFixtureAndReportConfirmedOutcomes(string scenario, string? version, string? reason)
+    public async Task Scripts_ManageOnlyTheFixtureAndReportConfirmedOutcomes(string scenario, string? version, string? reason)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -23,6 +36,15 @@ public sealed class WindowsReleaseTests
         using TempTokenFolder fixture = new();
         FakeTime clock = new();
         WindowsReleaseFixture.Run(fixture.Path, Path.Combine(RepoCopy.RepoFolder(), "scripts"), scenario, clock);
+        if (scenario == "lifecycle")
+        {
+            string[] registered = File.ReadAllLines(Path.Combine(fixture.Path, "server-root.txt"));
+            await using WebApplication? server = ServerApp.Create(
+                ["--FactoryRootBase64", registered[0], "--TokenFile", Path.Combine(fixture.Path, "probe", "access-token")],
+                TextWriter.Null);
+            Assert.NotNull(server);
+            Assert.Equal(registered[1], server.Services.GetRequiredService<FactoryRoot>().Path);
+        }
         UpdateResult? result = new UpdateResultReader(Path.Combine(fixture.Path, "ControlRoom"), UnixOwner.CurrentUser()).Read();
         if (version is null)
         {

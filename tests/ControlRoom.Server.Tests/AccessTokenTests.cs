@@ -60,7 +60,7 @@ public sealed partial class AccessTokenTests
         await app.DisposeAsync();
         string token = File.ReadAllText(tokens.TokenFile).TrimEnd('\n');
         Assert.Matches(TokenPattern(), token);
-        Assert.Equal(AccessToken.CreatedText + Environment.NewLine, first.ToString());
+        Assert.Equal(AccessToken.CreatedText(tokens.TokenFile) + Environment.NewLine, first.ToString());
         Assert.DoesNotContain(token, first.ToString(), StringComparison.Ordinal);
         if (!OperatingSystem.IsWindows())
         {

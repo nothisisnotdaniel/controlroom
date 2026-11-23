@@ -94,8 +94,9 @@ public sealed class TokenCommandTests
         string target = Path.Combine(tokens.Path, "target");
         File.WriteAllText(target, new string('A', 43) + "\n");
         MakeBadFile(root, tokens.TokenFile, target, kind);
-        string expected = AccessToken.InvalidText + Environment.NewLine;
-        Assert.Contains("token --new", AccessToken.InvalidText, StringComparison.Ordinal);
+        string expected = AccessToken.InvalidText(tokens.TokenFile) + Environment.NewLine;
+        Assert.Contains("token --new --TokenFile ", expected, StringComparison.Ordinal);
+        Assert.Contains(tokens.TokenFile, expected, StringComparison.Ordinal);
 
         StringWriter serverError = new();
         WebApplication? app = ServerApp.Create(
@@ -161,7 +162,7 @@ public sealed class TokenCommandTests
 
         Assert.NotNull(app);
         string token = AccessToken.Read(tokens.TokenFile).Token!;
-        Assert.Equal(AccessToken.CreatedText + Environment.NewLine, error.ToString());
+        Assert.Equal(AccessToken.CreatedText(tokens.TokenFile) + Environment.NewLine, error.ToString());
         Assert.DoesNotContain(token, error.ToString(), StringComparison.Ordinal);
         Assert.Equal(before, root.Snapshot());
         Assert.False(tokens.TokenFile.StartsWith(root.Path, StringComparison.Ordinal));

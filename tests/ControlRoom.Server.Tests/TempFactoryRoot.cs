@@ -24,6 +24,7 @@ internal sealed class TempFactoryRoot : IDisposable
         + "* [ ] Star: ignored\n";
 
     private readonly List<string> lockedFiles = [];
+    private readonly List<FileStream> exclusiveHandles = [];
 
     public TempFactoryRoot()
     {
@@ -73,15 +74,20 @@ internal sealed class TempFactoryRoot : IDisposable
         Git(folder, "commit", "-q", "-m", "init");
     }
 
-    /// <summary>Creates a bare repo under the root's <c>.remotes</c> dot-folder (not a project), adds it as
-    /// <c>origin</c> and pushes the current branch to it; returns its path.</summary>
+    /// <summary>Seeds a local bare origin under the fixture's <c>.remotes</c> folder.</summary>
     public string AddBareRemote(string folder)
     {
         string remote = System.IO.Path.Combine(Path, ".remotes", new DirectoryInfo(folder).Name + ".git");
         Directory.CreateDirectory(remote);
         Git(remote, "init", "-q", "--bare");
+        // Seed the initial ref locally, so only the API operation under test needs a Git transport.
+        string bundle = remote + ".bundle";
+        string branch = Git(folder, "symbolic-ref", "HEAD");
+        Git(folder, "bundle", "create", bundle, branch);
+        Git(remote, "bundle", "unbundle", bundle);
+        Git(remote, "update-ref", branch, Git(folder, "rev-parse", "HEAD"));
+        File.Delete(bundle);
         Git(folder, "remote", "add", "origin", remote);
-        Git(folder, "push", "-q", "origin", "HEAD");
         return remote;
     }
 
@@ -163,15 +169,18 @@ internal sealed class TempFactoryRoot : IDisposable
         return root;
     }
 
-    /// <summary>Makes a file unreadable (Unix only); undone on dispose.</summary>
+    /// <summary>Makes a file unreadable until fixture teardown.</summary>
     public void Lock(string file)
     {
         if (OperatingSystem.IsWindows())
         {
-            return;
+            exclusiveHandles.Add(File.Open(file, FileMode.Open, FileAccess.Read, FileShare.None));
+        }
+        else
+        {
+            File.SetUnixFileMode(file, UnixFileMode.None);
         }
 
-        File.SetUnixFileMode(file, UnixFileMode.None);
         lockedFiles.Add(file);
     }
 
@@ -210,14 +219,9 @@ internal sealed class TempFactoryRoot : IDisposable
 
     public void Dispose()
     {
-        foreach (string file in lockedFiles)
+        foreach (FileStream handle in exclusiveHandles)
         {
-            if (OperatingSystem.IsWindows())
-            {
-                break;
-            }
-
-            File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            handle.Dispose();
         }
 
         if (OperatingSystem.IsWindows())
@@ -230,6 +234,13 @@ internal sealed class TempFactoryRoot : IDisposable
                 {
                     file.IsReadOnly = false;
                 }
+            }
+        }
+        else
+        {
+            foreach (string file in lockedFiles)
+            {
+                File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
             }
         }
 

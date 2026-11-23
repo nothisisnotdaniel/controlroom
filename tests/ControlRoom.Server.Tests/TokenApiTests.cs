@@ -39,12 +39,18 @@ public sealed class TokenApiTests
 
         using TempFactoryRoot root = new();
         using TempTokenFolder tokens = new();
-        using ServerFactory factory = new(root.Path, tokens.TokenFile);
+        SecurityIdentifier others = new(WellKnownSidType.BuiltinUsersSid, null);
+        DirectorySecurity shared = new DirectoryInfo(tokens.Path).GetAccessControl();
+        shared.AddAccessRule(new FileSystemAccessRule(others, FileSystemRights.Read,
+            InheritanceFlags.ContainerInherit, PropagationFlags.None, AccessControlType.Allow));
+        DirectoryInfo parent = new(Path.Combine(tokens.Path, "parent"));
+        parent.Create(shared);
+        string tokenFile = Path.Combine(parent.FullName, "private", AccessToken.FileName);
+        using ServerFactory factory = new(root.Path, tokenFile);
         using HttpClient client = factory.CreateTokenClient();
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/version")).StatusCode);
-        FileInfo file = new(tokens.TokenFile);
+        FileInfo file = new(tokenFile);
         DirectoryInfo folder = file.Directory!;
-        SecurityIdentifier others = new(WellKnownSidType.BuiltinUsersSid, null);
         switch (kind)
         {
             case "foreign-file-owner":
@@ -60,24 +66,31 @@ public sealed class TokenApiTests
             case "file":
                 FileSecurity fileAcl = file.GetAccessControl();
                 fileAcl.AddAccessRule(new FileSystemAccessRule(others, FileSystemRights.Read, AccessControlType.Allow));
-                file.SetAccessControl(fileAcl);
+                string savedToken = File.ReadAllText(tokenFile);
+                File.Delete(tokenFile);
+                using (FileStream replacement = file.Create(FileMode.CreateNew, FileSystemRights.Write,
+                           FileShare.None, 4096, FileOptions.None, fileAcl))
+                {
+                    replacement.Write(System.Text.Encoding.ASCII.GetBytes(savedToken));
+                }
+
                 break;
             case "folder":
-                DirectorySecurity folderAcl = folder.GetAccessControl();
-                folderAcl.AddAccessRule(new FileSystemAccessRule(others, FileSystemRights.Read, AccessControlType.Allow));
-                folder.SetAccessControl(folderAcl);
-                break;
             case "inherited":
-                DirectoryInfo parent = new(tokens.Path);
-                DirectorySecurity parentAcl = parent.GetAccessControl();
-                parentAcl.AddAccessRule(new FileSystemAccessRule(others, FileSystemRights.Read,
-                    InheritanceFlags.ContainerInherit, PropagationFlags.InheritOnly, AccessControlType.Allow));
-                parent.SetAccessControl(parentAcl);
-                DirectorySecurity inherited = folder.GetAccessControl();
-                inherited.SetAccessRuleProtection(isProtected: false, preserveInheritance: true);
-                folder.SetAccessControl(inherited);
-                Assert.Contains(folder.GetAccessControl().GetAccessRules(false, true, typeof(SecurityIdentifier))
-                    .Cast<FileSystemAccessRule>(), rule => rule.IdentityReference == others && rule.IsInherited);
+                string previous = Path.Combine(parent.FullName, "previous");
+                Directory.Move(folder.FullName, previous);
+                if (kind == "folder")
+                {
+                    folder.Create(shared);
+                }
+                else
+                {
+                    folder.Create();
+                    Assert.Contains(folder.GetAccessControl().GetAccessRules(false, true, typeof(SecurityIdentifier))
+                        .Cast<FileSystemAccessRule>(), rule => rule.IdentityReference == others && rule.IsInherited);
+                }
+
+                File.Move(Path.Combine(previous, file.Name), tokenFile);
                 break;
             case "linked-folder":
                 string moved = Path.Combine(tokens.Path, "real");
@@ -91,8 +104,20 @@ public sealed class TokenApiTests
                 break;
         }
 
-        Assert.Equal(TokenFileState.Invalid, AccessToken.Read(tokens.TokenFile).State);
-        Assert.Null(ServerApp.Create(["--FactoryRoot", root.Path, "--TokenFile", tokens.TokenFile], TextWriter.Null));
+        Assert.Equal(TokenFileState.Invalid, AccessToken.Read(tokenFile).State);
+        StringWriter error = new();
+        Assert.Null(ServerApp.Create(["--FactoryRoot", root.Path, "--TokenFile", tokenFile], error));
+        if (kind.Contains("folder", StringComparison.Ordinal) || kind == "inherited")
+        {
+            Assert.Contains("real directory", error.ToString(), StringComparison.Ordinal);
+            Assert.Contains("disable inheritance", error.ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain("token --new", error.ToString(), StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Contains("token --new --TokenFile ", error.ToString(), StringComparison.Ordinal);
+            Assert.Contains(tokenFile, error.ToString(), StringComparison.Ordinal);
+        }
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/version")).StatusCode);
     }
 

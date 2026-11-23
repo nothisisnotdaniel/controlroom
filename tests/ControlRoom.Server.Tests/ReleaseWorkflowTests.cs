@@ -47,19 +47,21 @@ public sealed partial class ReleaseWorkflowTests
     }
 
     [Fact]
-    public void Permissions_GrantNothingAtTheTopAndExactlyThreeOnTheJob()
+    public void Permissions_GrantOnlyTheReleaseJobWriteAccess()
     {
         string yaml = Workflow();
 
         Assert.Equal("permissions: {}\n", TopLevelBlock(yaml, "permissions: {}"));
         Assert.Equal(4, Regex.Matches(yaml, "permissions:").Count);
-        Assert.Equal(2, Regex.Matches(yaml, "contents: read").Count);
-        int job = yaml.LastIndexOf("\n    permissions:\n", StringComparison.Ordinal);
-        Assert.True(job >= 0);
-        string block = yaml[(job + "\n    permissions:\n".Length)..];
-        string[] grants = block.Split('\n').TakeWhile(line => line.StartsWith("      ", StringComparison.Ordinal))
-            .Select(line => line.Trim()).ToArray();
-        Assert.Equal(["contents: write", "id-token: write", "attestations: write"], grants);
+        foreach (string job in new[] { "version", "windows", "release" })
+        {
+            string[] lines = yaml.Split('\n').SkipWhile(line => line != "  " + job + ":").Skip(1)
+                .TakeWhile(line => line.Length == 0 || line.StartsWith("    ", StringComparison.Ordinal)).ToArray();
+            Assert.Single(lines, line => line == "    permissions:");
+            string[] grants = [.. lines.SkipWhile(line => line != "    permissions:").Skip(1)
+                .TakeWhile(line => line.StartsWith("      ", StringComparison.Ordinal)).Select(line => line.Trim())];
+            Assert.Equal(job == "release" ? ["contents: write", "id-token: write", "attestations: write"] : new[] { "contents: read" }, grants);
+        }
     }
 
     [Fact]
@@ -211,7 +213,8 @@ public sealed partial class ReleaseWorkflowTests
         }
 
         string smoke = File.ReadAllText(Path.Combine(RepoFolder(), ".github", "scripts", "windows-release.ps1"));
-        AssertInOrder(smoke, ["-r win-x64 --self-contained", "CreateFromDirectory", "ExtractToDirectory",
+        AssertInOrder(smoke, ["-r win-x64 --self-contained", "'controlroom.exe','launch-agent.ps1','updater.ps1','wwwroot'",
+            "Copy-Item -LiteralPath", "CreateFromDirectory($package, $zip)", "ExtractToDirectory",
             "& $exe version", "'Factory Root'", "'--FactoryRoot',$root", "GetStringAsync('health')",
             "$health.version -cne $release", "@('/', 'index.html'), @('/app.css', 'app.css')",
             "StatusCode -ne 200", ".Equals($bytes, $expected)", "$server.Kill()"]);
@@ -243,7 +246,10 @@ public sealed partial class ReleaseWorkflowTests
             "InformationalVersion", "Configuration", "Target",
         ];
 
-        string[] envLines = [.. yaml.Split('\n').Where(line => line.Contains(">> \"$GITHUB_OUTPUT\"", StringComparison.Ordinal))];
+        string[] scripts = [.. RunBlocks(yaml).SelectMany(block => block.Split('\n'))
+            .Where(line => !line.TrimStart().StartsWith('#'))];
+        Assert.DoesNotContain(scripts, line => line.Contains("GITHUB_ENV", StringComparison.OrdinalIgnoreCase));
+        string[] envLines = [.. scripts.Where(line => line.Contains("GITHUB_OUTPUT", StringComparison.OrdinalIgnoreCase))];
         string[] written = [.. envLines.Select(line => GithubOutputWrite().Match(line)).Where(match => match.Success)
             .Select(match => match.Groups["name"].Value)];
         Assert.Equal(envLines.Length, written.Length);

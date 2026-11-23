@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ControlRoom.Server.Tests;
@@ -22,11 +24,7 @@ public sealed class UpdateApiTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
         Assert.True(response.Headers.CacheControl?.NoStore);
-        Assert.Equal(
-            "{\"current\":\"1.0.0\",\"available\":true,\"latest\":\"1.2.0\","
-            + "\"url\":\"https://github.com/nothisisnotdaniel/controlroom/releases/tag/v1.2.0\","
-            + "\"command\":" + ExpectedCommandJson(root.Path, "v1.2.0") + ",\"autoUpdate\":false,\"channel\":\"stable\",\"updateInterval\":30}",
-            await response.Content.ReadAsStringAsync());
+        AssertAvailable(await response.Content.ReadAsStringAsync(), root.Path, "1.0.0", "1.2.0");
     }
 
     [Fact]
@@ -40,11 +38,42 @@ public sealed class UpdateApiTests
 
         string json = await client.GetStringAsync(UpdateEndpoint.Route);
 
-        Assert.Equal(
-            "{\"current\":\"1.0.0-rc.1\",\"available\":true,\"latest\":\"1.0.0\","
-            + "\"url\":\"https://github.com/nothisisnotdaniel/controlroom/releases/tag/v1.0.0\","
-            + "\"command\":" + ExpectedCommandJson(root.Path, "v1.0.0", "mac.tail1234.ts.net") + ",\"autoUpdate\":false,\"channel\":\"stable\",\"updateInterval\":30}",
-            json);
+        AssertAvailable(json, root.Path, "1.0.0-rc.1", "1.0.0", tailnet: "mac.tail1234.ts.net");
+    }
+
+    [Fact]
+    public async Task WindowsCopiedCommand_PassesTheOriginalRootTagAndHostToTheInstaller()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TempFactoryRoot fixture = new();
+        string root = Directory.CreateDirectory(Path.Combine(fixture.Path, "O'Brien’s ‘factory‛ ‚local‚ & %TEMP%")).FullName;
+        const string Host = "desk.example.ts.net";
+        using ServerFactory factory = new(root, null, Host) { CurrentVersion = "1.0.0" };
+        factory.Update.RespondWithTag("v1.2.0");
+        using HttpClient client = factory.CreateTokenClient();
+        await factory.Services.GetRequiredService<UpdateChecker>().Check();
+        using JsonDocument reply = JsonDocument.Parse(await client.GetStringAsync(UpdateEndpoint.Route));
+        string command = reply.RootElement.GetProperty("command").GetString()!;
+
+        File.WriteAllText(Path.Combine(fixture.Path, "launch-agent.ps1"),
+            "param($Action,$Release,$FactoryRoot,$TailnetHost)\n"
+            + "[IO.File]::WriteAllLines((Join-Path $PSScriptRoot 'received.txt'), [string[]]($Action,$Release,$FactoryRoot,$TailnetHost))");
+        string run = Path.Combine(fixture.Path, "copy.ps1");
+        File.WriteAllText(run, command, new UTF8Encoding(true));
+        ProcessStartInfo start = new(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"))
+        {
+            WorkingDirectory = fixture.Path, UseShellExecute = false, CreateNoWindow = true,
+            ArgumentList = { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "RemoteSigned", "-File", run },
+        };
+        using Process process = Process.Start(start)!;
+        using CancellationTokenSource deadline = new(TimeSpan.FromMinutes(1));
+        await process.WaitForExitAsync(deadline.Token);
+        Assert.Equal(0, process.ExitCode);
+        Assert.Equal(["install", "v1.2.0", root, Host], File.ReadAllLines(Path.Combine(fixture.Path, "received.txt")));
     }
 
     [Theory]
@@ -78,11 +107,7 @@ public sealed class UpdateApiTests
 
         string json = await client.GetStringAsync(UpdateEndpoint.Route);
 
-        Assert.Equal(
-            "{\"current\":\"1.2.3\",\"available\":true,\"latest\":\"1.2.4-develop.1\","
-            + "\"url\":\"https://github.com/nothisisnotdaniel/controlroom/releases/tag/v1.2.4-develop.1\","
-            + "\"command\":" + ExpectedCommandJson(root.Path, "v1.2.4-develop.1") + ",\"autoUpdate\":true,\"channel\":\"develop\",\"updateInterval\":30}",
-            json);
+        AssertAvailable(json, root.Path, "1.2.3", "1.2.4-develop.1", autoUpdate: true, channel: "develop");
         Assert.All(factory.Update.Requests, request => Assert.Equal(UpdateChecker.ListUrl, request.Uri.AbsoluteUri));
     }
 
@@ -204,13 +229,19 @@ public sealed class UpdateApiTests
         return client.PostAsync(UpdateEndpoint.SettingsRoute, new StringContent(body, Encoding.UTF8, "application/json"));
     }
 
-    private static string ExpectedCommandJson(string root, string tag, string? tailnet = null)
+    private static void AssertAvailable(string json, string root, string current, string latest,
+        string? tailnet = null, bool autoUpdate = false, string channel = "stable")
     {
+        string tag = "v" + latest;
         string command = OperatingSystem.IsWindows()
-            ? @".\launch-agent.ps1 install -Release " + tag + " -FactoryRoot '" + root.Replace("'", "''", StringComparison.Ordinal) + "'"
+            ? @".\launch-agent.ps1 install -Release " + tag + " -FactoryRoot " + RoomContext.PowerShellLiteral(root)
                 + (tailnet is null ? "" : " -TailnetHost " + tailnet)
             : "scripts/launch-agent.sh install --release " + tag + (tailnet is null ? "" : " --tailnet-host " + tailnet);
-        return System.Text.Json.JsonSerializer.Serialize(command);
+        string url = "https://github.com/nothisisnotdaniel/controlroom/releases/tag/" + tag;
+        using JsonDocument parsed = JsonDocument.Parse(json);
+        Assert.Equal(command, parsed.RootElement.GetProperty("command").GetString());
+        Assert.Equal(JsonSerializer.Serialize(new { current, available = true, latest, url, command, autoUpdate,
+            channel, updateInterval = 30 }, new Microsoft.AspNetCore.Http.Json.JsonOptions().SerializerOptions), json);
     }
 
     private static void WriteSettings(ServerFactory factory, string content)
