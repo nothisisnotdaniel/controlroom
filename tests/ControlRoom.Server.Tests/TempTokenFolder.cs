@@ -8,7 +8,14 @@ internal sealed class TempTokenFolder : IDisposable
     {
         Path = System.IO.Path.Combine(
             System.IO.Path.GetTempPath(), "controlroom-token-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(Path);
+        if (OperatingSystem.IsWindows())
+        {
+            WindowsPrivateFiles.CreateDirectory(new DirectoryInfo(Path));
+        }
+        else
+        {
+            Directory.CreateDirectory(Path);
+        }
     }
 
     public string Path { get; }

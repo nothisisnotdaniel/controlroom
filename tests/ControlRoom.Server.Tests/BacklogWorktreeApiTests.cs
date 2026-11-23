@@ -337,7 +337,7 @@ public sealed class BacklogWorktreeApiTests
             Folder = folder;
             Remote = remote;
             Tokens = new TempTokenFolder();
-            Factory = new ServerFactory(root.Path, Tokens.TokenFile);
+            Factory = new ServerFactory(root.Path, Path.Combine(Tokens.Path, "Server data", AccessToken.FileName));
             // Starting the server creates the token folder.
             using HttpClient start = Factory.CreateClient();
         }
@@ -352,7 +352,7 @@ public sealed class BacklogWorktreeApiTests
 
         public ServerFactory Factory { get; }
 
-        public string WorktreesFolder => Path.Combine(Path.GetDirectoryName(Tokens.TokenFile)!, "worktrees");
+        public string WorktreesFolder => Path.Combine(Path.GetDirectoryName(Factory.TokenFile)!, BacklogWorktree.FolderName);
 
         public string WorktreePath => Path.Combine(WorktreesFolder, "Alpha");
 

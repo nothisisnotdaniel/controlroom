@@ -127,9 +127,9 @@ public sealed class WebAssetSplitTests
         Assert.True(start >= 0 && end > start);
         // The shell list block moved, with "/room.js" added and the version raised.
         List<string> block = develop.GetRange(start, end - start + 1);
-        block[0] = "const CacheVersion = \"v22\";";
+        block[0] = "const CacheVersion = \"v23\";";
         block.Insert(block.IndexOf("  \"/token.js\",") + 1, "  \"/room.js\",");
-        int roomStart = room.IndexOf("const CacheVersion = \"v22\";");
+        int roomStart = room.IndexOf("const CacheVersion = \"v23\";");
         Assert.Equal(block, room.GetRange(roomStart, block.Count));
         develop.RemoveRange(start, end - start + 1);
 
@@ -160,6 +160,7 @@ public sealed class WebAssetSplitTests
         Assert.Equal(index.FindIndex(line => line.Contains("<script", StringComparison.Ordinal)), index.IndexOf(Room));
         Assert.Equal(index.IndexOf(Room) + 1, index.IndexOf("  <script src=\"/token.js\" defer></script>"));
         index.Remove(Room);
+        Assert.True(index.Remove("""      <p class="token-help">On Windows, open PowerShell in the server folder and run <code>.\controlroom.exe token</code>.</p>"""));
         Assert.Equal(develop, index);
     }
 

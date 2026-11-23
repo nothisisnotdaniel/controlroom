@@ -94,6 +94,7 @@
     <form class="token-form" id="token-form" novalidate>
       <h1 class="token-title">Control Room</h1>
       <p class="token-help">Enter the access token once on this device. Show it on the Mac with: <code>dotnet run --project src/ControlRoom.Server -- token</code></p>
+      <p class="token-help">On Windows, open PowerShell in the server folder and run <code>.\controlroom.exe token</code>.</p>
       <p class="error" id="token-refused" role="alert" hidden></p>
       <label class="token-label" for="token-input">Access token</label>
       <input class="token-input" id="token-input" name="token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">

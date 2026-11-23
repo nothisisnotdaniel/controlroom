@@ -41,6 +41,11 @@ internal sealed class ServerFactory : WebApplicationFactory<Program>
         if (tokenFile is null)
         {
             ownTokenFolder = Path.Combine(Path.GetTempPath(), "controlroom-token-" + Guid.NewGuid().ToString("N"));
+            if (OperatingSystem.IsWindows())
+            {
+                WindowsPrivateFiles.CreateDirectory(new DirectoryInfo(ownTokenFolder));
+            }
+
             tokenFile = Path.Combine(ownTokenFolder, "token", AccessToken.FileName);
         }
 

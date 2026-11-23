@@ -67,6 +67,7 @@ internal sealed class TempFactoryRoot : IDisposable
         Git(folder, "config", "user.name", "Test User");
         Git(folder, "config", "user.email", "test@example.invalid");
         Git(folder, "config", "commit.gpgsign", "false");
+        Git(folder, "config", "core.autocrlf", "false");
         Git(folder, "config", "core.hooksPath", ".git/hooks");
         Git(folder, "add", "-A");
         Git(folder, "commit", "-q", "-m", "init");
@@ -217,6 +218,19 @@ internal sealed class TempFactoryRoot : IDisposable
             }
 
             File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            // Git marks object files read-only. Leave links alone while preparing the fixture for deletion.
+            EnumerationOptions files = new() { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint };
+            foreach (FileInfo file in new DirectoryInfo(Path).EnumerateFiles("*", files))
+            {
+                if (file.IsReadOnly)
+                {
+                    file.IsReadOnly = false;
+                }
+            }
         }
 
         Directory.Delete(Path, recursive: true);

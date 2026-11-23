@@ -25,7 +25,7 @@ public sealed class UpdateApiTests
         Assert.Equal(
             "{\"current\":\"1.0.0\",\"available\":true,\"latest\":\"1.2.0\","
             + "\"url\":\"https://github.com/nothisisnotdaniel/controlroom/releases/tag/v1.2.0\","
-            + "\"command\":\"scripts/launch-agent.sh install --release v1.2.0\",\"autoUpdate\":false,\"channel\":\"stable\",\"updateInterval\":30}",
+            + "\"command\":" + ExpectedCommandJson(root.Path, "v1.2.0") + ",\"autoUpdate\":false,\"channel\":\"stable\",\"updateInterval\":30}",
             await response.Content.ReadAsStringAsync());
     }
 
@@ -43,7 +43,7 @@ public sealed class UpdateApiTests
         Assert.Equal(
             "{\"current\":\"1.0.0-rc.1\",\"available\":true,\"latest\":\"1.0.0\","
             + "\"url\":\"https://github.com/nothisisnotdaniel/controlroom/releases/tag/v1.0.0\","
-            + "\"command\":\"scripts/launch-agent.sh install --release v1.0.0 --tailnet-host mac.tail1234.ts.net\",\"autoUpdate\":false,\"channel\":\"stable\",\"updateInterval\":30}",
+            + "\"command\":" + ExpectedCommandJson(root.Path, "v1.0.0", "mac.tail1234.ts.net") + ",\"autoUpdate\":false,\"channel\":\"stable\",\"updateInterval\":30}",
             json);
     }
 
@@ -81,7 +81,7 @@ public sealed class UpdateApiTests
         Assert.Equal(
             "{\"current\":\"1.2.3\",\"available\":true,\"latest\":\"1.2.4-develop.1\","
             + "\"url\":\"https://github.com/nothisisnotdaniel/controlroom/releases/tag/v1.2.4-develop.1\","
-            + "\"command\":\"scripts/launch-agent.sh install --release v1.2.4-develop.1\",\"autoUpdate\":true,\"channel\":\"develop\",\"updateInterval\":30}",
+            + "\"command\":" + ExpectedCommandJson(root.Path, "v1.2.4-develop.1") + ",\"autoUpdate\":true,\"channel\":\"develop\",\"updateInterval\":30}",
             json);
         Assert.All(factory.Update.Requests, request => Assert.Equal(UpdateChecker.ListUrl, request.Uri.AbsoluteUri));
     }
@@ -202,6 +202,15 @@ public sealed class UpdateApiTests
     private static Task<HttpResponseMessage> Post(HttpClient client, string body)
     {
         return client.PostAsync(UpdateEndpoint.SettingsRoute, new StringContent(body, Encoding.UTF8, "application/json"));
+    }
+
+    private static string ExpectedCommandJson(string root, string tag, string? tailnet = null)
+    {
+        string command = OperatingSystem.IsWindows()
+            ? @".\launch-agent.ps1 install -Release " + tag + " -FactoryRoot '" + root.Replace("'", "''", StringComparison.Ordinal) + "'"
+                + (tailnet is null ? "" : " -TailnetHost " + tailnet)
+            : "scripts/launch-agent.sh install --release " + tag + (tailnet is null ? "" : " --tailnet-host " + tailnet);
+        return System.Text.Json.JsonSerializer.Serialize(command);
     }
 
     private static void WriteSettings(ServerFactory factory, string content)

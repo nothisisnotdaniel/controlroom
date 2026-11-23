@@ -1,10 +1,101 @@
 using System.Net;
+using System.Runtime.Versioning;
+using System.Security.AccessControl;
+using System.Security.Principal;
 
 namespace ControlRoom.Server.Tests;
 
 /// <summary>Every <c>/api/</c> path needs <c>Authorization: Bearer &lt;token&gt;</c>; the app shell stays public.</summary>
 public sealed class TokenApiTests
 {
+    [Theory]
+    [InlineData("file")]
+    [InlineData("folder")]
+    [InlineData("inherited")]
+    [InlineData("foreign-file-owner")]
+    [InlineData("foreign-folder-owner")]
+    [InlineData("linked-folder")]
+    [InlineData("linked-token")]
+    public async Task UnsafeAclOrLink_BlocksStartupAndAnAlreadyAuthorizedClient(string kind)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        await CheckUnsafeWindowsToken(kind);
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static async Task CheckUnsafeWindowsToken(string kind)
+    {
+        using WindowsIdentity identity = WindowsIdentity.GetCurrent();
+        if (kind.StartsWith("foreign-", StringComparison.Ordinal)
+            && !new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator))
+        {
+            // Assigning an alternate owner requires an owner-enabled group. The descriptor test also runs unelevated.
+            return;
+        }
+
+        using TempFactoryRoot root = new();
+        using TempTokenFolder tokens = new();
+        using ServerFactory factory = new(root.Path, tokens.TokenFile);
+        using HttpClient client = factory.CreateTokenClient();
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/version")).StatusCode);
+        FileInfo file = new(tokens.TokenFile);
+        DirectoryInfo folder = file.Directory!;
+        SecurityIdentifier others = new(WellKnownSidType.BuiltinUsersSid, null);
+        switch (kind)
+        {
+            case "foreign-file-owner":
+                FileSecurity foreignFile = file.GetAccessControl();
+                foreignFile.SetOwner(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null));
+                file.SetAccessControl(foreignFile);
+                break;
+            case "foreign-folder-owner":
+                DirectorySecurity foreignFolder = folder.GetAccessControl();
+                foreignFolder.SetOwner(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null));
+                folder.SetAccessControl(foreignFolder);
+                break;
+            case "file":
+                FileSecurity fileAcl = file.GetAccessControl();
+                fileAcl.AddAccessRule(new FileSystemAccessRule(others, FileSystemRights.Read, AccessControlType.Allow));
+                file.SetAccessControl(fileAcl);
+                break;
+            case "folder":
+                DirectorySecurity folderAcl = folder.GetAccessControl();
+                folderAcl.AddAccessRule(new FileSystemAccessRule(others, FileSystemRights.Read, AccessControlType.Allow));
+                folder.SetAccessControl(folderAcl);
+                break;
+            case "inherited":
+                DirectoryInfo parent = new(tokens.Path);
+                DirectorySecurity parentAcl = parent.GetAccessControl();
+                parentAcl.AddAccessRule(new FileSystemAccessRule(others, FileSystemRights.Read,
+                    InheritanceFlags.ContainerInherit, PropagationFlags.InheritOnly, AccessControlType.Allow));
+                parent.SetAccessControl(parentAcl);
+                DirectorySecurity inherited = folder.GetAccessControl();
+                inherited.SetAccessRuleProtection(isProtected: false, preserveInheritance: true);
+                folder.SetAccessControl(inherited);
+                Assert.Contains(folder.GetAccessControl().GetAccessRules(false, true, typeof(SecurityIdentifier))
+                    .Cast<FileSystemAccessRule>(), rule => rule.IdentityReference == others && rule.IsInherited);
+                break;
+            case "linked-folder":
+                string moved = Path.Combine(tokens.Path, "real");
+                Directory.Move(folder.FullName, moved);
+                Directory.CreateSymbolicLink(folder.FullName, moved);
+                break;
+            case "linked-token":
+                string target = Path.Combine(folder.FullName, "real-token");
+                File.Move(file.FullName, target);
+                File.CreateSymbolicLink(file.FullName, target);
+                break;
+        }
+
+        Assert.Equal(TokenFileState.Invalid, AccessToken.Read(tokens.TokenFile).State);
+        Assert.Null(ServerApp.Create(["--FactoryRoot", root.Path, "--TokenFile", tokens.TokenFile], TextWriter.Null));
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/version")).StatusCode);
+    }
+
     private static readonly string[] ApiPaths =
     [
         "/api/backlogs", "/api/story?project=Story&number=1", "/api/board", "/api/job?id=1-a", "/api/x", "/API/board",
