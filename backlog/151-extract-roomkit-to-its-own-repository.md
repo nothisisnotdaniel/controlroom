@@ -15,3 +15,4 @@ Today RoomKit is packed from ControlRoom releases, which is cheapest while Contr
 ## Notes
 
 Discussed on 2026-11-22 after #146 merged. Leave unapproved until a trigger holds.
+Decided on 2026-11-23: do it now, because a collaborator builds PlayRoom and it must not wait for ControlRoom releases. Feed: GitHub Packages (both ControlRoom and PlayRoom restore RoomKit in CI). The RoomKit GitHub repository is created by the owner before the job starts.
