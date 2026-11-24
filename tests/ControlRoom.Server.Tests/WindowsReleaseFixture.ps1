@@ -82,6 +82,7 @@ function Write-PrivateText($Name, $Value, $Folder = $Support) {
         throw 'Fixture could not commit the new marker.'
     }
     & $writePrivate $Name $Value $Folder
+    if ($Name -ceq 'installed-release' -and $machine.AfterMarker) { & $machine.AfterMarker }
 }
 
 function Expect($Actual, $Wanted) {
@@ -164,9 +165,7 @@ function Start-ScheduledTask($TaskPath, $TaskName) {
     if ($Scenario -eq 'live-server-install') {
         Expect $TaskName $ServerTask
         $machine.ServerAction = Start-FixtureAction $TaskName -HoldServer
-        $ready = $machine.ServerAction.StandardOutput.ReadLineAsync()
-        if (!$ready.Wait($actionTimeoutMs)) { throw 'Registered server did not reach Start-Process.' }
-        Expect $ready.Result 'server ready'
+        Wait-FixtureSignal $machine.ServerAction 'server ready'
     }
     $machine.Running = $true
     $tasks[$TaskName].State = 'Running'
@@ -380,11 +379,12 @@ function Read-FixtureCommand($Start) {
     return [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($Matches[1]))
 }
 
-function Start-FixtureAction($TaskName, [switch]$HoldServer) {
+function Start-FixtureAction($TaskName, [switch]$HoldServer, [switch]$PauseBeforeLock) {
     $start = Expand-FixtureAction $TaskName
+    $prefix = ''
     if ($TaskName -ceq $ServerTask) {
         # Capture the native process launch inside the registered shell. The ZIP smoke test runs the real EXE.
-        $processStub = @'
+        $prefix = @'
 function Start-Process($FilePath, [string[]]$ArgumentList, $WorkingDirectory, $WindowStyle, [switch]$Wait, [switch]$PassThru) {
     if (!$Wait -or !$PassThru -or $WindowStyle -ne 'Hidden') { throw 'Invalid server process options.' }
     [IO.File]::WriteAllLines((Join-Path $PWD 'received-args.txt'), [string[]](@($FilePath,$WorkingDirectory) + $ArgumentList))
@@ -396,17 +396,32 @@ function Start-Process($FilePath, [string[]]$ArgumentList, $WorkingDirectory, $W
     return [pscustomobject]@{ ExitCode = 0 }
 };
 '@
-        $command = $processStub + [Environment]::NewLine + (Read-FixtureCommand $start)
-        if ($HoldServer) {
-            $command = '$holdServer = $true' + [Environment]::NewLine + $command
-            $start.RedirectStandardInput = $true
-        }
+        if ($HoldServer) { $prefix = '$holdServer = $true' + [Environment]::NewLine + $prefix }
+    } elseif ($PauseBeforeLock) {
+        # Pause the registered action at the call. On release it takes the real lock path.
+        $prefix = @'
+$null = Set-PSBreakpoint -Command Get-UpdateLock -Action {
+    [Console]::WriteLine('updater at lock')
+    [Console]::Out.Flush()
+    [void][Console]::ReadLine()
+}
+'@
+    }
+    if ($prefix) {
+        $command = $prefix + [Environment]::NewLine + (Read-FixtureCommand $start)
         $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
         $start.Arguments = $start.Arguments -replace '(?<= -EncodedCommand ).+\z', $encoded
     }
+    $start.RedirectStandardInput = $HoldServer -or $PauseBeforeLock
     $start.RedirectStandardError = $true
     $start.RedirectStandardOutput = $true
     return [Diagnostics.Process]::Start($start)
+}
+
+function Wait-FixtureSignal($Process, $Signal) {
+    $line = $Process.StandardOutput.ReadLineAsync()
+    if (!$line.Wait($actionTimeoutMs)) { throw "Timed out waiting for '$Signal' from the registered action." }
+    Expect $line.Result $Signal
 }
 
 function Wait-FixtureAction($process) {
@@ -436,7 +451,7 @@ function Expect-SharingViolation([scriptblock]$Open) {
         Expect $code 32
         return
     }
-    throw 'The running server released a checked entry.'
+    throw 'The registered action did not pin the checked entry.'
 }
 
 function Invoke-FixtureUpdaterTask {
@@ -564,20 +579,55 @@ if ($Scenario -in 'lifecycle','sample') {
     Expect ([IO.File]::ReadAllText((Join-Path $Support 'access-token'))) 'fixture sentinel'
     Expect (Get-UpdateSettings).Enabled $true
 } elseif ($Scenario -eq 'concurrent-install') {
-    # An outstanding DELETE access on server makes any premature, non-delete-sharing pin fail.
+    # Consume the first-check marker as an earlier scheduled invocation would.
+    $offered = $old
+    $clock = $clock.AddMinutes(-1)
+    Expect (Invoke-FixtureUpdaterTask) 'current'
+    $priorStamp = Read-PrivateText 'last-check' 32
+    Expect $priorStamp ($clock.ToUnixTimeSeconds().ToString() + [char]10)
+    Expect ([IO.File]::Exists((Join-Path $Support 'first-check'))) $false
+    $clock = $clock.AddMinutes(1)
+    $offered = 'v1.3.0'
     Write-PrivateText 'update-result.json' '{"prior":true}'
     $machine.BeforeBackup = {
         param($Server)
+        # Outstanding DELETE access detects a premature pin on the old server directory.
         $rename = [Fixture.Rename]::OpenDirectory($Server)
-        try { $machine.ScheduledResult = Run-FixtureAction $UpdaterTask }
-        finally { $rename.Dispose() }
+        try {
+            $machine.UpdaterAction = Start-FixtureAction $UpdaterTask -PauseBeforeLock
+            Wait-FixtureSignal $machine.UpdaterAction 'updater at lock'
+            Expect-SharingViolation { [Fixture.Rename]::OpenDirectory($Support) }
+        } finally { $rename.Dispose() }
     }
-    Expect (Install-Room $factory $old '') 'Installed v1.2.0. Server running.'
+    $machine.AfterMarker = {
+        # The installer still owns the lock after the swap, first-check creation and release marker write.
+        Expect (Read-PrivateText 'first-check' 2) '1'
+        Expect (Read-PrivateText 'installed-release' 200) ($old + [char]10)
+        Expect-SharingViolation { [Fixture.Rename]::OpenDirectory($Support) }
+        $process = $machine.UpdaterAction
+        $process.StandardInput.Close()
+        $machine.UpdaterAction = $null
+        $machine.ScheduledResult = Wait-FixtureAction $process
+    }
+    try {
+        Expect (Install-Room $factory $old '') 'Installed v1.2.0. Server running.'
+    } finally {
+        $machine.AfterMarker = $null
+        # If reinstall failed before the marker write, discard the paused action inside its fixture.
+        $process = $machine.UpdaterAction
+        if ($process) {
+            try { if (!$process.HasExited) { $process.Kill(); $process.WaitForExit() } }
+            finally { $process.Dispose() }
+        }
+    }
     Expect $machine.ScheduledResult 'busy'
     Expect (Marker) $old
+    Expect $tasks.Count 2
     Expect (Get-RoomStatus) 'Installed=True Running=True'
+    Expect (Wait-ServerHealth '1.2.0') $true
     Expect (Read-PrivateText 'update-result.json' 4KB) '{"prior":true}'
-    Expect ([IO.File]::Exists((Join-Path $Support 'last-check'))) $false
+    Expect (Read-PrivateText 'last-check' 32) $priorStamp
+    Expect (ListCount) 1
 
     $machine.BeforeBackup = {
         Expect-Refusal { Install-Room $factory $old '' } 'An installation or update is already running.'
@@ -585,7 +635,7 @@ if ($Scenario -in 'lifecycle','sample') {
     }
     Expect (Invoke-FixtureUpdaterTask) 'updated'
     Expect $machine.InstallRefused $true
-    Expect (ListCount) 1
+    Expect (ListCount) 2
     Expect (Current-Code) '1.3.0'
     Expect (Marker) $offered
     Expect (Get-RoomStatus) 'Installed=True Running=True'
