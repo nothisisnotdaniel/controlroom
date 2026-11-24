@@ -1,0 +1,74 @@
+name: ControlRoom 152 verification
+
+on:
+  push:
+    branches:
+      - factory-ci/400-windows-release-tests
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows Release
+          - os: macos-15
+            name: macOS Release
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    steps:
+      - name: Check out the tested commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Full Release tests
+        run: dotnet test ControlRoom.slnx -c Release --logger trx
+
+      - name: Check Windows fixture outcomes
+        if: runner.os == 'Windows' && !cancelled()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $results = @(Get-ChildItem -Path 'tests/*/TestResults/*.trx' -File | ForEach-Object {
+            ([xml](Get-Content -LiteralPath $_.FullName -Raw)).TestRun.Results.UnitTestResult
+          })
+          $ownerRows = @($results | Where-Object { $_.testName -like '*ForeignOwner_BlocksStartupAndAnAlreadyAuthorizedClient*' })
+          if ($ownerRows.Count -ne 2 -or @($ownerRows | Where-Object { $_.outcome -ne 'Passed' }).Count) {
+            throw 'Both NTFS foreign-owner cases must reach their assertions and pass.'
+          }
+          foreach ($case in 'Search_HasTheExactShape_ProjectsInFinderOrder_AndUnreadableNames','Change_PushesToOrigin') {
+            $matches = @($results | Where-Object { $_.testName -like "*$case*" -and $_.outcome -eq 'Passed' })
+            if (!$matches.Count) { throw "The required Windows fixture did not pass: $case" }
+          }
+          $ownerRows | ForEach-Object { Write-Output "$($_.testName): $($_.outcome)" }
+
+      - name: Build and smoke check the Windows ZIP
+        if: runner.os == 'Windows' && !cancelled()
+        shell: pwsh
+        env:
+          RELEASE_VERSION: 0.0.0-ci.${{ github.run_number }}
+        run: ./.github/scripts/windows-release.ps1 | Tee-Object -FilePath "$env:RUNNER_TEMP/windows-zip-smoke.log"
+
+      - name: Save test evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ControlRoom-152-${{ runner.os }}-${{ github.sha }}
+          path: |
+            tests/*/TestResults/*.trx
+            ${{ runner.temp }}/windows-zip-smoke.log
+          if-no-files-found: warn
+          retention-days: 14
+

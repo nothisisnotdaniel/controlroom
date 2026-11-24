@@ -9,6 +9,7 @@ public sealed class WindowsReleaseTests
     [InlineData("lifecycle", null, null)]
     [InlineData("interval", null, null)]
     [InlineData("defer", null, null)]
+    [InlineData("concurrent-install", "1.3.0", null)]
     [InlineData("stable", "1.3.0", null)]
     [InlineData("develop", "1.4.0-develop.12", null)]
     [InlineData("archive", "1.3.0", "check")]

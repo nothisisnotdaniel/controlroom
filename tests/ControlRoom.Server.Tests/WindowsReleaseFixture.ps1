@@ -102,6 +102,11 @@ function Get-UpdateTime { return $clock }
 function Wait-RoomPoll { }
 function Move-ReleaseDirectory($Source, $Destination) {
     if ($machine.FailRestore -and [IO.Path]::GetFileName($Source) -ceq 'previous') { throw 'Fixture restore failed.' }
+    if ($machine.BeforeBackup -and [IO.Path]::GetFileName($Destination) -ceq 'previous') {
+        $beforeBackup = $machine.BeforeBackup
+        $machine.BeforeBackup = $null
+        & $beforeBackup $Source
+    }
     [IO.Directory]::Move($Source, $Destination)
     # Exit this invocation at a durable boundary without entering its ordinary exception handler.
     if ([IO.Path]::GetFileName($Destination) -ceq $machine.InterruptAt) { break interruptedUpdate }
@@ -173,7 +178,7 @@ function Add-ZipText($Zip, $Name, $Value) {
 
 function FixtureUpdater($Tag) {
     if ($Scenario -eq 'interrupted-candidate' -and $Tag -ceq 'v1.3.0') { return "throw 'Fixture candidate failed to start.'" }
-    if ($Scenario -notin 'interrupted-swap','interrupted-candidate','interrupted-rollback','restore-result-retry','pending-active') {
+    if ($Scenario -notin 'interrupted-swap','interrupted-candidate','interrupted-rollback','restore-result-retry','pending-active','concurrent-install') {
         return "updater $Tag"
     }
     # The registered action runs the packaged updater. Supply the same private data and OS/network
@@ -362,6 +367,7 @@ function Start-Process($FilePath, [string[]]$ArgumentList, $WorkingDirectory, $W
         $output = $process.StandardOutput.ReadToEndAsync()
         if (!$process.WaitForExit(30000)) { $process.Kill(); throw 'Scheduled action timed out.' }
         if ($process.ExitCode -ne 0) { throw "Scheduled action failed: $($errors.Result) $($output.Result)" }
+        if ($output.Result) { $output.Result.TrimEnd() }
     } finally { $process.Dispose() }
 }
 
@@ -414,7 +420,7 @@ if ($Scenario -in 'lifecycle','sample') {
     $updaterPath = Join-Path (Join-Path $Support 'server') 'updater.ps1'
     $entry = 'if ($MyInvocation.InvocationName -ne ''.'') {'
     $probe = [IO.File]::ReadAllText((Join-Path $inputs 'updater.ps1')).Replace($entry,
-        'function Invoke-RoomUpdate($Root) { [IO.File]::WriteAllText((Join-Path $PSScriptRoot "received-root.txt"), $Root) }' + [char]10 + $entry)
+        'function Invoke-LockedRoomUpdate($Root) { [IO.File]::WriteAllText((Join-Path $PSScriptRoot "received-root.txt"), $Root) }' + [char]10 + $entry)
     [IO.File]::WriteAllText($updaterPath, $probe)
     Run-FixtureAction $UpdaterTask
     Expect ([IO.File]::ReadAllText((Join-Path (Join-Path $Support 'server') 'received-root.txt'))) $factory
@@ -434,6 +440,44 @@ if ($Scenario -in 'lifecycle','sample') {
     Expect ([IO.Directory]::Exists((Join-Path $Support 'server'))) $false
     Expect ([IO.File]::ReadAllText((Join-Path $Support 'access-token'))) 'fixture sentinel'
     Expect (Get-UpdateSettings).Enabled $true
+} elseif ($Scenario -eq 'concurrent-install') {
+    # An outstanding DELETE access on server makes any premature, non-delete-sharing pin fail.
+    Add-Type -Namespace Fixture -Name Rename -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+private static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string path, uint access,
+    System.IO.FileShare share, IntPtr security, uint disposition, uint flags, IntPtr template);
+
+public static Microsoft.Win32.SafeHandles.SafeFileHandle OpenDirectory(string path) {
+    var handle = CreateFile(path, 0x10000, System.IO.FileShare.ReadWrite | System.IO.FileShare.Delete,
+        IntPtr.Zero, 3, 0x02000000, IntPtr.Zero);
+    if (handle.IsInvalid) throw new System.ComponentModel.Win32Exception(System.Runtime.InteropServices.Marshal.GetLastWin32Error());
+    return handle;
+}
+'@
+    Write-PrivateText 'update-result.json' '{"prior":true}'
+    $machine.BeforeBackup = {
+        param($Server)
+        $rename = [Fixture.Rename]::OpenDirectory($Server)
+        try { $machine.ScheduledResult = Run-FixtureAction $UpdaterTask }
+        finally { $rename.Dispose() }
+    }
+    Expect (Install-Room $factory $old '') 'Installed v1.2.0. Server running.'
+    Expect $machine.ScheduledResult 'busy'
+    Expect (Marker) $old
+    Expect (Get-RoomStatus) 'Installed=True Running=True'
+    Expect (Read-PrivateText 'update-result.json' 4KB) '{"prior":true}'
+    Expect ([IO.File]::Exists((Join-Path $Support 'last-check'))) $false
+
+    $machine.BeforeBackup = {
+        Expect-Refusal { Install-Room $factory $old '' } 'An installation or update is already running.'
+        $machine.InstallRefused = $true
+    }
+    Expect (Invoke-FixtureUpdaterTask) 'updated'
+    Expect $machine.InstallRefused $true
+    Expect (ListCount) 1
+    Expect (Current-Code) '1.3.0'
+    Expect (Marker) $offered
+    Expect (Get-RoomStatus) 'Installed=True Running=True'
 } elseif ($Scenario -eq 'interval') {
     $offered = $old
     Write-PrivateText 'last-check' "$Epoch"
