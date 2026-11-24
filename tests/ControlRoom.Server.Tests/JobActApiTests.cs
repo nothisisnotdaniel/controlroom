@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 
 namespace ControlRoom.Server.Tests;
 
@@ -153,18 +154,42 @@ public sealed class JobActApiTests
         Assert.Equal(before, root.Snapshot());
     }
 
-    [Fact]
-    public async Task ANoteOf1000CharactersIsAccepted()
+    [Theory]
+    [InlineData(999)]
+    [InlineData(1000)]
+    public async Task Rework_WritesEveryCleanedScalarAtTheBoundary(int length)
     {
         using TempFactoryRoot root = new();
-        root.AddJob(Id, State("needs-human", 2));
+        string folder = root.AddJob(Id, State("needs-human", 2));
         using ServerFactory factory = new(root.Path);
         using HttpClient client = factory.CreateTokenClient();
+        string prefix = new('a', length - 2);
+        string raw = "\t" + prefix + " \u0085 \U0001F680\n";
+        string expected = prefix + " \U0001F680";
 
-        (HttpStatusCode code, _, _) = await Post(client,
-            "{\"id\":\"" + Id + "\",\"action\":\"rework\",\"round\":2,\"note\":\"" + new string('a', 1000) + "\"}");
+        (HttpStatusCode code, _, _) = await PostRework(client, raw);
 
         Assert.Equal(HttpStatusCode.OK, code);
+        Assert.Equal(new JobRequest("rework", 2, expected, Requested),
+            JobAction.Parse(File.ReadAllBytes(Path.Combine(folder, "human.json"))));
+    }
+
+    [Fact]
+    public async Task Rework_Rejects1001CleanedScalarsAndLeavesNoPendingRequest()
+    {
+        using TempFactoryRoot root = new();
+        string folder = root.AddJob(Id, State("needs-human", 2));
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+        string raw = new string('a', 998) + "  \U0001F680!";
+
+        (HttpStatusCode code, string body, _) = await PostRework(client, raw);
+
+        Assert.Equal(HttpStatusCode.BadRequest, code);
+        Assert.Equal("{\"error\":\"invalid\"}", body);
+        Assert.False(File.Exists(Path.Combine(folder, "human.json")));
+        using JsonDocument job = JsonDocument.Parse(await client.GetStringAsync("/api/job?id=" + Id));
+        Assert.Equal(JsonValueKind.Null, job.RootElement.GetProperty("request").ValueKind);
     }
 
     [Theory]
@@ -403,6 +428,11 @@ public sealed class JobActApiTests
 
         Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
         Assert.Equal(before, root.Snapshot());
+    }
+
+    private static Task<(HttpStatusCode Code, string Body, bool NoStore)> PostRework(HttpClient client, string note)
+    {
+        return Post(client, JsonSerializer.Serialize(new { id = Id, action = "rework", round = 2, note }));
     }
 
     private static async Task<(HttpStatusCode Code, string Body, bool NoStore)> Post(HttpClient client, string json)

@@ -46,7 +46,8 @@ public sealed partial class TokenWebAppTests
         Assert.Contains("await authFetch(\"/api/backlogs\", { cache: \"no-store\" })", app, StringComparison.Ordinal);
         Assert.Contains("await authFetch(\n    \"/api/story?project=\"", app, StringComparison.Ordinal);
         Assert.Contains("await authFetch(\"/api/board\", { cache: \"no-store\" })", board, StringComparison.Ordinal);
-        Assert.Contains("await authFetch(\"/api/job?id=\" + encodeURIComponent(id), { cache: \"no-store\" })", board,
+        Assert.Contains("await authFetch(\"/api/job?id=\" + encodeURIComponent(id),\n"
+            + "      { cache: \"no-store\", signal: AbortSignal.timeout(JobDetailTimeout) })", board,
             StringComparison.Ordinal);
     }
 

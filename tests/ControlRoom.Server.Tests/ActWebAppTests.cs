@@ -2,7 +2,7 @@ namespace ControlRoom.Server.Tests;
 
 /// <summary>The "Your decision" section in <c>act.js</c>, its hooks in <c>board.js</c>, <c>index.html</c>,
 /// <c>app.css</c> and <c>sw.js</c>, and the rules in <c>CLAUDE.md</c>, checked as text (there is no JS test runtime;
-/// the files are served synchronously): fixed texts, script order, <c>maxlength</c>, the needs-human rule and the
+/// the files are served synchronously): fixed texts, script order, rework note validation, the needs-human rule and the
 /// live-refresh guard. Tapping through on the phone is checked by hand.</summary>
 public sealed class ActWebAppTests
 {
@@ -54,11 +54,12 @@ public sealed class ActWebAppTests
 
         Assert.Contains("Object.prototype.hasOwnProperty.call(ActErrors, code) ? ActErrors[code] : ActErrors.failed", js,
             StringComparison.Ordinal);
+        Assert.Contains("pending: \"A request for this job is already waiting.\"", errors, StringComparison.Ordinal);
         Assert.DoesNotContain(".message", js, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task ActJs_ApproveAsksForConfirmationAndReworkHasANoteOf1000AndSendOffWhileBlank()
+    public async Task ActJs_ApproveAsksForConfirmationAndReworkKeepsTheDraftWithALiveError()
     {
         string js = await Fetch("/act.js");
         string choices = Between(js, "function renderActChoices(section, job) {", "\n}\n");
@@ -67,10 +68,65 @@ public sealed class ActWebAppTests
             choices, StringComparison.Ordinal);
         Assert.Contains("element(\"textarea\", \"act-note\")", choices, StringComparison.Ordinal);
         Assert.Contains("label.htmlFor = \"act-note\";", choices, StringComparison.Ordinal);
-        Assert.Contains("note.setAttribute(\"maxlength\", \"1000\");", choices, StringComparison.Ordinal);
+        Assert.DoesNotContain(".maxLength", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"maxlength\"", js, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("note.value =", choices, StringComparison.Ordinal);
+        Assert.DoesNotContain(".blur()", choices, StringComparison.Ordinal);
+        Assert.Contains("note.setAttribute(\"aria-describedby\", hint.id);", choices, StringComparison.Ordinal);
+        Assert.Contains("hint.setAttribute(\"aria-live\", \"polite\");", choices, StringComparison.Ordinal);
+        Assert.Contains("note.setAttribute(\"aria-invalid\", String(state.tooLong));", choices, StringComparison.Ordinal);
+        Assert.Contains("hint.textContent = state.tooLong ? ActTexts.noteTooLong : ActTexts.noteHint;", choices,
+            StringComparison.Ordinal);
+        Assert.Contains("noteTooLong: \"Shorten your note to 1,000 characters or fewer.\"", js, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ActJs_InputSendAndButtonResetUseTheCleanedScalarLimitAndBusyState()
+    {
+        string js = await Fetch("/act.js");
+        string state = Between(js, "function actNoteState(value) {", "\n}\n");
+        string choices = Between(js, "function renderActChoices(section, job) {", "\n}\n");
+        string buttons = Between(js, "function setActButtons() {", "\n}\n");
+
+        Assert.Contains("const ActNoteMaxLength = 1000;", js, StringComparison.Ordinal);
+        Assert.Contains("for (const scalar of value)", state, StringComparison.Ordinal);
+        Assert.Contains("/\\p{White_Space}/u.test(scalar)", state, StringComparison.Ordinal);
+        Assert.Contains("length += separator.length + 1;", state, StringComparison.Ordinal);
+        Assert.Contains("if (length > ActNoteMaxLength) {\n      return { text: null, tooLong: true, disabled: true };",
+            state, StringComparison.Ordinal);
+        Assert.Contains("disabled: activeAction !== null || length === 0", state, StringComparison.Ordinal);
         Assert.Contains("send.disabled = true;", choices, StringComparison.Ordinal);
-        Assert.Contains("send.disabled = actBusy || note.value.trim() === \"\";", choices, StringComparison.Ordinal);
-        Assert.Contains("sendJobAction(job, { action: \"rework\", note: text });", choices, StringComparison.Ordinal);
+        Assert.Contains("note.addEventListener(\"input\", () => {\n    const state = actNoteState(note.value);\n"
+            + "    send.disabled = state.disabled;", choices, StringComparison.Ordinal);
+        Assert.Contains("const state = actNoteState(note.value);\n    if (!state.disabled) {\n"
+            + "      sendJobAction(job, { action: \"rework\", note: state.text });", choices, StringComparison.Ordinal);
+        Assert.Contains("button.disabled = button.id === \"act-send\" ? actNoteState(note.value).disabled : activeAction !== null;",
+            buttons, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ActJs_LocksTheDraftUntilTheConfirmedRequestReplacesItAndUnlocksOnFailure()
+    {
+        string js = await Fetch("/act.js");
+        string buttons = Between(js, "function setActButtons() {", "\n}\n");
+        string send = Between(js, "async function sendJobAction(job, body) {", "\n}\n");
+        string apply = Between(js, "function applyDecisionResult(section, current, submitted, request) {", "\n}\n");
+
+        Assert.Contains("note.readOnly = activeAction !== null;", buttons, StringComparison.Ordinal);
+        int locked = send.IndexOf("activeAction = submitted;\n  setActButtons();", StringComparison.Ordinal);
+        int post = send.IndexOf("await authFetch(ActRoute", StringComparison.Ordinal);
+        int settled = send.IndexOf("activeAction = null;", StringComparison.Ordinal);
+        int confirmed = send.IndexOf("applyDecisionResult(active, current, submitted, notPending ? null : data.request)",
+            StringComparison.Ordinal);
+        int unlocked = send.IndexOf("setActButtons();", confirmed, StringComparison.Ordinal);
+        int refresh = send.IndexOf("loadJob(asText(job.id), true);", confirmed, StringComparison.Ordinal);
+        Assert.True(locked >= 0 && locked < post && post < settled && settled < confirmed && confirmed < unlocked && unlocked < refresh);
+        Assert.Contains("const next = renderJobDecision({ job: current.job, request: pending });\n    section.replaceWith(next);",
+            apply, StringComparison.Ordinal);
+        Assert.Contains("const text = notPending ? ActErrors.not_pending : ActTexts.cancelled;", send, StringComparison.Ordinal);
+        Assert.Contains("showActStatus(text, notPending);", send, StringComparison.Ordinal);
+        Assert.DoesNotContain("if (data.request)", send, StringComparison.Ordinal);
+        Assert.DoesNotContain("note.value =", send, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -81,6 +137,9 @@ public sealed class ActWebAppTests
 
         Assert.Contains("element(\"p\", \"act-note-text\", note)", pending, StringComparison.Ordinal);
         Assert.Contains("sendJobAction(job, { action: \"cancel\" })", pending, StringComparison.Ordinal);
+        string button = Between(js, "function actButton(text, className, onClick) {", "\n}\n");
+        Assert.Contains("button.isConnected && !button.disabled && button.getAttribute(\"aria-disabled\") !== \"true\"", button,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("innerHTML", js, StringComparison.Ordinal);
         Assert.Contains("authFetch(ActRoute, {", js, StringComparison.Ordinal);
         Assert.Contains("const ActRoute = \"/api/job/act\";", js, StringComparison.Ordinal);
@@ -101,19 +160,29 @@ public sealed class ActWebAppTests
     {
         string js = await Fetch("/board.js");
         string page = Between(js, "function renderJobPage(data) {", "\n}\n");
-        string refresh = Between(js, "function refreshOpenJob() {", "\n}\n");
+        string poll = Between(js, "async function pollBoard() {", "\n}\n");
+        string refresh = Between(js, "function refreshOpenJob(jobs) {", "\n}\n");
         string load = Between(js, "async function loadJob(id, refresh) {", "\n}\n");
         string act = await Fetch("/act.js");
-        string busy = Between(act, "function jobDecisionBusy() {", "\n}\n");
+        string live = await Fetch("/live.js");
+        string busy = Between(act, "function jobDecisionBusy(job, request) {", "\n}\n");
 
         int state = page.IndexOf("article.appendChild(state);", StringComparison.Ordinal);
         int decision = page.IndexOf("article.appendChild(decision);", StringComparison.Ordinal);
         int tabs = page.IndexOf("renderTabs(records, select)", StringComparison.Ordinal);
         Assert.True(state >= 0 && decision > state && tabs > decision);
-        Assert.Contains("if (jobDecisionHeld()) {\n      jobRefreshHeld = true;\n      return;\n    }", refresh,
+        int observation = poll.IndexOf("refreshOpenJob(data?.jobs);", StringComparison.Ordinal);
+        Assert.True(observation >= 0 && observation < poll.IndexOf("if (text === boardText)", StringComparison.Ordinal));
+        Assert.Contains("observeDecisionBoard(entry)", refresh, StringComparison.Ordinal);
+        Assert.Contains("jobRefreshHeld = true;\n      return;", refresh, StringComparison.Ordinal);
+        Assert.Contains("if (refresh && jobDecisionHeld(data?.job, data?.request ?? null)) {", load, StringComparison.Ordinal);
+        Assert.Contains("current.detail = { job, request };", busy, StringComparison.Ordinal);
+        Assert.Contains("cancel && document.activeElement === cancel", busy, StringComparison.Ordinal);
+        Assert.Contains("return activeAction !== null ||", busy, StringComparison.Ordinal);
+        Assert.Contains("await recheckPendingCancel(previousJobs !== next.jobs || recovered, { includeForm: previousJobs === undefined });",
+            live, StringComparison.Ordinal);
+        Assert.Contains("document.activeElement === note || /\\P{White_Space}/u.test(note.value)", busy,
             StringComparison.Ordinal);
-        Assert.Contains("if (refresh && jobDecisionHeld()) {", load, StringComparison.Ordinal);
-        Assert.Contains("note.value.trim() !== \"\" || document.activeElement === note", busy, StringComparison.Ordinal);
     }
 
     [Fact]

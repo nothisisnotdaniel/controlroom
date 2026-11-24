@@ -80,6 +80,7 @@ const JobRoute = "#job/";
 const JobIdPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}$/;
 const ProjectKey = "controlroom.project";
 const PollInterval = 5000;
+const JobDetailTimeout = 10000;
 // Reviews start with "VERDICT: PASS" or "VERDICT: CHANGES"; decisions start with a bare APPROVE or ESCALATE.
 const Verdict = /^(?:VERDICT: (PASS|CHANGES)|(APPROVE|ESCALATE))$/;
 
@@ -93,9 +94,10 @@ let selectedProject = readSavedProject();
 // Set when a card on the board opened the job page, so Back can go back in history.
 let openedFromBoard = false;
 let openJobId = null;
+let openingJob = null;
 let openJobEntry = null;
 let openJobRecord = null;
-let jobRequest = 0;
+let jobRequest = null;
 // Set when a live refresh of the job page was held back because the decision section was in use (act.js).
 let jobRefreshHeld = false;
 
@@ -549,27 +551,36 @@ async function pollBoard() {
     setBoardStatus(true);
     loadVersion();
     loadUpdate();
+    refreshOpenJob(data?.jobs);
     if (text === boardText) {
       return true;
     }
     boardText = text;
     boardJobs = asList(data && data.jobs).filter((job) => job && typeof job === "object");
     renderBoard();
-    refreshOpenJob();
     return true;
   } finally {
     boardPolling = false;
   }
 }
 
-// Reloads the open job page when its entry on the board has changed.
-function refreshOpenJob() {
-  if (openJobId === null || document.getElementById("job").hidden) {
+// Every board read can contradict a detail or POST, even when the board itself has identical bytes.
+function refreshOpenJob(jobs) {
+  if (openJobId === null || document.getElementById("job").hidden || !Array.isArray(jobs)) {
     return;
   }
-  const entry = boardJobs.find((job) => job.id === openJobId);
-  if (entry && openJobEntry !== null && JSON.stringify(entry) !== openJobEntry) {
+  const entry = jobs.find(job => job?.id === openJobId) ?? null;
+  jobRequest?.boards.push(entry);
+  if (openJobEntry === null) {
+    return;
+  }
+  const conflict = typeof observeDecisionBoard === "function" && observeDecisionBoard(entry);
+  if (conflict || (entry && JSON.stringify(entry) !== openJobEntry)) {
     if (jobDecisionHeld()) {
+      if (conflict) {
+        // The held refresh must also supersede a detail that was already in flight.
+        jobRequest = null;
+      }
       jobRefreshHeld = true;
       return;
     }
@@ -579,8 +590,8 @@ function refreshOpenJob() {
 
 // True while the decision section (act.js) has a note typed, the note box focused or a request in flight; a live
 // refresh never rebuilds the page then.
-function jobDecisionHeld() {
-  return typeof jobDecisionBusy === "function" && jobDecisionBusy();
+function jobDecisionHeld(job, request) {
+  return typeof jobDecisionBusy === "function" && jobDecisionBusy(job, request);
 }
 
 // Runs a live refresh that was held back, once the decision section is no longer in use.
@@ -876,8 +887,9 @@ function rememberBoardScroll() {
 // Job page.
 
 function leaveJob() {
-  jobRequest += 1;
+  jobRequest = null;
   openJobId = null;
+  openingJob = null;
   openJobEntry = null;
   openJobRecord = null;
   jobRefreshHeld = false;
@@ -1074,36 +1086,60 @@ function renderJobPage(data) {
 }
 
 async function loadJob(id, refresh) {
-  jobRequest += 1;
-  const request = jobRequest;
+  if (refresh && openingJob?.loaded && openJobEntry === null) {
+    openingJob.needsCheck = true;
+    return;
+  }
+  if (refresh && openingJob) {
+    openingJob.needsCheck = false;
+  }
+  const request = { boards: [] };
+  jobRequest = request;
   if (!refresh) {
     openJobId = id;
     openJobEntry = null;
     openJobRecord = null;
+    jobRefreshHeld = false;
     showJobContent([element("p", "status", BoardTexts.loading)]);
   }
   if (id === "") {
+    jobRequest = null;
     showJobContent([element("p", "error", BoardTexts.jobFailed)]);
     return;
   }
   let data;
   try {
-    const response = await authFetch("/api/job?id=" + encodeURIComponent(id), { cache: "no-store" });
+    const response = await authFetch("/api/job?id=" + encodeURIComponent(id),
+      { cache: "no-store", signal: AbortSignal.timeout(JobDetailTimeout) });
     if (!response.ok) {
       throw new Error("status");
     }
     data = await response.json();
   } catch {
-    if (request === jobRequest && !refresh) {
-      showJobContent([element("p", "error", BoardTexts.jobFailed)]);
-      document.querySelector("#job .back").focus({ preventScroll: true });
+    if (request === jobRequest) {
+      jobRequest = null;
+      if (typeof decisionDetailFailed === "function") {
+        decisionDetailFailed();
+      }
+      if (!refresh) {
+        showJobContent([element("p", "error", BoardTexts.jobFailed)]);
+        document.querySelector("#job .back").focus({ preventScroll: true });
+      }
     }
     return;
   }
   if (request !== jobRequest) {
     return;
   }
-  if (refresh && jobDecisionHeld()) {
+  jobRequest = null;
+  // These snapshots overlapped this GET. A disagreement in either delivery order needs a new read.
+  const conflict = typeof boardMatchesDecision === "function" ?
+    request.boards.find(entry => !boardMatchesDecision(entry, data?.job, data?.request)) : undefined;
+  if (refresh && conflict !== undefined && document.getElementById("act")) {
+    recheckPendingCancel(true, { includeForm: true });
+    return;
+  }
+  if (refresh && jobDecisionHeld(data?.job, data?.request ?? null)) {
     jobRefreshHeld = true;
     return;
   }
@@ -1111,6 +1147,12 @@ async function loadJob(id, refresh) {
   openJobEntry = JSON.stringify(data && data.job);
   const scroll = window.scrollY;
   const title = renderJobPage(data);
+  if (conflict !== undefined) {
+    observeDecisionBoard(conflict);
+  }
+  if ((conflict !== undefined || (!refresh && openingJob?.needsCheck)) && typeof recheckPendingCancel === "function") {
+    recheckPendingCancel(true, { includeForm: true });
+  }
   if (refresh) {
     window.scrollTo(0, scroll);
   } else {
@@ -1118,8 +1160,12 @@ async function loadJob(id, refresh) {
   }
 }
 
-function showJob(id) {
+async function showJob(id) {
   window.scrollTo(0, 0);
-  loadJob(id, false);
+  const opening = { needsCheck: false };
+  openingJob = opening;
+  opening.loaded = loadJob(id, false);
   pollBoard();
+  await opening.loaded;
+  opening.loaded = null;
 }
