@@ -12,8 +12,6 @@ public sealed class TokenApiTests
     [InlineData("file")]
     [InlineData("folder")]
     [InlineData("inherited")]
-    [InlineData("foreign-file-owner")]
-    [InlineData("foreign-folder-owner")]
     [InlineData("linked-folder")]
     [InlineData("linked-token")]
     public async Task UnsafeAclOrLink_BlocksStartupAndAnAlreadyAuthorizedClient(string kind)
@@ -26,20 +24,43 @@ public sealed class TokenApiTests
         await CheckUnsafeWindowsToken(kind);
     }
 
+    [ForeignOwnerTheory]
+    [InlineData("foreign-file-owner")]
+    [InlineData("foreign-folder-owner")]
+    public async Task ForeignOwner_BlocksStartupAndAnAlreadyAuthorizedClient(string kind)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            await CheckUnsafeWindowsToken(kind);
+        }
+    }
+
+    private sealed class ForeignOwnerTheoryAttribute : TheoryAttribute
+    {
+        public ForeignOwnerTheoryAttribute()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                Skip = "This fixture assigns an NTFS owner.";
+                return;
+            }
+
+            using WindowsIdentity identity = WindowsIdentity.GetCurrent();
+            if (!new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator)
+                && Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != "true")
+            {
+                Skip = "Assigning the fixture's Administrators owner requires an owner-enabled group.";
+            }
+        }
+    }
+
     [SupportedOSPlatform("windows")]
     private static async Task CheckUnsafeWindowsToken(string kind)
     {
-        using WindowsIdentity identity = WindowsIdentity.GetCurrent();
-        if (kind.StartsWith("foreign-", StringComparison.Ordinal)
-            && !new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator))
-        {
-            // Assigning an alternate owner requires an owner-enabled group. The descriptor test also runs unelevated.
-            return;
-        }
-
         using TempFactoryRoot root = new();
         using TempTokenFolder tokens = new();
         SecurityIdentifier others = new(WellKnownSidType.BuiltinUsersSid, null);
+        SecurityIdentifier administrators = new(WellKnownSidType.BuiltinAdministratorsSid, null);
         DirectorySecurity shared = new DirectoryInfo(tokens.Path).GetAccessControl();
         shared.AddAccessRule(new FileSystemAccessRule(others, FileSystemRights.Read,
             InheritanceFlags.ContainerInherit, PropagationFlags.None, AccessControlType.Allow));
@@ -55,13 +76,15 @@ public sealed class TokenApiTests
         {
             case "foreign-file-owner":
                 FileSecurity foreignFile = file.GetAccessControl();
-                foreignFile.SetOwner(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null));
+                foreignFile.SetOwner(administrators);
                 file.SetAccessControl(foreignFile);
+                Assert.Equal(administrators, file.GetAccessControl().GetOwner(typeof(SecurityIdentifier)));
                 break;
             case "foreign-folder-owner":
                 DirectorySecurity foreignFolder = folder.GetAccessControl();
-                foreignFolder.SetOwner(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null));
+                foreignFolder.SetOwner(administrators);
                 folder.SetAccessControl(foreignFolder);
+                Assert.Equal(administrators, folder.GetAccessControl().GetOwner(typeof(SecurityIdentifier)));
                 break;
             case "file":
                 FileSecurity fileAcl = file.GetAccessControl();

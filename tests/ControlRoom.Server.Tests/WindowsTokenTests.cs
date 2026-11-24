@@ -86,6 +86,49 @@ public sealed class WindowsTokenTests
     }
 
     [Fact]
+    public void SharedStoreReplacesOnlyPrivateChildrenOfTheVerifiedDirectory()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TempTokenFolder fixture = new();
+        DirectoryInfo folder = new(Path.Combine(fixture.Path, "custom token folder"));
+        PrivateFolder store = new(folder.FullName, null);
+        const string Name = "push-keys.json";
+        FileInfo file = new(Path.Combine(folder.FullName, Name));
+        store.Write(Name, [1]);
+        using (FileStream old = file.Open(FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete))
+        {
+            store.Write(Name, [2]);
+            Assert.Equal(1, old.ReadByte());
+            Assert.Equal(new byte[] { 2 }, store.Read(Name, 16, checkFileOwner: true, createFolder: false));
+        }
+
+        using (FileStream parent = WindowsPrivateFiles.OpenDirectory(folder))
+        {
+            Assert.Throws<IOException>(() => Directory.Move(folder.FullName, Path.Combine(fixture.Path, "moved")));
+            WindowsPrivateFiles.WritePrivateChild(parent, "settings.json", [3]);
+        }
+
+        AssertPrivate(file.GetAccessControl());
+        AssertPrivate(new FileInfo(Path.Combine(folder.FullName, "settings.json")).GetAccessControl());
+        FileSecurity shared = file.GetAccessControl();
+        shared.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null),
+            FileSystemRights.Read, AccessControlType.Allow));
+        FileInfo subscriptions = new(Path.Combine(folder.FullName, "push.json"));
+        using (FileStream stream = subscriptions.Create(FileMode.CreateNew, FileSystemRights.Write, FileShare.None,
+                   4096, FileOptions.None, shared))
+        {
+            stream.WriteByte(7);
+        }
+        Assert.Throws<PrivateFileException>(() => store.Write(subscriptions.Name, [4]));
+        Assert.Equal(new byte[] { 7 }, File.ReadAllBytes(subscriptions.FullName));
+        Assert.Empty(folder.GetFiles("*.tmp"));
+    }
+
+    [Fact]
     public void TokenRotationLetsAnExistingReaderFinishWithItsOriginalBytes()
     {
         if (!OperatingSystem.IsWindows())
