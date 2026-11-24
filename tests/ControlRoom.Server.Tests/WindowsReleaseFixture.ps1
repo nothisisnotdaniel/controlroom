@@ -87,7 +87,10 @@ function With-RefusedEntry($Path, [scriptblock]$Check) {
             }
             'entry-link' { [IO.File]::Move((Join-Path $Fixture 'entry-link'), $Path) }
             'entry-directory' { New-PrivateDirectory $Path }
-            'entry-size' { [IO.File]::WriteAllBytes($Path, [byte[]]::new($UpdaterLimit + 1)) }
+            'entry-size' {
+                $out = New-PrivateFile $Path
+                try { $out.SetLength($UpdaterLimit + 1) } finally { $out.Dispose() }
+            }
         }
         & $Check
     } finally {

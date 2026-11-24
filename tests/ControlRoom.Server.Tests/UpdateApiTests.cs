@@ -247,14 +247,6 @@ public sealed class UpdateApiTests
     private static void WriteSettings(ServerFactory factory, string content)
     {
         string path = Path.Combine(Path.GetDirectoryName(factory.TokenFile)!, UpdateSettingsStore.FileName);
-        string folder = Path.GetDirectoryName(path)!;
-        Directory.CreateDirectory(folder);
-        File.WriteAllText(path, content);
-        if (!OperatingSystem.IsWindows())
-        {
-            // Written before the server first touches the folder, so it gets the mode the store requires.
-            File.SetUnixFileMode(folder, AccessToken.FolderMode);
-            File.SetUnixFileMode(path, AccessToken.FileMode);
-        }
+        TempTokenFolder.WritePrivateText(path, content);
     }
 }

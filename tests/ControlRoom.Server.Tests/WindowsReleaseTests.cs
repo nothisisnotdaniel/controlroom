@@ -80,9 +80,10 @@ public sealed class WindowsReleaseTests
         string readme = File.ReadAllText(Path.Combine(RepoCopy.RepoFolder(), "README.md"));
         int last = readme.IndexOf("## Windows", StringComparison.Ordinal);
         Assert.True(last >= 0);
-        foreach (string part in new[] { "gh release download", "gh attestation verify", "Get-FileHash",
+        foreach (string part in new[] { "gh auth login", "gh release download", "gh attestation verify", "Get-FileHash",
                      "Expand-Archive", @".\controlroom.exe version", @".\controlroom.exe --FactoryRoot",
                      @".\controlroom.exe token", @".\launch-agent.ps1 install", "Install updates automatically",
+                     "Set-ExecutionPolicy -Scope Process RemoteSigned",
                      @".\launch-agent.ps1 status", @".\launch-agent.ps1 uninstall" })
         {
             last = readme.IndexOf(part, last + 1, StringComparison.Ordinal);

@@ -664,6 +664,9 @@ async function loadUpdate() {
 function renderUpdate(section, latest, current, command, url) {
   const text = element("p", "update-text",
     BoardTexts.updateAvailable + latest + BoardTexts.updateThis + current + BoardTexts.updateEnd);
+  if (command.startsWith(".\\launch-agent.ps1 ")) {
+    text.append(" Run this command in PowerShell from the extracted release folder.");
+  }
   const code = element("code", "update-command", command);
   const copy = element("button", "edit-button", BoardTexts.copy);
   copy.type = "button";

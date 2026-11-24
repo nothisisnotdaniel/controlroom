@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Hosting;
 
 namespace ControlRoom.Server.Tests;
@@ -89,7 +90,21 @@ public sealed class WebAssetSplitTests
             }
 
             string folder = AppFiles.Contains(path) ? AppFolder() : KitFolder();
-            Assert.True(hash == Sha256(File.ReadAllBytes(Path.Combine(folder, path))), path + " changed");
+            byte[] bytes = File.ReadAllBytes(Path.Combine(folder, path));
+            if (path == "board.js")
+            {
+                // The Windows install hint is the only addition since the asset split.
+                const string WindowsHint = """
+                      if (command.startsWith(".\\launch-agent.ps1 ")) {
+                        text.append(" Run this command in PowerShell from the extracted release folder.");
+                      }
+                    """;
+                string script = Encoding.UTF8.GetString(bytes);
+                Assert.Contains(WindowsHint, script, StringComparison.Ordinal);
+                bytes = Encoding.UTF8.GetBytes(script.Replace(WindowsHint + "\n", "", StringComparison.Ordinal));
+            }
+
+            Assert.True(hash == Sha256(bytes), path + " changed");
         }
     }
 

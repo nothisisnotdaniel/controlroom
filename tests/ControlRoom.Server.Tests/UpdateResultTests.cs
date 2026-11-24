@@ -235,11 +235,7 @@ public sealed class UpdateResultTests : IDisposable
 
     private void WriteResult(string json)
     {
-        File.WriteAllText(ResultPath, json);
-        if (!OperatingSystem.IsWindows())
-        {
-            File.SetUnixFileMode(ResultPath, AccessToken.FileMode);
-        }
+        TempTokenFolder.WritePrivateText(ResultPath, json);
     }
 
     private IReadOnlyList<string> Payloads()

@@ -19,7 +19,7 @@ dotnet run --project src/ControlRoom.Server -- --TailnetHost mac.tail1234.ts.net
 
 ## Windows x64
 
-The x64 release includes the .NET runtime. Install Git for Windows for backlog edits. In PowerShell, use GitHub CLI to download the latest stable release into an empty directory. Set `$tag` to an offered prerelease tag to install that version.
+The x64 release includes the .NET runtime. Install Git for Windows for backlog edits and GitHub CLI for release downloads and attestation verification. If this is your first time using GitHub CLI, run `gh auth login` in PowerShell. Then download the latest stable release into an empty directory. Set `$tag` to an offered prerelease tag to install that version.
 
 ```powershell
 $repo = 'nothisisnotdaniel/controlroom'
@@ -51,6 +51,8 @@ Set-ExecutionPolicy -Scope Process RemoteSigned
 ```
 
 For Tailscale, append `-TailnetHost desk.example.ts.net` with your own host. Install starts the server immediately and creates a sign-in task and a recurring updater task for your account. Installed code lives in `%LOCALAPPDATA%\ControlRoom\server`. To receive verified updates, open **Jobs**, enable **Install updates automatically**, choose **Stable** or **Develop (prereleases)** and select the check interval. The updater waits for active factory jobs to finish. The Jobs page also shows a manual update command to run from the extracted folder.
+
+For a manual update, status check or uninstall in a new PowerShell session, open the extracted folder and run `Set-ExecutionPolicy -Scope Process RemoteSigned` again before the script.
 
 ```powershell
 .\launch-agent.ps1 status

@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Builder;
 
@@ -99,13 +98,8 @@ public sealed partial class AccessTokenTests
         using TempTokenFolder tokens = new();
         string target = Path.Combine(tokens.Path, "target");
         string token = AccessToken.Generate(Fixed(3));
-        File.WriteAllText(target, token + "\n");
-        if (!OperatingSystem.IsWindows())
-        {
-            File.SetUnixFileMode(target, AccessToken.FileMode);
-        }
-
-        Directory.CreateDirectory(Path.GetDirectoryName(tokens.TokenFile)!);
+        TempTokenFolder.WritePrivateText(target, token + "\n");
+        TempTokenFolder.CreatePrivateDirectory(Path.GetDirectoryName(tokens.TokenFile)!);
         File.CreateSymbolicLink(tokens.TokenFile, target);
 
         Assert.Equal(TokenFileState.Invalid, AccessToken.Read(tokens.TokenFile).State);
@@ -122,7 +116,7 @@ public sealed partial class AccessTokenTests
     public void Read_RefusesADanglingSymlink()
     {
         using TempTokenFolder tokens = new();
-        Directory.CreateDirectory(Path.GetDirectoryName(tokens.TokenFile)!);
+        TempTokenFolder.CreatePrivateDirectory(Path.GetDirectoryName(tokens.TokenFile)!);
         File.CreateSymbolicLink(tokens.TokenFile, Path.Combine(tokens.Path, "nowhere"));
 
         Assert.Equal(TokenFileState.Invalid, AccessToken.Read(tokens.TokenFile).State);
@@ -137,7 +131,7 @@ public sealed partial class AccessTokenTests
         }
 
         using TempTokenFolder tokens = new();
-        Directory.CreateDirectory(Path.GetDirectoryName(tokens.TokenFile)!);
+        TempTokenFolder.CreatePrivateDirectory(Path.GetDirectoryName(tokens.TokenFile)!);
         TempFactoryRoot.MakeFifo(tokens.TokenFile);
         File.SetUnixFileMode(tokens.TokenFile, AccessToken.FileMode);
 
@@ -201,7 +195,7 @@ public sealed partial class AccessTokenTests
     public void Read_RefusesJunkContent(string content)
     {
         using TempTokenFolder tokens = new();
-        WritePrivate(tokens.TokenFile, content);
+        TempTokenFolder.WritePrivateText(tokens.TokenFile, content);
 
         Assert.Equal(TokenFileState.Invalid, AccessToken.Read(tokens.TokenFile).State);
     }
@@ -210,7 +204,7 @@ public sealed partial class AccessTokenTests
     public void Read_RefusesAnOversizedFile()
     {
         using TempTokenFolder tokens = new();
-        WritePrivate(tokens.TokenFile, new string('A', 4096));
+        TempTokenFolder.WritePrivateText(tokens.TokenFile, new string('A', 4096));
 
         Assert.Equal(TokenFileState.Invalid, AccessToken.Read(tokens.TokenFile).State);
     }
@@ -221,7 +215,7 @@ public sealed partial class AccessTokenTests
     public void Read_AcceptsTheTokenWithOrWithoutOneNewline(string content)
     {
         using TempTokenFolder tokens = new();
-        WritePrivate(tokens.TokenFile, content);
+        TempTokenFolder.WritePrivateText(tokens.TokenFile, content);
 
         Assert.Equal(new string('A', 43), AccessToken.Read(tokens.TokenFile).Token);
     }
@@ -263,16 +257,6 @@ public sealed partial class AccessTokenTests
         Assert.Equal(Path.Combine(data, "ControlRoom", "access-token"), AccessToken.ResolvePath(null));
         Assert.Equal(Path.Combine(data, "ControlRoom", "access-token"), AccessToken.ResolvePath(" "));
         Assert.Equal(Path.GetFullPath("/x/y"), AccessToken.ResolvePath("/x/y"));
-    }
-
-    private static void WritePrivate(string path, string content)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllBytes(path, Encoding.UTF8.GetBytes(content));
-        if (!OperatingSystem.IsWindows())
-        {
-            File.SetUnixFileMode(path, AccessToken.FileMode);
-        }
     }
 
     internal static string SourceFolder()
