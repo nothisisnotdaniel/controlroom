@@ -1,11 +1,35 @@
 # Each invocation receives its own temporary directory and a fixed clock from the test.
 param(
     [Parameter(Mandatory)][string]$Fixture,
-    [Parameter(Mandatory)][string]$Scripts,
-    [Parameter(Mandatory)][string]$Scenario,
-    [Parameter(Mandatory)][long]$Epoch
+    [Parameter(Mandatory, ParameterSetName='Run')][string]$Scripts,
+    [Parameter(Mandatory, ParameterSetName='Run')][string]$Scenario,
+    [Parameter(Mandatory, ParameterSetName='Run')][long]$Epoch,
+    [Parameter(Mandatory, ParameterSetName='Cleanup')][switch]$DetachRootJunction
 )
 $ErrorActionPreference = 'Stop'
+
+if ($DetachRootJunction) {
+    $targetPath = Join-Path $Fixture 'scan root'
+    $sentinel = Join-Path $targetPath 'junction-target.txt'
+    $entries = [IO.Directory]::GetFileSystemEntries($Fixture, 'factory junction')
+    if (!$entries.Length) {
+        if ([IO.File]::Exists($sentinel)) { throw 'The fixture junction disappeared before disposal.' }
+        return 'No fixture junction was created.'
+    }
+    $link = Get-Item -LiteralPath $entries[0] -Force
+    $target = Get-Item -LiteralPath $targetPath -Force
+    if ($link -isnot [IO.DirectoryInfo] -or $link.Parent.FullName -ine $Fixture -or
+        $link.LinkType -cne 'Junction' -or !($link.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+        @($link.Target).Count -ne 1 -or [IO.Path]::GetFullPath(@($link.Target)[0]) -ine $targetPath -or
+        $target -isnot [IO.DirectoryInfo] -or ($target.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+        [IO.File]::ReadAllText($sentinel) -cne $Fixture) { throw 'Unrecognized fixture junction or target.' }
+
+    [IO.Directory]::Delete($link.FullName, $false)
+    if ([IO.Directory]::GetFileSystemEntries($Fixture, 'factory junction').Length -or
+        [IO.File]::ReadAllText($sentinel) -cne $Fixture) { throw 'Fixture junction detachment failed.' }
+    return 'Detached the fixture junction and verified its target sentinel.'
+}
+
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
@@ -50,6 +74,7 @@ $badListener = $false
 $failRecovery = $false
 $failStart = $false
 $machine = @{ Running = $false; InterruptAt = ''; FailRestore = $false }
+$actionTimeoutMs = 30000
 $writePrivate = (Get-Item function:Write-PrivateText).ScriptBlock
 function Write-PrivateText($Name, $Value, $Folder = $Support) {
     if ($machine.InterruptAt -ceq 'marker' -and $Name -ceq 'installed-release') { break interruptedUpdate }
@@ -136,6 +161,13 @@ function Start-ScheduledTask($TaskPath, $TaskName) {
     $version = Current-Code
     $history.Add("start $version")
     if (($failStart -and $version -ceq '1.3.0') -or ($failRecovery -and $version -ceq '1.2.0')) { throw 'Fixture start failure.' }
+    if ($Scenario -eq 'live-server-install') {
+        Expect $TaskName $ServerTask
+        $machine.ServerAction = Start-FixtureAction $TaskName -HoldServer
+        $ready = $machine.ServerAction.StandardOutput.ReadLineAsync()
+        if (!$ready.Wait($actionTimeoutMs)) { throw 'Registered server did not reach Start-Process.' }
+        Expect $ready.Result 'server ready'
+    }
     $machine.Running = $true
     $tasks[$TaskName].State = 'Running'
 }
@@ -146,6 +178,7 @@ function Stop-ScheduledTask($InputObject) {
         return
     }
     $history.Add("stop $(Current-Code)")
+    if ($machine.ServerAction) { Stop-FixtureServer }
     if ($Scenario -ne 'lifecycle') { $machine.Running = $false }
     $InputObject.State = 'Ready'
 }
@@ -347,7 +380,7 @@ function Read-FixtureCommand($Start) {
     return [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($Matches[1]))
 }
 
-function Run-FixtureAction($TaskName) {
+function Start-FixtureAction($TaskName, [switch]$HoldServer) {
     $start = Expand-FixtureAction $TaskName
     if ($TaskName -ceq $ServerTask) {
         # Capture the native process launch inside the registered shell. The ZIP smoke test runs the real EXE.
@@ -355,23 +388,55 @@ function Run-FixtureAction($TaskName) {
 function Start-Process($FilePath, [string[]]$ArgumentList, $WorkingDirectory, $WindowStyle, [switch]$Wait, [switch]$PassThru) {
     if (!$Wait -or !$PassThru -or $WindowStyle -ne 'Hidden') { throw 'Invalid server process options.' }
     [IO.File]::WriteAllLines((Join-Path $PWD 'received-args.txt'), [string[]](@($FilePath,$WorkingDirectory) + $ArgumentList))
+    if ($holdServer) {
+        [Console]::WriteLine('server ready')
+        [Console]::Out.Flush()
+        [void][Console]::ReadLine()
+    }
     return [pscustomobject]@{ ExitCode = 0 }
 };
 '@
         $command = $processStub + [Environment]::NewLine + (Read-FixtureCommand $start)
+        if ($HoldServer) {
+            $command = '$holdServer = $true' + [Environment]::NewLine + $command
+            $start.RedirectStandardInput = $true
+        }
         $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
         $start.Arguments = $start.Arguments -replace '(?<= -EncodedCommand ).+\z', $encoded
     }
     $start.RedirectStandardError = $true
     $start.RedirectStandardOutput = $true
-    $process = [Diagnostics.Process]::Start($start)
+    return [Diagnostics.Process]::Start($start)
+}
+
+function Wait-FixtureAction($process) {
     try {
         $errors = $process.StandardError.ReadToEndAsync()
         $output = $process.StandardOutput.ReadToEndAsync()
-        if (!$process.WaitForExit(30000)) { $process.Kill(); throw 'Scheduled action timed out.' }
+        if (!$process.WaitForExit($actionTimeoutMs)) { $process.Kill(); $process.WaitForExit(); throw 'Scheduled action timed out.' }
         if ($process.ExitCode -ne 0) { throw "Scheduled action failed: $($errors.Result) $($output.Result)" }
         if ($output.Result) { $output.Result.TrimEnd() }
     } finally { $process.Dispose() }
+}
+
+function Run-FixtureAction($TaskName) { Wait-FixtureAction (Start-FixtureAction $TaskName) }
+
+function Stop-FixtureServer {
+    $process = $machine.ServerAction
+    $machine.ServerAction = $null
+    $process.StandardInput.Close()
+    Wait-FixtureAction $process
+}
+
+function Expect-SharingViolation([scriptblock]$Open) {
+    try { (& $Open).Dispose() }
+    catch {
+        $failure = $_.Exception.GetBaseException()
+        $code = if ($failure -is [ComponentModel.Win32Exception]) { $failure.NativeErrorCode } else { $failure.HResult -band 0xffff }
+        Expect $code 32
+        return
+    }
+    throw 'The running server released a checked entry.'
 }
 
 function Invoke-FixtureUpdaterTask {
@@ -390,13 +455,57 @@ function Invoke-FixtureUpdaterTask {
     try { & $command } finally { Pop-Location }
 }
 
+if ($Scenario -in 'concurrent-install','live-server-install') {
+    Add-Type -Namespace Fixture -Name Rename -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+private static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string path, uint access,
+    System.IO.FileShare share, IntPtr security, uint disposition, uint flags, IntPtr template);
+
+public static Microsoft.Win32.SafeHandles.SafeFileHandle OpenDirectory(string path) {
+    var handle = CreateFile(path, 0x10000, System.IO.FileShare.ReadWrite | System.IO.FileShare.Delete,
+        IntPtr.Zero, 3, 0x02000000, IntPtr.Zero);
+    if (handle.IsInvalid) throw new System.ComponentModel.Win32Exception(System.Runtime.InteropServices.Marshal.GetLastWin32Error());
+    return handle;
+}
+'@
+}
 if ($Scenario -eq 'root-junction') {
     $junction = Join-Path $Fixture 'factory junction'
     [void](New-Item -ItemType Junction -Path $junction -Target $factory)
+    [IO.File]::WriteAllText((Join-Path $factory 'junction-target.txt'), $Fixture)
     Expect-Refusal { Install-Room $junction 'v1.2.0' '' } 'physical directory'
     Expect ([IO.Directory]::Exists($Support)) $false
     Expect $tasks.Count 0
     Expect $requests.Count 0
+}
+if ($Scenario -eq 'live-server-install') {
+    $installError = $null
+    try {
+        Expect ([IO.Directory]::Exists($Support)) $false
+        Expect (Install-Room $factory 'v1.2.0' 'desk.example.ts.net') 'Installed v1.2.0. Server running.'
+        Expect $machine.ServerAction.HasExited $false
+        Expect (Read-PrivateText 'installed-release' 200) ("v1.2.0" + [char]10)
+        Expect (Get-RoomStatus) 'Installed=True Running=True'
+        Expect (Wait-ServerHealth '1.2.0') $true
+        $server = Join-Path $Support 'server'
+        Expect-SharingViolation { [Fixture.Rename]::OpenDirectory($Support) }
+        Expect-SharingViolation { [Fixture.Rename]::OpenDirectory($server) }
+        Expect-SharingViolation { [IO.File]::Open((Join-Path $server $ServerName), 'Open', 'Write', 'ReadWrite') }
+        Expect $tasks.Count 2
+        Expect ($history -join ',') 'start 1.2.0'
+        Expect ([IO.File]::Exists((Join-Path $Support 'update-result.json'))) $false
+    } catch {
+        $installError = $_
+        throw
+    } finally {
+        if ($machine.ServerAction) {
+            try { Stop-FixtureServer } catch {
+                if (!$installError) { throw }
+                [Console]::Error.WriteLine("Server action cleanup also failed: $_")
+            }
+        }
+    }
+    return
 }
 Expect (Install-Room $factory 'v1.2.0' 'desk.example.ts.net') 'Installed v1.2.0. Server running.'
 $old = 'v1.2.0'
@@ -456,18 +565,6 @@ if ($Scenario -in 'lifecycle','sample') {
     Expect (Get-UpdateSettings).Enabled $true
 } elseif ($Scenario -eq 'concurrent-install') {
     # An outstanding DELETE access on server makes any premature, non-delete-sharing pin fail.
-    Add-Type -Namespace Fixture -Name Rename -MemberDefinition @'
-[System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
-private static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string path, uint access,
-    System.IO.FileShare share, IntPtr security, uint disposition, uint flags, IntPtr template);
-
-public static Microsoft.Win32.SafeHandles.SafeFileHandle OpenDirectory(string path) {
-    var handle = CreateFile(path, 0x10000, System.IO.FileShare.ReadWrite | System.IO.FileShare.Delete,
-        IntPtr.Zero, 3, 0x02000000, IntPtr.Zero);
-    if (handle.IsInvalid) throw new System.ComponentModel.Win32Exception(System.Runtime.InteropServices.Marshal.GetLastWin32Error());
-    return handle;
-}
-'@
     Write-PrivateText 'update-result.json' '{"prior":true}'
     $machine.BeforeBackup = {
         param($Server)
@@ -562,6 +659,8 @@ public static Microsoft.Win32.SafeHandles.SafeFileHandle OpenDirectory(string pa
     $offered = $old
     Expect (Invoke-FixtureUpdaterTask) 'current'
     Expect (ListCount) 1
+    Expect ([IO.Directory]::Exists($junction)) $true
+    Expect ([IO.File]::ReadAllText((Join-Path $factory 'junction-target.txt'))) $Fixture
 } elseif ($Scenario -eq 'job-replace') {
     $job = [IO.Directory]::CreateDirectory((Join-Path (Join-Path $factory $JobsFolder) 'fixture'))
     $fixtureState = Join-Path $job.FullName $JobFile

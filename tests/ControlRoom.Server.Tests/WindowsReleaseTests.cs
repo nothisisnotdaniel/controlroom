@@ -1,12 +1,23 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using Xunit.Abstractions;
 
 namespace ControlRoom.Server.Tests;
 
-public sealed class WindowsReleaseTests
+public sealed class WindowsReleaseTests : IDisposable
 {
+    private readonly ITestOutputHelper output;
+    private TempTokenFolder? fixture;
+    private bool rootJunction;
+
+    public WindowsReleaseTests(ITestOutputHelper output)
+    {
+        this.output = output;
+    }
+
     [Theory]
     [InlineData("lifecycle", null, null)]
+    [InlineData("live-server-install", null, null)]
     [InlineData("interval", null, null)]
     [InlineData("defer", null, null)]
     [InlineData("concurrent-install", "1.3.0", null)]
@@ -51,7 +62,8 @@ public sealed class WindowsReleaseTests
             return;
         }
 
-        using TempTokenFolder fixture = new();
+        fixture = new TempTokenFolder();
+        rootJunction = scenario == "root-junction";
         FakeTime clock = new();
         WindowsReleaseFixture.Run(fixture.Path, Path.Combine(RepoCopy.RepoFolder(), "scripts"), scenario, clock);
         if (scenario == "lifecycle")
@@ -67,6 +79,11 @@ public sealed class WindowsReleaseTests
         if (version is null)
         {
             Assert.Null(result);
+            if (rootJunction)
+            {
+                Assert.False(File.Exists(Path.Combine(fixture.Path, "ControlRoom", "update-result.json")));
+                output.WriteLine("Installer refusals, the physical-root updater and the absent result passed.");
+            }
             return;
         }
 
@@ -76,6 +93,25 @@ public sealed class WindowsReleaseTests
         Assert.Equal(reason, result.Reason);
         Assert.Equal(reason is null ? "1.2.0" : null, result.Previous);
         Assert.Equal(reason is null ? UpdateResult.Updated : UpdateResult.Failed, result.Result);
+    }
+
+    // xUnit records disposal exceptions alongside any failure from the test body.
+    public void Dispose()
+    {
+        if (fixture is null)
+        {
+            return;
+        }
+
+        if (rootJunction)
+        {
+            output.WriteLine(WindowsReleaseFixture.DetachRootJunction(fixture.Path));
+        }
+        fixture.Dispose();
+        if (rootJunction)
+        {
+            output.WriteLine("Removed the private fixture tree.");
+        }
     }
 
     [Fact]

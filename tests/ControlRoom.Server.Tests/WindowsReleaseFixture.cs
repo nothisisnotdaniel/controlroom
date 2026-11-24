@@ -51,6 +51,15 @@ internal static class WindowsReleaseFixture
             }
         }
 
+        RunScript(fixture, scenario, "-Scripts", scripts, "-Scenario", scenario, "-Epoch",
+            clock.GetUtcNow().ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture));
+    }
+
+    public static string DetachRootJunction(string fixture) =>
+        RunScript(fixture, "root-junction disposal", "-DetachRootJunction");
+
+    private static string RunScript(string fixture, string operation, params string[] arguments)
+    {
         string shell = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
         ProcessStartInfo start = new(shell)
         {
@@ -61,9 +70,9 @@ internal static class WindowsReleaseFixture
             RedirectStandardOutput = true,
         };
         string runner = Path.Combine(RepoCopy.RepoFolder(), "tests", "ControlRoom.Server.Tests", "WindowsReleaseFixture.ps1");
-        foreach (string argument in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "RemoteSigned",
-                     "-File", runner, "-Fixture", fixture, "-Scripts", scripts, "-Scenario", scenario, "-Epoch",
-                     clock.GetUtcNow().ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture) })
+        string[] command = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "RemoteSigned",
+            "-File", runner, "-Fixture", fixture, .. arguments];
+        foreach (string argument in command)
         {
             start.ArgumentList.Add(argument);
         }
@@ -74,9 +83,11 @@ internal static class WindowsReleaseFixture
         if (!process.WaitForExit(Timeout))
         {
             process.Kill(entireProcessTree: true);
-            Assert.Fail(scenario + " exceeded " + Timeout);
+            process.WaitForExit();
+            Assert.Fail(operation + " exceeded " + Timeout);
         }
 
-        Assert.True(process.ExitCode == 0, scenario + Environment.NewLine + output.Result + error.Result);
+        Assert.True(process.ExitCode == 0, operation + Environment.NewLine + output.Result + error.Result);
+        return output.Result.TrimEnd();
     }
 }
