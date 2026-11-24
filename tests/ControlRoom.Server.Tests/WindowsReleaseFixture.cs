@@ -33,6 +33,24 @@ internal static class WindowsReleaseFixture
             Directory.CreateSymbolicLink(Path.Combine(root, "factory"), target);
         }
 
+        if (scenario is "linked-job" or "linked-state")
+        {
+            string jobs = Directory.CreateDirectory(Path.Combine(fixture, "scan root", "factory", "jobs")).FullName;
+            string job = Path.Combine(jobs, "fixture");
+            string target = Directory.CreateDirectory(Path.Combine(fixture, "real job store")).FullName;
+            string state = Path.Combine(target, "state.json");
+            File.WriteAllText(state, """{"stage":"approve"}""");
+            if (scenario == "linked-job")
+            {
+                Directory.CreateSymbolicLink(job, target);
+            }
+            else
+            {
+                Directory.CreateDirectory(job);
+                File.CreateSymbolicLink(Path.Combine(job, "state.json"), state);
+            }
+        }
+
         string shell = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
         ProcessStartInfo start = new(shell)
         {

@@ -41,7 +41,9 @@ $root = 'C:\My Factory'
 .\controlroom.exe --FactoryRoot $root
 ```
 
-Use the directory containing your projects for `$root`. Open http://127.0.0.1:8100. From a second PowerShell window in the extracted folder, run `.\controlroom.exe token` and enter the token in the app. The private file is `%LOCALAPPDATA%\ControlRoom\access-token`. Use `.\controlroom.exe token --new` to rotate it. For a custom token path, pass the same `--TokenFile <path>` to the foreground server and the token command, using a dedicated private directory.
+Use the physical directory containing your projects for `$root`. If you reach it through a junction or symbolic link, use the target directory for installation. For automatic updates, keep the job records on a local filesystem such as NTFS where Windows can coordinate reads with the factory worker.
+
+Open http://127.0.0.1:8100. From a second PowerShell window in the extracted folder, run `.\controlroom.exe token` and enter the token in the app. The private file is `%LOCALAPPDATA%\ControlRoom\access-token`. Use `.\controlroom.exe token --new` to rotate it. For a custom token path, pass the same `--TokenFile <path>` to the foreground server and the token command, using a dedicated private directory.
 
 Press Ctrl+C in the foreground server window before installing the sign-in task. From the extracted folder, run these commands as your usual Windows user. The execution policy setting applies to this PowerShell session.
 

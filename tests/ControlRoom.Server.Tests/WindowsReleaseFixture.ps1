@@ -38,7 +38,7 @@ if ($Scenario -in 'lifecycle','sample') {
     $Support = Join-Path (Join-Path $Fixture 'profile %TEMP%') $DataFolder
     $factory = Join-Path (Join-Path $Fixture 'selected directory') ([IO.Path]::GetFileName($factory))
 }
-if ($Scenario -eq 'linked-jobs') { $factory = Join-Path $Fixture 'scan root' }
+if ($Scenario -in 'linked-jobs','linked-job','linked-state','root-junction') { $factory = Join-Path $Fixture 'scan root' }
 [void][IO.Directory]::CreateDirectory($factory)
 $clock = [DateTimeOffset]::FromUnixTimeSeconds($Epoch)
 $tasks = @{}
@@ -181,7 +181,7 @@ function Add-ZipText($Zip, $Name, $Value) {
 
 function FixtureUpdater($Tag) {
     if ($Scenario -eq 'interrupted-candidate' -and $Tag -ceq 'v1.3.0') { return "throw 'Fixture candidate failed to start.'" }
-    if ($Scenario -notin 'interrupted-swap','interrupted-candidate','interrupted-rollback','restore-result-retry','pending-active','concurrent-install') {
+    if ($Scenario -notin 'interrupted-swap','interrupted-candidate','interrupted-rollback','restore-result-retry','pending-active','concurrent-install','job-replace','root-junction') {
         return "updater $Tag"
     }
     # The registered action runs the packaged updater. Supply the same private data and OS/network
@@ -383,10 +383,21 @@ function Invoke-FixtureUpdaterTask {
         'Get-Process','Open-WebResponse','Move-ReleaseDirectory') {
         $fixtureOverrides[$fakeName] = (Get-Item -LiteralPath "function:$fakeName").ScriptBlock
     }
+    if ($Scenario -eq 'job-replace') {
+        $fixtureOverrides['Read-JobState'] = (Get-Item function:Read-JobState).ScriptBlock
+    }
     Push-Location -LiteralPath $start.WorkingDirectory
     try { & $command } finally { Pop-Location }
 }
 
+if ($Scenario -eq 'root-junction') {
+    $junction = Join-Path $Fixture 'factory junction'
+    [void](New-Item -ItemType Junction -Path $junction -Target $factory)
+    Expect-Refusal { Install-Room $junction 'v1.2.0' '' } 'physical directory'
+    Expect ([IO.Directory]::Exists($Support)) $false
+    Expect $tasks.Count 0
+    Expect $requests.Count 0
+}
 Expect (Install-Room $factory 'v1.2.0' 'desk.example.ts.net') 'Installed v1.2.0. Server running.'
 $old = 'v1.2.0'
 Set-Options stable 30
@@ -535,6 +546,57 @@ public static Microsoft.Win32.SafeHandles.SafeFileHandle OpenDirectory(string pa
     if ($Scenario -eq 'release-pages') { Expect (ListCount) 10 } else { Expect (ListCount) 1 }
     Expect (Marker) $old
     Expect ([IO.File]::Exists($resultPath)) $false
+} elseif ($Scenario -eq 'root-junction') {
+    $server = $tasks[$ServerTask]
+    $updater = $tasks[$UpdaterTask]
+    $requestCount = $requests.Count
+    $historyCount = $history.Count
+    Expect-Refusal { Install-Room $junction $offered '' } 'physical directory'
+    Expect $requests.Count $requestCount
+    Expect $history.Count $historyCount
+    Expect ([object]::ReferenceEquals($tasks[$ServerTask], $server)) $true
+    Expect ([object]::ReferenceEquals($tasks[$UpdaterTask], $updater)) $true
+    Expect (Current-Code) '1.2.0'
+    Expect (Marker) $old
+    Expect (Get-RoomStatus) 'Installed=True Running=True'
+    $offered = $old
+    Expect (Invoke-FixtureUpdaterTask) 'current'
+    Expect (ListCount) 1
+} elseif ($Scenario -eq 'job-replace') {
+    $job = [IO.Directory]::CreateDirectory((Join-Path (Join-Path $factory $JobsFolder) 'fixture'))
+    $fixtureState = Join-Path $job.FullName $JobFile
+    $nextState = $fixtureState + '.tmp'
+    [IO.File]::WriteAllText($fixtureState, '{"stage":"approve"}')
+    [IO.File]::WriteAllText($nextState, '{"stage":"build"}')
+    # Windows os.replace publishes the worker's closed temporary file with MOVEFILE_REPLACE_EXISTING.
+    Add-Type -Namespace Fixture -Name JobWriter -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+private static extern bool MoveFileEx(string source, string destination, uint flags);
+
+public static System.Threading.Tasks.Task<int> Publish(string source, string destination) {
+    return System.Threading.Tasks.Task.Run(() =>
+        MoveFileEx(source, destination, 1) ? 0 : System.Runtime.InteropServices.Marshal.GetLastWin32Error());
+}
+'@
+    $readState = (Get-Item function:Read-JobState).ScriptBlock
+    $transitionTimeout = [TimeSpan]::FromSeconds(15)
+    function Read-JobState($Record) {
+        if (!$machine.Transition) {
+            $machine.Transition = [Fixture.JobWriter]::Publish($nextState, $fixtureState)
+            $machine.BreakSeen = $Record.Changed.WaitOne($transitionTimeout)
+        }
+        & $readState $Record
+    }
+    Expect (Invoke-FixtureUpdaterTask) 'job_running'
+    Expect $machine.BreakSeen $true
+    Expect ($machine.Transition.Wait($transitionTimeout)) $true
+    Expect $machine.Transition.Result 0
+    Expect ([IO.File]::ReadAllText($fixtureState)) '{"stage":"build"}'
+    Expect (Invoke-FixtureUpdaterTask) 'job_running'
+    Expect (ListCount) 0
+    Expect (Marker) $old
+    Expect ([IO.File]::Exists((Join-Path $Support 'last-check'))) $false
+    Expect ([IO.File]::Exists($resultPath)) $false
 } elseif ($Scenario -eq 'job-scan') {
     $jobs = Join-Path $factory $JobsFolder
     $job = [IO.Directory]::CreateDirectory((Join-Path $jobs 'hidden'))
@@ -549,9 +611,18 @@ public static Microsoft.Win32.SafeHandles.SafeFileHandle OpenDirectory(string pa
     try { Expect (Invoke-RoomUpdate $factory) 'job_running' } finally { $held.Dispose() }
     Expect (ListCount) 0
     Expect ([IO.File]::Exists($resultPath)) $false
-} elseif ($Scenario -eq 'linked-jobs') {
+    [IO.File]::Delete($state)
+    [void][IO.Directory]::CreateDirectory($state)
     Expect (Invoke-RoomUpdate $factory) 'job_running'
-    Expect ([IO.Directory]::GetFileSystemEntries((Join-Path $Fixture 'real job store')).Count) 0
+    [IO.Directory]::Delete($state)
+    $offered = $old
+    Expect (Invoke-RoomUpdate $factory) 'current'
+    Expect (ListCount) 1
+} elseif ($Scenario -in 'linked-jobs','linked-job','linked-state') {
+    Expect (Invoke-RoomUpdate $factory) 'job_running'
+    $target = Join-Path $Fixture 'real job store'
+    if ($Scenario -eq 'linked-jobs') { Expect ([IO.Directory]::GetFileSystemEntries($target).Count) 0 }
+    else { Expect ([IO.File]::ReadAllText((Join-Path $target $JobFile))) '{"stage":"approve"}' }
     Expect (ListCount) 0
     Expect ([IO.File]::Exists($resultPath)) $false
 } elseif ($Scenario -eq 'defer') {
