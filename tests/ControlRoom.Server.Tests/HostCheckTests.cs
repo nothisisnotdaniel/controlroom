@@ -216,7 +216,7 @@ public sealed class HostCheckTests
 
         Assert.NotNull(app);
         await app.DisposeAsync();
-        Assert.Equal(AccessToken.CreatedText + Environment.NewLine, error.ToString());
+        Assert.Equal(AccessToken.CreatedText(tokens.TokenFile) + Environment.NewLine, error.ToString());
     }
 
     [Fact]

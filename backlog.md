@@ -31,7 +31,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#142](backlog/142-update-interval-setting-30-minutes-by.md) Update interval setting, 30 minutes by default → 376-update-interval
 - [ ] [#147](backlog/147-show-and-edit-the-factory-backlog.md) Show and edit the factory backlog (after: factory#30)
 - [ ] [#153](backlog/153-modular-roomkit-core-with-an-opt.md) Modular RoomKit core with an opt-in factory module (after: #147)
-- [ ] [#152](backlog/152-windows-executables-for-controlroom.md) Windows executables for ControlRoom
+- [x] [#152](backlog/152-windows-executables-for-controlroom.md) Windows executables for ControlRoom → 400-windows-executables-for-controlroom.866b39353c1e4a4a8ef568accfd791ec
 - [stop] Auto stops here
 - [ ] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone (after: #139)
 - [ ] [#139](backlog/139-phone-start-spike.md) Phone start spike

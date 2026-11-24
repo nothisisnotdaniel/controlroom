@@ -273,7 +273,7 @@ public sealed partial class SearchWebAppTests
         string js = await Fetch("/sw.js");
         string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v22\";", room, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v23\";", room, StringComparison.Ordinal);
         Assert.Contains("  \"/counts.js\",\n  \"/search.js\",\n  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/releases.js\",\n  \"/live.js\",\n", room, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/search", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/search", room, StringComparison.Ordinal);

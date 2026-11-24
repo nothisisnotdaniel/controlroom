@@ -1,4 +1,4 @@
-# Builds ControlRoom for macOS on Apple silicon and attaches it to a GitHub release.
+# Builds ControlRoom for Windows x64 and macOS on Apple silicon from one release commit.
 # - A push to develop makes a prerelease vX.Y.(Z+1)-develop.<run number>, one patch above the highest
 #   release tag (.github/scripts/develop-version.sh), on the pushed commit. A push that changes only
 #   backlog.md or backlog/ is skipped (paths-ignore), so it makes no prerelease.
@@ -11,6 +11,8 @@
 #   with the self-contained publish output, wwwroot/ included) and SHA256SUMS, plus a build-provenance
 #   attestation for the tarball (check it with: gh attestation verify <tarball> --repo nothisisnotdaniel/controlroom).
 #   scripts/launch-agent.sh install --release [vX.Y.Z] installs it.
+# - The Windows job packages and exercises the win-x64 ZIP. Both builds use the validated version and commit.
+#   The release job includes the tested ZIP in the checksums, attestation and GitHub release.
 # - The release also holds RoomKit.<version>.nupkg, the shared server core (docs/roomkit.md), packed with the same
 #   version, listed in SHA256SUMS and attested with the tarball. Apps restore it from a local folder feed filled
 #   with gh release download; no package registry, permission or secret is needed.
@@ -39,15 +41,16 @@ on:
 permissions: {}
 
 jobs:
-  release:
+  version:
     # Every push to develop runs; a pull_request event runs only for a merged PR from develop in this repository.
     if: github.event_name == 'push' || (github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.head.repo.full_name == github.repository)
     # macos-15 is an Apple silicon (arm64) runner; the first step checks it.
     runs-on: macos-15
     permissions:
-      contents: write
-      id-token: write
-      attestations: write
+      contents: read
+    outputs:
+      release_version: ${{ steps.version.outputs.RELEASE_VERSION }}
+      release_target: ${{ steps.version.outputs.RELEASE_TARGET }}
     env:
       PR_TITLE: ${{ github.event.pull_request.title }}
       PR_MERGED: ${{ github.event.pull_request.merged }}
@@ -65,11 +68,6 @@ jobs:
           fetch-depth: 0
           # A release PR builds its merge commit; empty for a push, which keeps the pushed commit.
           ref: ${{ github.event.pull_request.merge_commit_sha }}
-
-      - name: Set up .NET
-        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
-        with:
-          dotnet-version: "10.0.x"
 
       - name: Check the event
         run: |
@@ -133,6 +131,7 @@ jobs:
           fi
 
       - name: Version
+        id: version
         run: |
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
             # Push to develop: one patch above the highest release tag, as a prerelease.
@@ -148,8 +147,63 @@ jobs:
             fi
             RELEASE_TARGET="$MERGE_SHA"
           fi
-          echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
-          echo "RELEASE_TARGET=$RELEASE_TARGET" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "RELEASE_TARGET=$RELEASE_TARGET" >> "$GITHUB_OUTPUT"
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    env:
+      RELEASE_VERSION: ${{ needs.version.outputs.release_version }}
+    steps:
+      - name: Check out the release commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.version.outputs.release_target }}
+          persist-credentials: false
+
+      - name: Set up .NET on Windows
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Windows tests
+        run: dotnet test -c Release
+
+      - name: Build and smoke check the Windows ZIP
+        run: ./.github/scripts/windows-release.ps1
+
+      - name: Save the verified ZIP
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-release
+          path: dist/controlroom-${{ env.RELEASE_VERSION }}-win-x64.zip
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    needs: [version, windows]
+    runs-on: macos-15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      RELEASE_VERSION: ${{ needs.version.outputs.release_version }}
+      RELEASE_TARGET: ${{ needs.version.outputs.release_target }}
+    steps:
+      - name: Check out the release commit on macOS
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.version.outputs.release_target }}
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
 
       # The tests run on the normal build (no version override): they expect the version "dev".
       # MSBuild reads every environment variable as a property, ignoring case, so a $GITHUB_ENV name like
@@ -304,17 +358,27 @@ jobs:
       - name: Pack RoomKit
         run: dotnet pack src/RoomKit -c Release -p:Version="$RELEASE_VERSION" -o dist
 
+      - name: Collect the verified ZIP
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: windows-release
+          path: dist
+
       - name: Checksums
         run: |
           cd dist
           shasum -a 256 "controlroom-$RELEASE_VERSION-osx-arm64.tar.gz" > SHA256SUMS
           shasum -a 256 "RoomKit.$RELEASE_VERSION.nupkg" >> SHA256SUMS
+          shasum -a 256 "controlroom-$RELEASE_VERSION-win-x64.zip" >> SHA256SUMS
           cat SHA256SUMS
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: dist/controlroom-${{ env.RELEASE_VERSION }}-osx-arm64.tar.gz,dist/RoomKit.${{ env.RELEASE_VERSION }}.nupkg
+          subject-path: |
+            dist/controlroom-${{ env.RELEASE_VERSION }}-osx-arm64.tar.gz
+            dist/RoomKit.${{ env.RELEASE_VERSION }}.nupkg
+            dist/controlroom-${{ env.RELEASE_VERSION }}-win-x64.zip
 
       - name: Create GitHub release
         env:
@@ -325,7 +389,7 @@ jobs:
           case "$RELEASE_VERSION" in
             *-*) PRERELEASE="--prerelease" ;;
           esac
-          gh release create "v$RELEASE_VERSION" "dist/controlroom-$RELEASE_VERSION-osx-arm64.tar.gz" dist/SHA256SUMS "dist/RoomKit.$RELEASE_VERSION.nupkg" --title "ControlRoom $RELEASE_VERSION" --generate-notes --target "$RELEASE_TARGET" $PRERELEASE
+          gh release create "v$RELEASE_VERSION" "dist/controlroom-$RELEASE_VERSION-osx-arm64.tar.gz" dist/SHA256SUMS "dist/RoomKit.$RELEASE_VERSION.nupkg" "dist/controlroom-$RELEASE_VERSION-win-x64.zip" --title "ControlRoom $RELEASE_VERSION" --generate-notes --target "$RELEASE_TARGET" $PRERELEASE
 
       # Housekeeping after a proper release: delete the -develop prereleases (and their tags) at or below the
       # release (.github/scripts/old-prereleases.sh). It runs only after the release was created, so

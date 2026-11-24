@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Hosting;
 
 namespace ControlRoom.Server.Tests;
@@ -89,7 +90,21 @@ public sealed class WebAssetSplitTests
             }
 
             string folder = AppFiles.Contains(path) ? AppFolder() : KitFolder();
-            Assert.True(hash == Sha256(File.ReadAllBytes(Path.Combine(folder, path))), path + " changed");
+            byte[] bytes = File.ReadAllBytes(Path.Combine(folder, path));
+            if (path == "board.js")
+            {
+                // The Windows install hint is the only addition since the asset split.
+                const string WindowsHint = """
+                      if (command.startsWith(".\\launch-agent.ps1 ")) {
+                        text.append(" Run this command in PowerShell from the extracted release folder.");
+                      }
+                    """;
+                string script = Encoding.UTF8.GetString(bytes);
+                Assert.Contains(WindowsHint, script, StringComparison.Ordinal);
+                bytes = Encoding.UTF8.GetBytes(script.Replace(WindowsHint + "\n", "", StringComparison.Ordinal));
+            }
+
+            Assert.True(hash == Sha256(bytes), path + " changed");
         }
     }
 
@@ -127,9 +142,9 @@ public sealed class WebAssetSplitTests
         Assert.True(start >= 0 && end > start);
         // The shell list block moved, with "/room.js" added and the version raised.
         List<string> block = develop.GetRange(start, end - start + 1);
-        block[0] = "const CacheVersion = \"v22\";";
+        block[0] = "const CacheVersion = \"v23\";";
         block.Insert(block.IndexOf("  \"/token.js\",") + 1, "  \"/room.js\",");
-        int roomStart = room.IndexOf("const CacheVersion = \"v22\";");
+        int roomStart = room.IndexOf("const CacheVersion = \"v23\";");
         Assert.Equal(block, room.GetRange(roomStart, block.Count));
         develop.RemoveRange(start, end - start + 1);
 
@@ -143,7 +158,9 @@ public sealed class WebAssetSplitTests
         {
             develop[i] = develop[i]
                 .Replace("let tag = \"controlroom\";", "let tag = PushDefaultTag;", StringComparison.Ordinal)
-                .Replace("\"ControlRoom \" + version", "PushUpdatePrefix + version", StringComparison.Ordinal);
+                .Replace("\"ControlRoom \" + version", "PushUpdatePrefix + version", StringComparison.Ordinal)
+                .Replace("The old version didn't come back. Check the Mac.",
+                    "The old version didn't restart. Check the computer running the server.", StringComparison.Ordinal);
         }
 
         develop.Insert(0, "importScripts(\"/room.js\");");
@@ -160,6 +177,7 @@ public sealed class WebAssetSplitTests
         Assert.Equal(index.FindIndex(line => line.Contains("<script", StringComparison.Ordinal)), index.IndexOf(Room));
         Assert.Equal(index.IndexOf(Room) + 1, index.IndexOf("  <script src=\"/token.js\" defer></script>"));
         index.Remove(Room);
+        Assert.True(index.Remove("""      <p class="token-help">On Windows, open PowerShell in the server folder and run <code>.\controlroom.exe token</code>.</p>"""));
         Assert.Equal(develop, index);
     }
 

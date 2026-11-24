@@ -9,6 +9,29 @@ public sealed partial class RoomKitScriptTests
 
     private const string End = "# roomkit:app-end\n";
 
+    [Fact]
+    public void WindowsUpdaterUsesRoomKitsSemVerIdentifierRule()
+    {
+        string updater = Read(Path.Combine(RepoFolder(), "src", "RoomKit", "scripts", "updater.ps1"));
+        Assert.Contains("$identifier = '" + SemVer.PrereleaseIdentifierPattern + "'", updater.Split('\n'));
+    }
+
+    [Fact]
+    public void WindowsInstallerSharesTheUpdaterAndOnlyTheAppAssignmentsDiffer()
+    {
+        string scripts = Path.Combine(RepoFolder(), "scripts");
+        string kit = Path.Combine(RepoFolder(), "src", "RoomKit", "scripts");
+        Assert.Equal(Read(Path.Combine(kit, "launch-agent.ps1")), Read(Path.Combine(scripts, "launch-agent.ps1")));
+        (string before, string block, string after) = Split(Read(Path.Combine(kit, "updater.ps1")));
+        (string appBefore, string appBlock, string appAfter) = Split(Read(Path.Combine(scripts, "updater.ps1")));
+        Assert.Equal(before, appBefore);
+        Assert.Equal(after, appAfter);
+        Assert.Equal(Names(block), Names(appBlock));
+        Assert.NotEqual(block, appBlock);
+        Assert.DoesNotContain("controlroom", block + after, StringComparison.OrdinalIgnoreCase);
+        Assert.All(block.TrimEnd('\n').Split('\n'), line => Assert.Matches(@"^\$[A-Za-z]+ = ('[A-Za-z0-9./-]+'|[0-9]+)$", line));
+    }
+
     [Theory]
     [InlineData("launch-agent.sh")]
     [InlineData("updater.sh")]

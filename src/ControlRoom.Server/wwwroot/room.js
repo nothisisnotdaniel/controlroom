@@ -15,7 +15,7 @@ const PushAppTexts = {
 };
 
 // Service worker (sw.js). Caches only the app shell. Bump the version when the shell list changes.
-const CacheVersion = "v22";
+const CacheVersion = "v23";
 const CacheName = "controlroom-shell-" + CacheVersion;
 
 const Shell = [

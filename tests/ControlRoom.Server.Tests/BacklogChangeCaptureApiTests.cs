@@ -81,8 +81,7 @@ public sealed partial class BacklogChangeApiTests
     public async Task Capture_KeepsTheCommitWhenThePushFails()
     {
         using Repo repo = Repo.Create();
-        string remote = repo.Root.AddBareRemote(repo.Folder);
-        Directory.Delete(remote, recursive: true);
+        TempFactoryRoot.Git(repo.Folder, "remote", "add", "origin", Path.Combine(repo.Root.Path, "missing.git"));
 
         JsonElement result = await repo.Change(new { action = "capture", text = "Idea" });
 

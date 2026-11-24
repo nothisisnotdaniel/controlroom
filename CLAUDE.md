@@ -21,7 +21,9 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   returns only `{"version":"…"}` (`no-store`, still behind `HostCheck` and the method rule) for the updater. The
   one token (32 random bytes, base64url, 43 chars) lives in `~/Library/Application Support/ControlRoom/access-token`
   (folder `0700`, file `0600`, outside the factory root; `--TokenFile <path>` overrides it) and is read on every
-  request. `dotnet run --project src/ControlRoom.Server -- token` prints it (creating it when missing),
+  request. On Windows the default token path is `%LOCALAPPDATA%\ControlRoom\access-token`. The token and its private
+  folder must have the current SID as owner and no grants to another SID. `.\controlroom.exe token` prints it.
+  `dotnet run --project src/ControlRoom.Server -- token` prints it (creating it when missing),
   `-- token --new` replaces it; a symlinked, loose-mode or invalid file stops the server until `token --new`.
   The token is never logged, put in a URL or cached by the service worker.
 - **Safety rules:**
@@ -198,6 +200,12 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   `SHA256SUMS`, the attestation subjects and the `gh release create` files (stable and prerelease). Other apps restore
   it from a local folder feed filled with `gh release download` (`docs/roomkit.md`); no GitHub Packages, no
   `packages: write`, no new secret.
+- **Windows releases:** CI tests the same release commit on `windows-latest` and macOS. The Windows ZIP contains
+  the self-contained single-file `controlroom.exe`, both PowerShell scripts and `wwwroot`. CI runs the extracted
+  executable and checks its version, health and served asset bytes before the common checksums and attestation.
+  The Windows installer registers two limited, interactive tasks for the current SID. The updater verifies the ZIP,
+  checks the configured interval and job stages, and swaps the whole server directory. It checks the task PID,
+  listener and health version before writing the marker and result. See the Windows section in `README.md`.
 - **Test command:** `dotnet test` (from `ControlRoom/`; `dotnet build` must stay at 0 warnings). Tests build a
   temporary factory root (`TempFactoryRoot`) and host the server with `ServerFactory`; no test reads the real
   factory root or opens a real port.
@@ -223,7 +231,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `manifest.webmanifest`, `icons/`, `app.js`, `board.js`, `act.js`, `status.js`, `releases.js` and `room.js`.
   - `wwwroot/room.js` (ControlRoom): the app values the RoomKit scripts read as globals, loaded as the first
     `<script>` of `index.html` and by `sw.js` through `importScripts("/room.js")`: `TokenKey`, `CaptureProjectKey`,
-    `HistoryProjectKey`, `PushAppTexts` (`homeScreen`, `denied`), `CacheVersion` (`v22`), `CacheName`, `Shell` (the
+    `HistoryProjectKey`, `PushAppTexts` (`homeScreen`, `denied`), `CacheVersion` (`v23`), `CacheName`, `Shell` (the
     shell list, with `/room.js`), `PushAppTitles` (`updated`), `PushFallbackTitle`, `PushDefaultTag` and
     `PushUpdatePrefix`. The script order below starts with `room.js`.
   - Scripts: every app value of `launch-agent.sh` and `updater.sh` is in the block between `# roomkit:app-begin`

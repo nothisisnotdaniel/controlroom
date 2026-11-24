@@ -48,7 +48,7 @@ public sealed partial class ServiceWorkerTests
         string js = await Fetch();
         string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v22\";", room, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v23\";", room, StringComparison.Ordinal);
         Assert.Contains("  \"/edit.js\",\n", room, StringComparison.Ordinal);
         Assert.Contains("  \"/counts.js\",\n", room, StringComparison.Ordinal);
         Assert.Contains("  \"/live.js\",\n", room, StringComparison.Ordinal);
