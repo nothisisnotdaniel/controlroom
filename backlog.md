@@ -165,4 +165,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#156](backlog/156-drop-the-one-off-controlroom-400.md) Drop the one-off ControlRoom 400 test workflow
 - [ ] [#157](backlog/157-windows-updater-errors-say-what-to.md) Windows updater errors say what to do next
 - [ ] [#158](backlog/158-readable-status-output-from-launch-agent.md) Readable status output from launch-agent.ps1
-- [ ] [#159](backlog/159-show-which-work-items-a-collaborator.md) Show which work items a collaborator is working on
+- [ ] [#159](backlog/159-show-which-work-items-a-collaborator.md) Show which work items a collaborator is working on (after: factory#53)
