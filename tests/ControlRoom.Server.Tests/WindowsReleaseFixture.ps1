@@ -141,6 +141,11 @@ function Move-ReleaseDirectory($Source, $Destination) {
     if ([IO.Path]::GetFileName($Destination) -ceq $machine.InterruptAt) { break interruptedUpdate }
 }
 function Get-FixtureReleases {
+    if ($Scenario -in 'stable','develop') {
+        # Build metadata makes this 129-character tag ineligible on both channels.
+        $unsupported = 'v9.0.0-develop.'.PadRight(127, '7') + '+1'
+        @{ tag_name = $unsupported; draft = $false; prerelease = $true }
+    }
     foreach ($name in @('v1.2.0', $offered, 'v1.4.0-develop.3', 'v1.4.0-rc.1', 'v9.0.0-rc.1-develop.3', 'v1.4.0-develop.12')) {
         @{ tag_name = $name; draft = $false; prerelease = $name.Contains('-') }
     }

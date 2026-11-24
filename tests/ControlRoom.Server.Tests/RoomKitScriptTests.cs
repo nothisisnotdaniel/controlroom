@@ -10,6 +10,13 @@ public sealed partial class RoomKitScriptTests
     private const string End = "# roomkit:app-end\n";
 
     [Fact]
+    public void WindowsUpdaterUsesRoomKitsSemVerIdentifierRule()
+    {
+        string updater = Read(Path.Combine(RepoFolder(), "src", "RoomKit", "scripts", "updater.ps1"));
+        Assert.Contains("$identifier = '" + SemVer.PrereleaseIdentifierPattern + "'", updater.Split('\n'));
+    }
+
+    [Fact]
     public void WindowsInstallerSharesTheUpdaterAndOnlyTheAppAssignmentsDiffer()
     {
         string scripts = Path.Combine(RepoFolder(), "scripts");
