@@ -10,6 +10,13 @@ internal static class WindowsReleaseFixture
 
     public static void Run(string fixture, string scripts, string scenario, FakeTime clock)
     {
+        if (scenario == "entry-link")
+        {
+            string target = Path.Combine(fixture, "link-target.ps1");
+            File.WriteAllText(target, "throw 'Fixture link target was loaded.'");
+            File.CreateSymbolicLink(Path.Combine(fixture, "entry-link"), target);
+        }
+
         if (OperatingSystem.IsWindows() && scenario == "linked-stamp")
         {
             string support = Path.Combine(fixture, "ControlRoom");

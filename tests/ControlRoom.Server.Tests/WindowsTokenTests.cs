@@ -9,26 +9,34 @@ public sealed class WindowsTokenTests
     [Fact]
     public void TokenNew_CreatesUserOnlyFilesIncludingTheTemporaryFile()
     {
-        if (!OperatingSystem.IsWindows())
+        if (OperatingSystem.IsWindows())
         {
-            return;
+            CheckTokenRotation();
         }
+    }
 
+    [SupportedOSPlatform("windows")]
+    private static void CheckTokenRotation()
+    {
         using TempTokenFolder tokens = new();
         string folder = Path.GetDirectoryName(tokens.TokenFile)!;
         string? first = AccessToken.Replace(tokens.TokenFile, buffer => buffer.Fill(10));
         Assert.NotNull(first);
         AssertPrivate(new DirectoryInfo(folder).GetAccessControl());
         AssertPrivate(new FileInfo(tokens.TokenFile).GetAccessControl());
-        string temporary = Path.Combine(folder, "creation-test.tmp");
-        using (AccessToken.CreatePrivateFile(temporary))
-        {
-            AssertPrivate(new FileInfo(temporary).GetAccessControl());
-        }
-
         StringWriter output = new();
+        bool inspected = false;
         Assert.Equal(0, TokenCommand.Run(["token", "--new", "--TokenFile", tokens.TokenFile],
-            output, TextWriter.Null, buffer => buffer.Fill(11)));
+            output, TextWriter.Null, buffer =>
+            {
+                FileInfo temporary = Assert.Single(new DirectoryInfo(folder).EnumerateFiles(".*.tmp"));
+                Assert.Equal(0, temporary.Length);
+                AssertPrivate(temporary.GetAccessControl());
+                inspected = true;
+                buffer.Fill(11);
+            }));
+        Assert.True(inspected);
+        Assert.Empty(new DirectoryInfo(folder).EnumerateFiles(".*.tmp"));
         Assert.NotEqual(first, AccessToken.Read(tokens.TokenFile).Token);
         Assert.Equal(AccessToken.Generate(buffer => buffer.Fill(11)) + "\n", output.ToString());
         AssertPrivate(new FileInfo(tokens.TokenFile).GetAccessControl());
@@ -75,7 +83,8 @@ public sealed class WindowsTokenTests
         using (FileStream parent = WindowsPrivateFiles.OpenDirectory(folder))
         {
             Assert.Throws<IOException>(() => Directory.Move(folder.FullName, moved));
-            WindowsPrivateFiles.Replace(parent, Path.GetFileName(tokens.TokenFile), System.Text.Encoding.ASCII.GetBytes(next));
+            WindowsPrivateFiles.Replace(parent, Path.GetFileName(tokens.TokenFile),
+                stream => stream.Write(System.Text.Encoding.ASCII.GetBytes(next)));
             Assert.Equal(next, AccessToken.Read(tokens.TokenFile).Token);
         }
 

@@ -49,9 +49,10 @@ $offered = 'v1.3.0'
 $badListener = $false
 $failRecovery = $false
 $failStart = $false
-$machine = @{ Running = $false; Interrupt = $false; FailRestore = $false }
+$machine = @{ Running = $false; InterruptAt = ''; FailRestore = $false }
 $writePrivate = (Get-Item function:Write-PrivateText).ScriptBlock
 function Write-PrivateText($Name, $Value, $Folder = $Support) {
+    if ($machine.InterruptAt -ceq 'marker' -and $Name -ceq 'installed-release') { break interruptedUpdate }
     if ($Scenario -eq 'swap' -and $Name -eq 'installed-release' -and $Value.Trim() -eq 'v1.3.0') {
         throw 'Fixture could not commit the new marker.'
     }
@@ -61,14 +62,49 @@ function Write-PrivateText($Name, $Value, $Folder = $Support) {
 function Expect($Actual, $Wanted) {
     if ([string]$Actual -cne [string]$Wanted) { throw "Expected [$Wanted], got [$Actual]." }
 }
+function Expect-Refusal([scriptblock]$Operation, $Reason) {
+    $message = ''
+    try { & $Operation | Out-Null } catch { $message = $_.Exception.ToString() }
+    if (!$message.Contains($Reason)) { throw "Expected refusal [$Reason], got [$message]." }
+}
+function With-RefusedEntry($Path, [scriptblock]$Check) {
+    $saved = $Path + '.original'
+    [IO.File]::Move($Path, $saved)
+    try {
+        switch ($Scenario) {
+            'entry-acl' {
+                $acl = [Security.AccessControl.FileSecurity]::new()
+                $acl.SetOwner($UserSid)
+                $acl.SetAccessRuleProtection($true, $false)
+                $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($UserSid, 'FullControl', 'Allow'))
+                $users = [Security.Principal.SecurityIdentifier]::new('S-1-5-32-545')
+                $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($users, 'Write', 'Allow'))
+                $out = [IO.FileStream]::new($Path, 'CreateNew', [Security.AccessControl.FileSystemRights]::Write, 'None', 4096, 'None', $acl)
+                try {
+                    $bytes = [IO.File]::ReadAllBytes($saved)
+                    $out.Write($bytes, 0, $bytes.Length)
+                } finally { $out.Dispose() }
+            }
+            'entry-link' { [IO.File]::Move((Join-Path $Fixture 'entry-link'), $Path) }
+            'entry-directory' { New-PrivateDirectory $Path }
+            'entry-size' { [IO.File]::WriteAllBytes($Path, [byte[]]::new($UpdaterLimit + 1)) }
+        }
+        & $Check
+    } finally {
+        if ($Scenario -eq 'entry-directory') { [IO.Directory]::Delete($Path) }
+        elseif ($Scenario -eq 'entry-link') { [IO.File]::Move($Path, (Join-Path $Fixture 'entry-link')) }
+        else { [IO.File]::Delete($Path) }
+        [IO.File]::Move($saved, $Path)
+    }
+}
 function Current-Code { [IO.File]::ReadAllText((Join-Path (Join-Path $Support 'server') $ServerName)) }
 function Get-UpdateTime { return $clock }
 function Wait-RoomPoll { }
 function Move-ReleaseDirectory($Source, $Destination) {
     if ($machine.FailRestore -and [IO.Path]::GetFileName($Source) -ceq 'previous') { throw 'Fixture restore failed.' }
     [IO.Directory]::Move($Source, $Destination)
-    # Leave the updater invocation at the first rename, bypassing its in-process catch/rollback.
-    if ($machine.Interrupt -and [IO.Path]::GetFileName($Destination) -ceq 'previous') { break interruptedUpdate }
+    # Exit this invocation at a durable boundary without entering its ordinary exception handler.
+    if ([IO.Path]::GetFileName($Destination) -ceq $machine.InterruptAt) { break interruptedUpdate }
 }
 function Get-FixtureReleases {
     foreach ($name in @('v1.2.0', $offered, 'v1.4.0-develop.3', 'v1.4.0-rc.1', 'v9.0.0-rc.1-develop.3', 'v1.4.0-develop.12')) {
@@ -136,7 +172,10 @@ function Add-ZipText($Zip, $Name, $Value) {
 }
 
 function FixtureUpdater($Tag) {
-    if ($Scenario -notin 'interrupted-swap','restore-result-retry','pending-active') { return "updater $Tag" }
+    if ($Scenario -eq 'interrupted-candidate' -and $Tag -ceq 'v1.3.0') { return "throw 'Fixture candidate failed to start.'" }
+    if ($Scenario -notin 'interrupted-swap','interrupted-candidate','interrupted-rollback','restore-result-retry','pending-active') {
+        return "updater $Tag"
+    }
     # The registered action runs the packaged updater. Supply the same private data and OS/network
     # fakes on restart that the initial invocation received in the fixture process.
     $entry = 'if ($MyInvocation.InvocationName -ne ''.'') {'
@@ -185,7 +224,8 @@ function New-FixtureRelease($Tag, $Name) {
     $zip = [IO.Compression.ZipFile]::Open($zipPath, 'Create')
     try {
         [void](Add-ZipText $zip $ServerName $Tag.Substring(1))
-        [void](Add-ZipText $zip 'updater.ps1' (FixtureUpdater $Tag))
+        $updater = if ($archiveProblem -eq 'updater-size') { 'x' * ($UpdaterLimit + 1) } else { FixtureUpdater $Tag }
+        [void](Add-ZipText $zip 'updater.ps1' $updater)
         [void](Add-ZipText $zip 'launch-agent.ps1' "installer $Tag")
         [void](Add-ZipText $zip 'wwwroot/index.html' 'home')
         [void](Add-ZipText $zip 'wwwroot/app.css' 'css')
@@ -294,6 +334,11 @@ function Expand-FixtureAction($TaskName) {
     return $start
 }
 
+function Read-FixtureCommand($Start) {
+    if ($Start.Arguments -cnotmatch ' -EncodedCommand ([A-Za-z0-9+/=]+)\z') { throw 'Missing task action.' }
+    return [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($Matches[1]))
+}
+
 function Run-FixtureAction($TaskName) {
     $start = Expand-FixtureAction $TaskName
     if ($TaskName -ceq $ServerTask) {
@@ -305,7 +350,9 @@ function Start-Process($FilePath, [string[]]$ArgumentList, $WorkingDirectory, $W
     return [pscustomobject]@{ ExitCode = 0 }
 };
 '@
-        $start.Arguments = $start.Arguments.Replace('-Command "', '-Command "' + $processStub + ' ')
+        $command = $processStub + [Environment]::NewLine + (Read-FixtureCommand $start)
+        $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+        $start.Arguments = $start.Arguments -replace '(?<= -EncodedCommand ).+\z', $encoded
     }
     $start.RedirectStandardError = $true
     $start.RedirectStandardOutput = $true
@@ -320,8 +367,7 @@ function Start-Process($FilePath, [string[]]$ArgumentList, $WorkingDirectory, $W
 
 function Invoke-FixtureUpdaterTask {
     $start = Expand-FixtureAction $UpdaterTask
-    if ($start.Arguments -cnotmatch ' -Command "([^"]+)"\z') { throw 'Missing updater command.' }
-    $command = [scriptblock]::Create($Matches[1])
+    $command = [scriptblock]::Create((Read-FixtureCommand $start))
     $fixtureSupport = $Support
     $fixtureOverrides = @{}
     foreach ($fakeName in 'Get-UpdateTime','Wait-RoomPoll','Get-TaskEngineId','Get-CimInstance','Get-ListenerPid',
@@ -480,8 +526,37 @@ if ($Scenario -in 'lifecycle','sample') {
         Expect ([IO.File]::Exists($resultPath)) $keepResult
         if ($keepResult) { Expect ([Convert]::ToBase64String([IO.File]::ReadAllBytes($resultPath))) 'AH//' }
     }
+} elseif ($Scenario -in 'entry-acl','entry-link','entry-directory','entry-size') {
+    $reason = switch ($Scenario) {
+        'entry-acl' { 'Unsafe private permissions.' }
+        'entry-size' { 'Invalid installed code size.' }
+        default { 'Unsafe file or directory.' }
+    }
+    $server = Join-Path $Support 'server'
+    $recovery = Join-Path $Support 'recovery-updater.ps1'
+    $original = [IO.File]::ReadAllText($recovery)
+    $historyBefore = $history.Count
+    if ($Scenario -ne 'entry-size') {
+        With-RefusedEntry (Join-Path $server $ServerName) {
+            Expect-Refusal { Run-FixtureAction $ServerTask } $reason
+            Expect ([IO.File]::Exists((Join-Path $Support 'received-args.txt'))) $false
+        }
+    }
+    With-RefusedEntry (Join-Path $server 'updater.ps1') {
+        Expect-Refusal { Invoke-FixtureUpdaterTask } $reason
+        Expect-Refusal { Install-Room $factory $offered '' } 'Installation failed (swap).'
+        Expect (Invoke-RoomUpdate $factory) 'swap'
+        Expect ([IO.File]::ReadAllText($recovery)) $original
+    }
+    $stage = New-ReleaseWork
+    Write-PrivateText 'pending-swap' ($old + [char]10 + $offered + [char]10 + (Get-RunStamp)) $stage
+    With-RefusedEntry $recovery { Expect-Refusal { Invoke-FixtureUpdaterTask } $reason }
+    Expect $history.Count $historyBefore
+    Expect $machine.Running $true
+    Expect (Current-Code) '1.2.0'
+    Expect (Marker) $old
 } elseif ($Scenario -eq 'archive') {
-    foreach ($bad in 'digest','missing','malformed','duplicate','manifest','zip','entries','underreported-entries','expanded','escape','link','reparse','redirect','repository') {
+    foreach ($bad in 'digest','missing','malformed','duplicate','manifest','zip','entries','underreported-entries','expanded','escape','link','reparse','updater-size','redirect','repository') {
         $archiveProblem = $bad
         $failed = $false
         try { Install-Room $factory 'v1.3.0' '' | Out-Null }
@@ -513,17 +588,17 @@ if ($Scenario -in 'lifecycle','sample') {
         Expect (Marker) $old
         Expect (ListCount) 0
     }
-} elseif ($Scenario -in 'interrupted-swap','restore-result-retry') {
+} elseif ($Scenario -in 'interrupted-swap','interrupted-candidate','restore-result-retry') {
     Write-PrivateText 'update-result.json' '{"prior":true}'
     $held = [IO.File]::Open($resultPath, 'Open', 'Read', 'Read')
     try {
-        if ($Scenario -eq 'interrupted-swap') {
-            $machine.Interrupt = $true
+        if ($Scenario -ne 'restore-result-retry') {
+            $machine.InterruptAt = if ($Scenario -eq 'interrupted-swap') { 'previous' } else { 'server' }
             :interruptedUpdate do {
                 Invoke-RoomUpdate $factory | Out-Null
-                throw 'Fixture missed the first rename.'
+                throw 'Fixture missed the requested rename.'
             } while ($false)
-            $machine.Interrupt = $false
+            $machine.InterruptAt = ''
         } else {
             $badListener = $true
             $machine.FailRestore = $true
@@ -532,7 +607,10 @@ if ($Scenario -in 'lifecycle','sample') {
             Expect $refused $true
         }
         Expect $machine.Running $false
-        Expect ([IO.Directory]::Exists((Join-Path $Support 'server'))) $false
+        Expect ([IO.Directory]::Exists((Join-Path $Support 'server'))) ($Scenario -eq 'interrupted-candidate')
+        if ($Scenario -eq 'interrupted-candidate') {
+            Expect ([IO.File]::ReadAllText((Join-Path $Support 'server/updater.ps1'))) (FixtureUpdater $offered)
+        }
         Expect (Marker) $old
         $stage = @(Get-ChildItem -LiteralPath $Support -Directory -Filter 'stage-*')
         Expect $stage.Count 1
@@ -542,19 +620,74 @@ if ($Scenario -in 'lifecycle','sample') {
         Expect (Read-PrivateText 'update-result.json' 4KB) '{"prior":true}'
     } finally { $held.Dispose() }
     $clock = $clock.AddMinutes(30)
-    $expected = if ($Scenario -eq 'interrupted-swap') { 'swap' } else { 'rollback_failed' }
+    $expected = if ($Scenario -eq 'restore-result-retry') { 'rollback_failed' } else { 'swap' }
     Expect (Invoke-FixtureUpdaterTask) $expected
     Expect ($history -ccontains ("entry " + (Join-Path $Support 'recovery-updater.ps1'))) $true
     Expect (ListCount) 1
     Expect (Marker) $old
-    if ($Scenario -eq 'interrupted-swap') {
+    if ($Scenario -ne 'restore-result-retry') {
         Expect $machine.Running $true
+        Expect $history[$history.Count - 1] 'start 1.2.0'
         Expect (Current-Code) '1.2.0'
         Expect ([IO.File]::ReadAllText((Join-Path $Support 'server/updater.ps1'))) (FixtureUpdater $old)
         Expect ([IO.Directory]::Exists($stage[0].FullName)) $false
     } else {
         Expect $machine.Running $false
         Expect ([IO.Directory]::Exists((Join-Path $stage[0].FullName 'previous'))) $true
+    }
+} elseif ($Scenario -in 'interrupted-rollback','pending-install-digest') {
+    Write-PrivateText 'update-result.json' '{"prior":true}'
+    $machine.InterruptAt = 'marker'
+    :interruptedUpdate do {
+        Invoke-RoomUpdate $factory | Out-Null
+        throw 'Fixture missed the marker write.'
+    } while ($false)
+    $machine.InterruptAt = ''
+    $stage = @(Get-PendingStages)
+    Expect $stage.Count 1
+    $pending = Read-PrivateText 'pending-result.json' 4KB $stage[0]
+    Expect (Read-StagedRecord $pending).result 'updated'
+    Expect (Marker) $old
+    Expect (Current-Code) '1.3.0'
+    if ($Scenario -eq 'pending-install-digest') {
+        $before = $history.Count
+        $archiveProblem = 'digest'
+        foreach ($badListener in $false,$true) {
+            $rejected = $false
+            try { Install-Room $factory 'v1.4.0' '' | Out-Null } catch [IO.InvalidDataException] { $rejected = $true }
+            Expect $rejected $true
+            Expect (Read-PrivateText 'pending-result.json' 4KB $stage[0]) $pending
+            Expect (Read-PrivateText 'update-result.json' 4KB) '{"prior":true}'
+            Expect $machine.Running $true
+            Expect $tasks[$ServerTask].State 'Running'
+            Expect $history.Count $before
+            Expect (Marker) $old
+            Expect (Current-Code) '1.3.0'
+            Expect ([IO.File]::ReadAllText((Join-Path $Support 'server/updater.ps1'))) (FixtureUpdater $offered)
+        }
+    } else {
+        $clock = $clock.AddMinutes(30)
+        $badListener = $true
+        $machine.InterruptAt = 'new'
+        :interruptedUpdate do {
+            Invoke-FixtureUpdaterTask | Out-Null
+            throw 'Fixture missed the rollback rename.'
+        } while ($false)
+        $machine.InterruptAt = ''
+        Expect $machine.Running $false
+        Expect ([IO.Directory]::Exists((Join-Path $Support 'server'))) $false
+        Expect ([IO.File]::ReadAllText((Join-Path $stage[0] "previous/$ServerName"))) '1.2.0'
+        Expect (Read-PrivateText 'pending-result.json' 4KB $stage[0]) $pending
+        Expect (Invoke-FixtureUpdaterTask) 'no_answer'
+        $recovery = 'entry ' + (Join-Path $Support 'recovery-updater.ps1')
+        Expect @($history | Where-Object { $_ -ceq $recovery }).Count 2
+        Expect (ListCount) 1
+        Expect $machine.Running $true
+        Expect $history[$history.Count - 1] 'start 1.2.0'
+        Expect (Marker) $old
+        Expect (Current-Code) '1.2.0'
+        Expect ([IO.File]::ReadAllText((Join-Path $Support 'server/updater.ps1'))) (FixtureUpdater $old)
+        Expect ([IO.Directory]::Exists($stage[0])) $false
     }
 } elseif ($Scenario -in 'result-retry','result-before-marker','failed-result-retry','pending-active','uninstall-pending') {
     Write-PrivateText 'update-result.json' '{"prior":true}'
