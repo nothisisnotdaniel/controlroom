@@ -34,7 +34,6 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#162](backlog/162-show-jobs-with-uuid-suffixed-ids.md) Show jobs with UUID-suffixed ids → 407-uuid-suffixed-job-ids.16840cbb91d14911a09e5b5c07650d3f
 - [x] [#159](backlog/159-show-which-work-items-a-collaborator.md) Show which work items a collaborator is working on (after: factory#54) → 409-show-collaborator-claims.0bf57dd3bb0b404788a7f8ed9b328e18
 - [x] [#152](backlog/152-windows-executables-for-controlroom.md) Windows executables for ControlRoom → 400-windows-executables-for-controlroom.866b39353c1e4a4a8ef568accfd791ec
-- [stop] Auto stops here
 - [ ] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone (after: #139)
 - [ ] [#139](backlog/139-phone-start-spike.md) Phone start spike
 - [x] [#13](backlog/013-releases-overview.md) Releases overview → 375-releases-overview
@@ -169,3 +168,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#158](backlog/158-readable-status-output-from-launch-agent.md) Readable status output from launch-agent.ps1
 - [?] [#160](backlog/160-refuse-a-symlinked-factory-folder-in.md) Refuse a symlinked factory folder in the develop worktree
 - [?] [#161](backlog/161-clear-not-develop-error-text-for.md) Clear not_develop error text for factory backlog edits
+- [ ] [#163](backlog/163-show-when-the-last-check-for.md) Show when the updater last checked for updates
