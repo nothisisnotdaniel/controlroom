@@ -6,7 +6,8 @@
 #   as job outputs (zip_sha256, tarball_sha256, roomkit_sha256), and uploads them as one artifact.
 # - release needs version, windows and macos. It downloads both artifacts and checks the downloaded files' hashes
 #   against the hashes the build jobs reported (exactly the three expected files, nothing else), then sums,
-#   attests and publishes them. Only this job has write permissions, and it builds nothing itself.
+#   attests and publishes them. Only this job has write permissions, and it builds nothing itself. The hash check
+#   catches a file swapped or changed between jobs; it cannot catch a compromised build job, which reports its own hash.
 # - A push to develop makes a prerelease vX.Y.(Z+1)-develop.<run number>, one patch above the highest
 #   release tag (.github/scripts/develop-version.sh), on the pushed commit. A push that changes only
 #   backlog.md or backlog/ is skipped (paths-ignore), so it makes no prerelease.
@@ -465,7 +466,12 @@ jobs:
               echo "The reported hash of $NAME is not 64 lower-case hex characters" >&2
               exit 1
             fi
-            ACTUAL="$(shasum -a 256 "dist/$NAME" | cut -d ' ' -f 1)"
+            # No pipe, so a failed shasum fails the step itself.
+            if ! ACTUAL="$(shasum -a 256 "dist/$NAME")"; then
+              echo "Could not hash dist/$NAME" >&2
+              exit 1
+            fi
+            ACTUAL="${ACTUAL%% *}"
             if [ "$ACTUAL" != "$EXPECTED" ]; then
               echo "dist/$NAME does not match the hash its build job reported" >&2
               exit 1
