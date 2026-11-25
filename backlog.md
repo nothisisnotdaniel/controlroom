@@ -34,7 +34,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#162](backlog/162-show-jobs-with-uuid-suffixed-ids.md) Show jobs with UUID-suffixed ids → 407-uuid-suffixed-job-ids.16840cbb91d14911a09e5b5c07650d3f
 - [x] [#159](backlog/159-show-which-work-items-a-collaborator.md) Show which work items a collaborator is working on (after: factory#54) → 409-show-collaborator-claims.0bf57dd3bb0b404788a7f8ed9b328e18
 - [x] [#152](backlog/152-windows-executables-for-controlroom.md) Windows executables for ControlRoom → 400-windows-executables-for-controlroom.866b39353c1e4a4a8ef568accfd791ec
-- [ ] [#117](backlog/117-drop-the-dead-group-h3-selector.md) Drop the dead .group h3 selector
+- [x] [#117](backlog/117-drop-the-dead-group-h3-selector.md) Drop the dead .group h3 selector → 405-drop-dead-selector.8c29b6108636429981971087bb44206e
 - [ ] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone (after: #139)
 - [ ] [#139](backlog/139-phone-start-spike.md) Phone start spike
 - [x] [#13](backlog/013-releases-overview.md) Releases overview → 375-releases-overview
