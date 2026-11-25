@@ -29,8 +29,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
 - **Safety rules:**
   - The server never runs a shell command, `claude` or any program built from request input. Git is called
     with a fixed argument list (`ProcessStartInfo.ArgumentList`), never through a shell. Besides the project repos,
-    git runs read-only in the factory root itself: only `git status --porcelain --untracked-files=all -- factory/jobs`
-    for `GET /api/doctor` (`ProjectGit.Run`, `GIT_OPTIONAL_LOCKS=0`). In a project repo `GET /api/status` runs only the
+    git runs in the factory repo only for two things: the read-only `git status --porcelain --untracked-files=all --
+    factory/jobs` in the factory root for `GET /api/doctor` (`ProjectGit.Run`, `GIT_OPTIONAL_LOCKS=0`), and the factory
+    backlog rule below (#147: in the root the read-only `worktree list` and the `backlog` worktree setup calls of
+    `BacklogWorktree`; commits and the `develop` push only in the develop worktree or a `backlog` worktree, never in
+    the root checkout). In a project repo `GET /api/status` runs only the
     read-only `git rev-list --count refs/heads/main..refs/heads/develop` (`ProjectGit.AheadOfMain`); it never runs `gh`
     or calls the network. `GET /api/releases` runs only the read-only `git for-each-ref
     --format=%(refname:strip=2)%09%(creatordate:unix) refs/tags/` (`ProjectGit.Tags`), `git rev-list --count <range>`
@@ -56,7 +59,9 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     git runs in the worktree's top folder (`GIT_CEILING_DIRECTORIES`). The root checkout and `main` are never written.
   - Paths come only from the discovered project list and the jobs folder, never from a request as a path;
     names from a request are matched against that list.
-  - Writes are limited to a project's `backlog.md` and its `backlog/NNN-slug.md` story files: only through
+  - Writes are limited to a project's `backlog.md` and its `backlog/NNN-slug.md` story files (and, by the factory
+    backlog rule above, the factory's `factory/backlog.md` and `factory/backlog/` in its develop or `backlog` worktree,
+    with the same checks): only through
     `POST /api/backlog/change`, one change at a time, only with a clean `backlog.md` and `backlog/`, checked against
     the version (SHA-256) the client saw (refused as changed otherwise), written atomically without following symlinks
     (`SafeFileWriter`), then committed with only the changed files. With the checkout on `develop` they go into the
@@ -95,7 +100,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     the same category, or `category` on any other action, is `invalid`; only the story file is committed, as
     `backlog: category #N`). The one other file the server writes in the factory root is a
     job's request file `factory/jobs/<id>/human.json`, only through `POST /api/job/act` (see below). Nothing else in
-    the factory root is written.
+    the factory root is written (factory backlog edits go only into the develop or `backlog` worktree, see above).
   - `POST /api/job/act` (body `{"id","action","round","note"?}`, at most 8 KiB, exact fields; `action` `approve`,
     `rework` (with `note`, cleaned like a backlog note) or `cancel`) asks the next `/factory` session for the project to
     approve or rework a `needs-human` job; the server itself runs nothing (no git, no `claude`). Under one lock
@@ -140,7 +145,9 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     only). A payload holds only `kind`, `project`, `job`, `stage`, `version`, a fixed `reason` and `count`, never
     record or backlog text; an `update` payload is exactly `kind`, `version` and `reason`, sent once per version;
     an `updated` payload is exactly `kind`, `version`, `previous`, `reason`, an `update_failed` payload exactly
-    `kind`, `version` and the result's fixed code as `reason`, each sent once per updater run.
+    `kind`, `version` and the result's fixed code as `reason`, each sent once per updater run. Apart from these, git
+    runs `push -q origin develop` after a backlog edit on develop (a project's checkout or the factory's develop
+    worktree, only when there is an `origin`); nothing else of git goes to the network.
   - Scripts (`launch-agent.sh`, `updater.sh`) never read the token. The updater's only network calls are the
     latest-release redirect (`stable`) or the release list `GET` above (`develop`, `curl --proto =https --tlsv1.2
     -fsS --max-time 30 --max-filesize 1048576`, no `-L`), the release download (as `install --release`) and
