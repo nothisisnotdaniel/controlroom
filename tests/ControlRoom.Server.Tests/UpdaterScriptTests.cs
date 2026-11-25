@@ -67,1511 +67,1531 @@ public sealed partial class UpdaterScriptTests
         Assert.DoesNotContain(" -H ", code, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void NewerRelease_IsSwappedInConfirmedThroughHealthAndRecorded()
+    /// <summary>The server swap, its health confirmation and every rollback.</summary>
+    public sealed class Swap
     {
-        if (OperatingSystem.IsWindows())
+        [Fact]
+        public void NewerRelease_IsSwappedInConfirmedThroughHealthAndRecorded()
         {
-            return;
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+
+            string line = home.RunOnce();
+
+            Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), line);
+            Assert.Equal(
+                ["bootout " + home.Service, "print " + home.Service, "bootstrap " + home.Domain + " " + home.ServerPlist,
+                    "print " + home.Service],
+                home.AllLaunchctlCalls());
+            Assert.Equal(["-nP -iTCP:8100 -sTCP:LISTEN -t"], home.LsofCalls());
+            Assert.Equal("{\"version\":\"1.3.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
+            Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Previous, "health")));
+            Assert.Equal("v1.3.0\n", File.ReadAllText(home.Marker));
+            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(home.Marker));
+            AssertResult(home, "\"result\":\"updated\",\"version\":\"1.3.0\",\"previous\":\"1.2.0\"");
+            IReadOnlyList<string> curl = home.CurlCalls();
+            Assert.Equal(HealthCall, curl[^1]);
+            Assert.Single(curl, call => call.Contains("/health", StringComparison.Ordinal));
+            Assert.Empty(home.SleepCalls());
+            AssertNoToken(home);
+            Assert.Empty(home.Leftovers());
         }
 
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
+        [Fact]
+        public void WithAnUnreadableTokenFile_StillUpdates()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
 
-        string line = home.RunOnce();
+            using UpdaterHome home = new();
+            File.SetUnixFileMode(home.TokenFile, UnixFileMode.None);
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
 
-        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), line);
-        Assert.Equal(
-            ["bootout " + home.Service, "print " + home.Service, "bootstrap " + home.Domain + " " + home.ServerPlist,
-                "print " + home.Service],
-            home.AllLaunchctlCalls());
-        Assert.Equal(["-nP -iTCP:8100 -sTCP:LISTEN -t"], home.LsofCalls());
-        Assert.Equal("{\"version\":\"1.3.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
-        Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Previous, "health")));
-        Assert.Equal("v1.3.0\n", File.ReadAllText(home.Marker));
-        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(home.Marker));
-        AssertResult(home, "\"result\":\"updated\",\"version\":\"1.3.0\",\"previous\":\"1.2.0\"");
-        IReadOnlyList<string> curl = home.CurlCalls();
-        Assert.Equal(HealthCall, curl[^1]);
-        Assert.Single(curl, call => call.Contains("/health", StringComparison.Ordinal));
-        Assert.Empty(home.SleepCalls());
-        AssertNoToken(home);
-        Assert.Empty(home.Leftovers());
+            Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
+            AssertNoToken(home);
+        }
+
+        [Fact]
+        public void InstalledPrerelease_IsReplacedByTheSameFinalVersion()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new("v1.3.0-rc.1");
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+
+            Assert.Matches(LinePattern("updated v1.3.0-rc.1 v1.3.0"), home.RunOnce());
+            AssertResult(home, "\"result\":\"updated\",\"version\":\"1.3.0\",\"previous\":\"1.3.0-rc.1\"");
+        }
+
+        [Fact]
+        public void NoAnswerFromTheNewVersion_RollsBackAfterFifteenPolls()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "9.9.9");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+
+            string line = home.RunOnce();
+
+            Assert.Matches(LinePattern("rolled_back v1.2.0 v1.3.0"), line);
+            Assert.Equal(
+                ["bootout " + home.Service, "bootstrap " + home.Domain + " " + home.ServerPlist,
+                    "bootout " + home.Service, "bootstrap " + home.Domain + " " + home.ServerPlist],
+                home.LaunchctlCalls());
+            Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
+            Assert.False(Directory.Exists(home.Previous));
+            Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
+            AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"no_answer\"");
+            Assert.Equal(16, home.CurlCalls().Count(call => call == HealthCall));
+            Assert.Equal(14, home.SleepCalls().Count);
+            Assert.All(home.SleepCalls(), call => Assert.Equal("2", call));
+            AssertNoToken(home);
+            Assert.Empty(home.Leftovers());
+        }
+
+        [Fact]
+        public void NoAnswerFromTheOldVersionAfterTheRollback_IsRollbackFailed()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            File.Delete(Path.Combine(home.Server, "health"));
+            home.AddRelease("1.3.0", null);
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+
+            Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
+            AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
+            Assert.Equal(30, home.CurlCalls().Count(call => call == HealthCall));
+            Assert.Equal(28, home.SleepCalls().Count);
+            Assert.True(File.Exists(Path.Combine(home.Server, "ControlRoom.Server")));
+            Assert.False(Directory.Exists(home.Previous));
+        }
+
+        [Fact]
+        public void FailedRollbackRename_IsRollbackFailed()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "9.9.9");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.FailMoveFrom("/server.previous");
+
+            Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
+            AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
+            Assert.Equal("bootstrap " + home.Domain + " " + home.ServerPlist, home.LaunchctlCalls()[^1]);
+            Assert.Equal(15, home.CurlCalls().Count(call => call == HealthCall));
+        }
+
+        [Fact]
+        public void FailedRenameOfTheNewServer_PutsTheOldOneBackAsSwapFailed()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.FailMoveFrom("/controlroom-1.3.0-osx-arm64");
+
+            Assert.Matches(LinePattern("swap_failed v1.2.0 v1.3.0"), home.RunOnce());
+            Assert.Equal(["bootout " + home.Service, "bootstrap " + home.Domain + " " + home.ServerPlist], home.LaunchctlCalls());
+            Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
+            Assert.False(Directory.Exists(home.Previous));
+            Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
+            AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"swap\"");
+            Assert.Empty(home.Leftovers());
+        }
+
+        [Fact]
+        public void FailedRenameOfTheOldServer_LeavesItInPlaceAsSwapFailed()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.FailMoveFrom("/ControlRoom/server");
+
+            Assert.Matches(LinePattern("swap_failed v1.2.0 v1.3.0"), home.RunOnce());
+            Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
+            AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"swap\"");
+        }
+
+        [Fact]
+        public void FailedRenameAndNoOldAnswer_IsRollbackFailed()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            File.Delete(Path.Combine(home.Server, "health"));
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.FailMoveFrom("/controlroom-1.3.0-osx-arm64");
+
+            Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
+            AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
+        }
+
+        [Theory]
+        [InlineData("other-listener")]
+        [InlineData("two-listeners")]
+        [InlineData("no-listener")]
+        [InlineData("not-running")]
+        public void HealthAnswerNotFromTheLaunchdServer_IsNeverCountedAsUpdated(string fault)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            switch (fault)
+            {
+                case "other-listener":
+                    home.SetListeners("999\n");
+                    break;
+                case "two-listeners":
+                    home.SetListeners("4242\n999\n");
+                    break;
+                case "no-listener":
+                    home.SetListeners("");
+                    break;
+                default:
+                    home.ServerNotRunning();
+                    break;
+            }
+
+            Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
+            Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
+            AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
+            Assert.Equal(30, home.CurlCalls().Count(call => call == HealthCall));
+            Assert.Equal(28, home.SleepCalls().Count);
+            Assert.Equal(32, home.AllLaunchctlCalls().Count(call => call == "print " + home.Service));
+        }
+
+        [Fact]
+        public void OnlyTheServerPidListening_IsConfirmed()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.SetListeners("4242\n");
+
+            Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
+            Assert.Equal("v1.3.0\n", File.ReadAllText(home.Marker));
+        }
+
+        [Fact]
+        public void FailedMarkerWrite_PutsTheOldVersionBackAsSwapFailed()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.FailMoveTo("/installed-release");
+
+            Assert.Matches(LinePattern("swap_failed v1.2.0 v1.3.0"), home.RunOnce());
+            Assert.Equal(
+                ["bootout " + home.Service, "bootstrap " + home.Domain + " " + home.ServerPlist,
+                    "bootout " + home.Service, "bootstrap " + home.Domain + " " + home.ServerPlist],
+                home.LaunchctlCalls());
+            Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
+            Assert.False(Directory.Exists(home.Previous));
+            Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
+            AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"swap\"");
+            Assert.Equal(2, home.CurlCalls().Count(call => call == HealthCall));
+            Assert.Empty(home.Leftovers());
+        }
+
+        [Fact]
+        public void FailedMarkerWriteAndNoOldAnswer_IsRollbackFailed()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            File.Delete(Path.Combine(home.Server, "health"));
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.FailMoveTo("/installed-release");
+
+            Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
+            Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
+            AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
+        }
     }
 
-    [Fact]
-    public void WithAnUnreadableTokenFile_StillUpdates()
+    /// <summary>Running jobs, settings, marker, lock and the latest release that stop or skip a run.</summary>
+    public sealed class Gates
     {
-        if (OperatingSystem.IsWindows())
+        [Theory]
+        [InlineData(65536, false)]
+        [InlineData(65537, true)]
+        public void StateFileOverTheCap_CountsAsARunningJob(int size, bool running)
         {
-            return;
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            string content = "{\"stage\": \"done\"}\n";
+            home.AddRawJob("1-big", content + new string(' ', size - content.Length));
+            home.SetRedirect(Releases + "/tag/v1.2.0");
+
+            if (running)
+            {
+                AssertNothingDone(home, "job_running", " v1.2.0", waits: RetryWaits);
+            }
+            else
+            {
+                Assert.Matches(LinePattern("current v1.2.0 v1.2.0"), home.RunOnce());
+            }
         }
 
-        using UpdaterHome home = new();
-        File.SetUnixFileMode(home.TokenFile, UnixFileMode.None);
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-
-        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
-        AssertNoToken(home);
-    }
-
-    [Fact]
-    public void InstalledPrerelease_IsReplacedByTheSameFinalVersion()
-    {
-        if (OperatingSystem.IsWindows())
+        [Fact]
+        public void UnreadableStateFile_CountsAsARunningJob()
         {
-            return;
-        }
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
 
-        using UpdaterHome home = new("v1.3.0-rc.1");
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
+            using UpdaterHome home = new();
+            home.AddJob("1-done", "done");
+            string state = Path.Combine(home.Root, "factory", "jobs", "1-done", "state.json");
+            File.SetUnixFileMode(state, UnixFileMode.None);
 
-        Assert.Matches(LinePattern("updated v1.3.0-rc.1 v1.3.0"), home.RunOnce());
-        AssertResult(home, "\"result\":\"updated\",\"version\":\"1.3.0\",\"previous\":\"1.3.0-rc.1\"");
-    }
-
-    [Fact]
-    public void NoAnswerFromTheNewVersion_RollsBackAfterFifteenPolls()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "9.9.9");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-
-        string line = home.RunOnce();
-
-        Assert.Matches(LinePattern("rolled_back v1.2.0 v1.3.0"), line);
-        Assert.Equal(
-            ["bootout " + home.Service, "bootstrap " + home.Domain + " " + home.ServerPlist,
-                "bootout " + home.Service, "bootstrap " + home.Domain + " " + home.ServerPlist],
-            home.LaunchctlCalls());
-        Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
-        Assert.False(Directory.Exists(home.Previous));
-        Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
-        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"no_answer\"");
-        Assert.Equal(16, home.CurlCalls().Count(call => call == HealthCall));
-        Assert.Equal(14, home.SleepCalls().Count);
-        Assert.All(home.SleepCalls(), call => Assert.Equal("2", call));
-        AssertNoToken(home);
-        Assert.Empty(home.Leftovers());
-    }
-
-    [Fact]
-    public void NoAnswerFromTheOldVersionAfterTheRollback_IsRollbackFailed()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        File.Delete(Path.Combine(home.Server, "health"));
-        home.AddRelease("1.3.0", null);
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-
-        Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
-        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
-        Assert.Equal(30, home.CurlCalls().Count(call => call == HealthCall));
-        Assert.Equal(28, home.SleepCalls().Count);
-        Assert.True(File.Exists(Path.Combine(home.Server, "ControlRoom.Server")));
-        Assert.False(Directory.Exists(home.Previous));
-    }
-
-    [Fact]
-    public void FailedRollbackRename_IsRollbackFailed()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "9.9.9");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.FailMoveFrom("/server.previous");
-
-        Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
-        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
-        Assert.Equal("bootstrap " + home.Domain + " " + home.ServerPlist, home.LaunchctlCalls()[^1]);
-        Assert.Equal(15, home.CurlCalls().Count(call => call == HealthCall));
-    }
-
-    [Fact]
-    public void FailedRenameOfTheNewServer_PutsTheOldOneBackAsSwapFailed()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.FailMoveFrom("/controlroom-1.3.0-osx-arm64");
-
-        Assert.Matches(LinePattern("swap_failed v1.2.0 v1.3.0"), home.RunOnce());
-        Assert.Equal(["bootout " + home.Service, "bootstrap " + home.Domain + " " + home.ServerPlist], home.LaunchctlCalls());
-        Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
-        Assert.False(Directory.Exists(home.Previous));
-        Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
-        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"swap\"");
-        Assert.Empty(home.Leftovers());
-    }
-
-    [Fact]
-    public void FailedRenameOfTheOldServer_LeavesItInPlaceAsSwapFailed()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.FailMoveFrom("/ControlRoom/server");
-
-        Assert.Matches(LinePattern("swap_failed v1.2.0 v1.3.0"), home.RunOnce());
-        Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
-        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"swap\"");
-    }
-
-    [Fact]
-    public void FailedRenameAndNoOldAnswer_IsRollbackFailed()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        File.Delete(Path.Combine(home.Server, "health"));
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.FailMoveFrom("/controlroom-1.3.0-osx-arm64");
-
-        Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
-        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
-    }
-
-    [Theory]
-    [InlineData("other-listener")]
-    [InlineData("two-listeners")]
-    [InlineData("no-listener")]
-    [InlineData("not-running")]
-    public void HealthAnswerNotFromTheLaunchdServer_IsNeverCountedAsUpdated(string fault)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        switch (fault)
-        {
-            case "other-listener":
-                home.SetListeners("999\n");
-                break;
-            case "two-listeners":
-                home.SetListeners("4242\n999\n");
-                break;
-            case "no-listener":
-                home.SetListeners("");
-                break;
-            default:
-                home.ServerNotRunning();
-                break;
-        }
-
-        Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
-        Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
-        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
-        Assert.Equal(30, home.CurlCalls().Count(call => call == HealthCall));
-        Assert.Equal(28, home.SleepCalls().Count);
-        Assert.Equal(32, home.AllLaunchctlCalls().Count(call => call == "print " + home.Service));
-    }
-
-    [Fact]
-    public void OnlyTheServerPidListening_IsConfirmed()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.SetListeners("4242\n");
-
-        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
-        Assert.Equal("v1.3.0\n", File.ReadAllText(home.Marker));
-    }
-
-    [Fact]
-    public void FailedMarkerWrite_PutsTheOldVersionBackAsSwapFailed()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.FailMoveTo("/installed-release");
-
-        Assert.Matches(LinePattern("swap_failed v1.2.0 v1.3.0"), home.RunOnce());
-        Assert.Equal(
-            ["bootout " + home.Service, "bootstrap " + home.Domain + " " + home.ServerPlist,
-                "bootout " + home.Service, "bootstrap " + home.Domain + " " + home.ServerPlist],
-            home.LaunchctlCalls());
-        Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
-        Assert.False(Directory.Exists(home.Previous));
-        Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
-        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"swap\"");
-        Assert.Equal(2, home.CurlCalls().Count(call => call == HealthCall));
-        Assert.Empty(home.Leftovers());
-    }
-
-    [Fact]
-    public void FailedMarkerWriteAndNoOldAnswer_IsRollbackFailed()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        File.Delete(Path.Combine(home.Server, "health"));
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.FailMoveTo("/installed-release");
-
-        Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
-        Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
-        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
-    }
-
-    [Theory]
-    [InlineData(65536, false)]
-    [InlineData(65537, true)]
-    public void StateFileOverTheCap_CountsAsARunningJob(int size, bool running)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        string content = "{\"stage\": \"done\"}\n";
-        home.AddRawJob("1-big", content + new string(' ', size - content.Length));
-        home.SetRedirect(Releases + "/tag/v1.2.0");
-
-        if (running)
-        {
             AssertNothingDone(home, "job_running", " v1.2.0", waits: RetryWaits);
+            File.SetUnixFileMode(state, UnixFileMode.UserRead | UnixFileMode.UserWrite);
         }
-        else
+
+        [Theory]
+        [InlineData("{\"autoUpdate\":false}\n", true)]
+        [InlineData("{\"autoUpdate\": true}\n", true)]
+        [InlineData("{\"autoUpdate\":true}\n\n", true)]
+        [InlineData("{\"autoUpdate\":true}\n", false)]
+        [InlineData(null, true)]
+        [InlineData("{\"autoUpdate\":false,\"channel\":\"develop\"}\n", true)]
+        [InlineData("{\"autoUpdate\":false,\"channel\":\"stable\"}", true)]
+        [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\"}\n\n", true)]
+        [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\"}\r\n", true)]
+        [InlineData("{\"autoUpdate\":true,\"channel\":\"beta\"}\n", true)]
+        [InlineData("{\"autoUpdate\":true,\"channel\":\"Develop\"}\n", true)]
+        [InlineData("{\"channel\":\"develop\",\"autoUpdate\":true}\n", true)]
+        [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\",\"x\":1}\n", true)]
+        [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\"}\n", false)]
+        public void SettingNotExactlyOn_IsOffAndChangesNothing(string? settings, bool safeMode)
         {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.SetSettings(settings);
+            if (!safeMode)
+            {
+                File.SetUnixFileMode(home.Settings, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead);
+            }
+
+            AssertNothingDone(home, "off", "");
+        }
+
+        [Fact]
+        public void SymlinkedSetting_IsOff()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            string target = Path.Combine(home.Path, "elsewhere.json");
+            File.WriteAllText(target, "{\"autoUpdate\":true}\n");
+            File.SetUnixFileMode(target, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            File.Delete(home.Settings);
+            File.CreateSymbolicLink(home.Settings, target);
+
+            AssertNothingDone(home, "off", "");
+        }
+
+        [Fact]
+        public void LooseSupportFolder_IsOff()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            File.SetUnixFileMode(home.Support, AccessToken.FolderMode | UnixFileMode.GroupRead | UnixFileMode.GroupExecute);
+
+            AssertNothingDone(home, "off", "");
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("1.2.0\n")]
+        [InlineData("v1.2.0+build\n")]
+        [InlineData("v01.2.0\n")]
+        public void MissingOrInvalidMarker_IsNotRelease(string? marker)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.SetMarker(marker);
+
+            AssertNothingDone(home, "not_release", "");
+        }
+
+        [Fact]
+        public void FreshLock_IsBusyAndKeepsTheLock()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            Directory.CreateDirectory(home.Lock);
+
+            AssertNothingDone(home, "busy", " v1.2.0");
+            Assert.True(Directory.Exists(home.Lock));
+        }
+
+        [Fact]
+        public void LockOlderThanAnHour_IsRemovedAndTheRunGoesOn()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            Directory.CreateDirectory(home.Lock);
+            Directory.SetLastWriteTimeUtc(home.Lock, DateTime.UtcNow.AddHours(-2));
+            home.SetRedirect(Releases + "/tag/v1.2.0");
+
+            Assert.Matches(LinePattern("current v1.2.0 v1.2.0"), home.RunOnce());
+            Assert.False(Directory.Exists(home.Lock));
+        }
+
+        [Theory]
+        [InlineData("spike")]
+        [InlineData("spec")]
+        [InlineData("build")]
+        [InlineData("review")]
+        public void ActiveJob_IsJobRunning(string stage)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddJob("1-done", "done");
+            home.AddJob("2-active", stage);
+
+            AssertNothingDone(home, "job_running", " v1.2.0", waits: RetryWaits);
+            Assert.False(Directory.Exists(home.Lock));
+        }
+
+        [Fact]
+        public void FinishedJobs_DoNotStopTheRun()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddJob("1-done", "done");
+            home.AddJob("2-approve", "approve");
+            home.AddJob("3-human", "needs-human");
+            home.SetRedirect(Releases + "/tag/v1.2.0");
+
             Assert.Matches(LinePattern("current v1.2.0 v1.2.0"), home.RunOnce());
         }
+
+        [Theory]
+        [InlineData("v1.2.0")]
+        [InlineData("v1.1.9")]
+        [InlineData("v0.9.99")]
+        [InlineData("v1.3.0-rc.1")]
+        public void LatestNotNewerOrAPrerelease_IsCurrentAndChangesNothing(string latest)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.SetRedirect(Releases + "/tag/" + latest);
+
+            AssertNothingDone(home, "current", " v1.2.0 " + latest, curlCalls: 1);
+        }
+
+        [Theory]
+        [InlineData("check")]
+        [InlineData("no_answer")]
+        public void LatestThatFailedItsCheckOrStart_IsSkipped(string reason)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.SetResult("{\"run\":\"20261118T200000Z\",\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\""
+                + reason + "\"}\n");
+
+            AssertNothingDone(home, "skipped_failed", " v1.2.0 v1.3.0", curlCalls: 1);
+        }
+
+        [Theory]
+        [InlineData("{\"run\":\"20261118T200000Z\",\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"swap\"}\n")]
+        [InlineData("{\"run\":\"20261118T200000Z\",\"result\":\"update_failed\",\"version\":\"1.2.9\",\"reason\":\"check\"}\n")]
+        public void OtherFailedResults_DoNotSkip(string result)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.SetResult(result);
+
+            Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData(Releases + "/tag/1.3.0")]
+        [InlineData("https://example.com/releases/tag/v1.3.0")]
+        public void NoLatestRelease_IsLatestFailedWithNoResult(string? redirect)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            if (redirect is not null)
+            {
+                home.SetRedirect(redirect);
+            }
+
+            AssertNothingDone(home, "latest_failed", " v1.2.0", curlCalls: 1);
+        }
+
+        [Fact]
+        public void FailedDownload_IsDownloadFailedWithNoResult()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+
+            AssertNothingDone(home, "download_failed", " v1.2.0 v1.3.0", curlCalls: 2);
+        }
     }
 
-    [Fact]
-    public void UnreadableStateFile_CountsAsARunningJob()
+    /// <summary>The signature check and the stable and develop channels.</summary>
+    public sealed class SigningAndChannels
     {
-        if (OperatingSystem.IsWindows())
+        [Fact]
+        public void SigningOff_RunsNoCodesignAndUpdates()
         {
-            return;
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+
+            Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
+
+            Assert.Empty(home.CodesignCalls());
+            Assert.Equal("v1.3.0\n", File.ReadAllText(home.Marker));
         }
 
-        using UpdaterHome home = new();
-        home.AddJob("1-done", "done");
-        string state = Path.Combine(home.Root, "factory", "jobs", "1-done", "state.json");
-        File.SetUnixFileMode(state, UnixFileMode.None);
+        [Theory]
+        [InlineData(ScriptFixtures.Fingerprint + "\n")]
+        [InlineData("0123456789ABCDEF0123456789abcdefABCDEF01")]
+        public void ValidSigningCopy_VerifiesEveryTopLevelNativeFileThenUpdates(string content)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
 
-        AssertNothingDone(home, "job_running", " v1.2.0", waits: RetryWaits);
-        File.SetUnixFileMode(state, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.SetSigningCopy(content);
+            string fingerprint = content.TrimEnd('\n');
+
+            Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
+
+            IReadOnlyList<string[]> calls = home.CodesignCalls();
+            string[] expected = ["ControlRoom.Server", "libSystem.Native.dylib", "createdump"];
+            Assert.Equal(expected.Length, calls.Count);
+            for (int index = 0; index < expected.Length; index++)
+            {
+                string requirement = index == 0
+                    ? ScriptFixtures.ServerRequirement(fingerprint)
+                    : ScriptFixtures.LibraryRequirement(fingerprint);
+                Assert.Equal(4, calls[index].Length);
+                Assert.Equal(["--verify", "--strict", requirement], calls[index][..3]);
+                Assert.StartsWith(System.IO.Path.Combine(home.Support, ".release."), calls[index][3], StringComparison.Ordinal);
+                Assert.EndsWith("/out/controlroom-1.3.0-osx-arm64/" + expected[index], calls[index][3], StringComparison.Ordinal);
+            }
+
+            AssertResult(home, "\"result\":\"updated\",\"version\":\"1.3.0\",\"previous\":\"1.2.0\"");
+            Assert.Empty(home.Leftovers());
+        }
+
+        [Theory]
+        [InlineData("short")]
+        [InlineData("long")]
+        [InlineData("junk")]
+        [InlineData("two-breaks")]
+        [InlineData("empty")]
+        [InlineData("symlink")]
+        [InlineData("mode-644")]
+        [InlineData("mode-400")]
+        [InlineData("folder")]
+        public void InvalidSigningCopy_IsCheckFailedLikeAFailingCheck(string fault)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            switch (fault)
+            {
+                case "short":
+                    home.SetSigningCopy(ScriptFixtures.Fingerprint[1..] + "\n");
+                    break;
+                case "long":
+                    home.SetSigningCopy(ScriptFixtures.Fingerprint + "0");
+                    break;
+                case "junk":
+                    home.SetSigningCopy(ScriptFixtures.Fingerprint[..39] + "z\n");
+                    break;
+                case "two-breaks":
+                    home.SetSigningCopy(ScriptFixtures.Fingerprint + "\n\n");
+                    break;
+                case "empty":
+                    home.SetSigningCopy("");
+                    break;
+                case "symlink":
+                    string target = System.IO.Path.Combine(home.Path, "real-fingerprint");
+                    File.WriteAllText(target, ScriptFixtures.Fingerprint + "\n");
+                    File.SetUnixFileMode(target, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                    File.CreateSymbolicLink(home.SigningCopy, target);
+                    break;
+                case "mode-644":
+                    home.SetSigningCopy(ScriptFixtures.Fingerprint + "\n");
+                    File.SetUnixFileMode(home.SigningCopy,
+                        UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
+                    break;
+                case "mode-400":
+                    home.SetSigningCopy(ScriptFixtures.Fingerprint + "\n");
+                    File.SetUnixFileMode(home.SigningCopy, UnixFileMode.UserRead);
+                    break;
+                default:
+                    Directory.CreateDirectory(home.SigningCopy);
+                    break;
+            }
+
+            IReadOnlyList<string> before = home.Snapshot("server");
+
+            Assert.Matches(LinePattern("check_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+            Assert.Empty(home.CodesignCalls());
+            Assert.Empty(home.LaunchctlCalls());
+            Assert.Equal(before, home.Snapshot("server"));
+            Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
+            AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"check\"");
+            Assert.Empty(home.Leftovers());
+        }
+
+        [Fact]
+        public void FailingSignatureCheck_IsCheckFailedNeverBootsOutAndIsSkippedNextRun()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.SetSigningCopy(ScriptFixtures.Fingerprint + "\n");
+            home.SetCodesignExit(1);
+            IReadOnlyList<string> before = home.Snapshot("server");
+
+            Assert.Matches(LinePattern("check_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+            Assert.Single(home.CodesignCalls());
+            Assert.Empty(home.LaunchctlCalls());
+            Assert.Equal(before, home.Snapshot("server"));
+            Assert.False(Directory.Exists(home.Previous));
+            AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"check\"");
+            Assert.Empty(home.Leftovers());
+
+            Assert.Matches(LinePattern("skipped_failed v1.2.0 v1.3.0"), home.RunOnce());
+            Assert.Single(home.CodesignCalls());
+            Assert.Empty(home.LaunchctlCalls());
+        }
+
+        [Fact]
+        public void SigningOnAndNoCodesignOnPath_IsCheckFailed()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.SetSigningCopy(ScriptFixtures.Fingerprint + "\n");
+
+            Assert.Matches(LinePattern("check_failed v1.2.0 v1.3.0"), home.RunOnceWithoutCodesign());
+
+            Assert.Empty(home.CodesignCalls());
+            Assert.Empty(home.LaunchctlCalls());
+            AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"check\"");
+            Assert.Empty(home.Leftovers());
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void FailedCheck_IsCheckFailedWithACheckResultAndTheServerUntouched(bool symlinkEntry)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0", badChecksum: !symlinkEntry, symlinkEntry: symlinkEntry);
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            IReadOnlyList<string> before = home.Snapshot("server");
+
+            Assert.Matches(LinePattern("check_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+            Assert.Empty(home.LaunchctlCalls());
+            Assert.Equal(before, home.Snapshot("server"));
+            Assert.False(Directory.Exists(home.Previous));
+            AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"check\"");
+            Assert.Empty(home.Leftovers());
+        }
+
+        [Theory]
+        [InlineData("{\"autoUpdate\":true}")]
+        [InlineData("{\"autoUpdate\":true,\"channel\":\"stable\"}")]
+        [InlineData("{\"autoUpdate\":true,\"channel\":\"stable\"}\n")]
+        public void StableChannel_IgnoresDevelopBuildsAndNeverAsksForTheList(string settings)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.SetSettings(settings);
+            home.SetList("[{\"tag_name\":\"v1.2.1-develop.9\"},{\"tag_name\":\"v1.2.0\"}]");
+            home.AddRelease("1.2.1-develop.9", "1.2.1-develop.9");
+            home.SetRedirect(Releases + "/tag/v1.2.0");
+
+            AssertNothingDone(home, "current", " v1.2.0 v1.2.0", curlCalls: 1);
+            Assert.DoesNotContain(home.CurlCalls(), call => call.Contains("api.github.com", StringComparison.Ordinal));
+        }
+
+        [Theory]
+        [InlineData("v1.2.1-develop.3", "v1.2.1", "updated")]
+        [InlineData("v1.2.1-develop.3", "v1.2.0", "current")]
+        public void StableChannel_ComparesAnInstalledDevelopBuildBySemVer(string installed, string latest, string word)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new(installed);
+            home.AddRelease(latest[1..], latest[1..]);
+            home.SetRedirect(Releases + "/tag/" + latest);
+
+            Assert.Matches(LinePattern(word + " " + installed + " " + latest), home.RunOnce());
+        }
+
+        [Fact]
+        public void DevelopChannel_IgnoresATagWithALeadingZeroPrereleaseIdentifier()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.SetSettings(Develop);
+            home.SetList("[{\"tag_name\":\"v1.2.5-01\"},{\"tag_name\":\"v1.2.0\"}]");
+            home.AddRelease("1.2.5-01", "1.2.5-01");
+            home.SetRedirect(Releases + "/tag/v1.2.0");
+
+            AssertNothingDone(home, "current", " v1.2.0 v1.2.0", curlCalls: 1);
+        }
+
+        [Fact]
+        public void DevelopChannel_PicksDevelopTenOverNineAndInstallsIt()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.SetSettings(Develop);
+            home.SetList("[\n  {\n    \"tag_name\": \"v1.2.1-develop.9\",\n    \"body\": \"see \\\"tag_name\\\":\\\"v9.9.9\\\"\"\n  },\n"
+                + "  {\"tag_name\":\"v1.2.1-develop.10\",\"prerelease\":true},{\"tag_name\":\"v1.2.0\"},"
+                + "{\"tag_name\":\"v9.0.0-rc.1\"},{\"tag_name\":\"v9.0.0-develop.01\"},{\"tag_name\":\"v9.0.0+b\"},"
+                + "{\"tag_name\":\"9.0.0\"},{\"tag_name\":\"v9.0.0-develop.1.1\"},{\"tag_name\":\"v9.0.0-develop.*\"}\n]\n");
+            home.AddRelease("1.2.1-develop.10", "1.2.1-develop.10");
+
+            string line = home.RunOnce();
+
+            Assert.Matches(LinePattern("updated v1.2.0 v1.2.1-develop.10"), line);
+            Assert.Equal("v1.2.1-develop.10\n", File.ReadAllText(home.Marker));
+            AssertResult(home, "\"result\":\"updated\",\"version\":\"1.2.1-develop.10\",\"previous\":\"1.2.0\"");
+            IReadOnlyList<string> curl = home.CurlCalls();
+            Assert.Equal(ListCall, curl[0]);
+            Assert.Single(curl, call => call.Contains("api.github.com", StringComparison.Ordinal));
+            Assert.DoesNotContain(curl, call => call.Contains("-w ", StringComparison.Ordinal));
+            Assert.DoesNotContain("-L", curl[0], StringComparison.Ordinal);
+            Assert.Contains(curl, call => call.EndsWith(
+                Releases + "/download/v1.2.1-develop.10/controlroom-1.2.1-develop.10-osx-arm64.tar.gz", StringComparison.Ordinal));
+            Assert.Contains(curl, call => call.EndsWith(Releases + "/download/v1.2.1-develop.10/SHA256SUMS", StringComparison.Ordinal));
+            AssertNoToken(home);
+            Assert.Empty(home.Leftovers());
+        }
+
+        [Fact]
+        public void DevelopChannel_MovesFromADevelopBuildToTheProperRelease()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new("v1.2.1-develop.10");
+            home.SetSettings(Develop);
+            home.SetList("[{\"tag_name\":\"v1.2.1-develop.10\"},{\"tag_name\":\"v1.2.1\"},{\"tag_name\":\"v1.2.0\"}]");
+            home.AddRelease("1.2.1", "1.2.1");
+
+            Assert.Matches(LinePattern("updated v1.2.1-develop.10 v1.2.1"), home.RunOnce());
+            Assert.Equal("v1.2.1\n", File.ReadAllText(home.Marker));
+        }
+
+        [Theory]
+        [InlineData("v1.2.1-develop.10", "[{\"tag_name\":\"v1.2.1-develop.9\"},{\"tag_name\":\"v1.2.0\"}]", "v1.2.1-develop.9")]
+        [InlineData("v1.2.1-develop.10", "[{\"tag_name\":\"v1.2.1-develop.10\"}]", "v1.2.1-develop.10")]
+        [InlineData("v1.2.1", "[{\"tag_name\":\"v1.2.1-develop.10\"}]", "v1.2.1-develop.10")]
+        public void DevelopChannel_NothingNewer_IsCurrent(string installed, string list, string best)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new(installed);
+            home.SetSettings(Develop);
+            home.SetList(list);
+
+            AssertNothingDone(home, "current", " " + installed + " " + best, curlCalls: 1);
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("[]")]
+        [InlineData("{\"message\":\"rate limited\"}")]
+        [InlineData("[{\"tag_name\":\"v9.0.0-rc.1\"},{\"tag_name\":\"v9.0.0+b\"}]")]
+        [InlineData("too-big")]
+        public void DevelopChannel_NoListOrNoValidTag_IsLatestFailed(string? list)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.SetSettings(Develop);
+            if (list is not null)
+            {
+                home.SetList(list == "too-big" ? "[{\"tag_name\":\"v9.0.0\"}]".PadRight(1048577) : list);
+            }
+
+            AssertNothingDone(home, "latest_failed", " v1.2.0", curlCalls: 1);
+            Assert.Equal(ListCall, Assert.Single(home.CurlCalls()));
+        }
+
+        [Fact]
+        public void DevelopChannel_BadChecksum_IsCheckFailedAndTheServerUntouched()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.SetSettings(Develop);
+            home.SetList("[{\"tag_name\":\"v1.2.1-develop.4\"}]");
+            home.AddRelease("1.2.1-develop.4", "1.2.1-develop.4", badChecksum: true);
+            IReadOnlyList<string> before = home.Snapshot("server");
+
+            Assert.Matches(LinePattern("check_failed v1.2.0 v1.2.1-develop.4"), home.RunOnce());
+
+            Assert.Empty(home.LaunchctlCalls());
+            Assert.Equal(before, home.Snapshot("server"));
+            Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
+            AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.2.1-develop.4\",\"reason\":\"check\"");
+            Assert.Empty(home.Leftovers());
+        }
+
+        [Fact]
+        public void DevelopChannel_NoAnswerFromTheNewBuild_RollsBack()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.SetSettings(Develop);
+            home.SetList("[{\"tag_name\":\"v1.2.1-develop.4\"}]");
+            home.AddRelease("1.2.1-develop.4", "9.9.9");
+
+            Assert.Matches(LinePattern("rolled_back v1.2.0 v1.2.1-develop.4"), home.RunOnce());
+
+            Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
+            Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
+            AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.2.1-develop.4\",\"reason\":\"no_answer\"");
+            AssertNoToken(home);
+            Assert.Empty(home.Leftovers());
+        }
+
+        [Fact]
+        public void DevelopChannel_BuildThatFailedItsCheck_IsSkipped()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.SetSettings(Develop);
+            home.SetList("[{\"tag_name\":\"v1.2.1-develop.4\"}]");
+            home.SetResult("{\"run\":\"20261118T200000Z\",\"result\":\"update_failed\",\"version\":\"1.2.1-develop.4\","
+                + "\"reason\":\"check\"}\n");
+
+            AssertNothingDone(home, "skipped_failed", " v1.2.0 v1.2.1-develop.4", curlCalls: 1);
+        }
     }
 
-    [Theory]
-    [InlineData("{\"autoUpdate\":false}\n", true)]
-    [InlineData("{\"autoUpdate\": true}\n", true)]
-    [InlineData("{\"autoUpdate\":true}\n\n", true)]
-    [InlineData("{\"autoUpdate\":true}\n", false)]
-    [InlineData(null, true)]
-    [InlineData("{\"autoUpdate\":false,\"channel\":\"develop\"}\n", true)]
-    [InlineData("{\"autoUpdate\":false,\"channel\":\"stable\"}", true)]
-    [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\"}\n\n", true)]
-    [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\"}\r\n", true)]
-    [InlineData("{\"autoUpdate\":true,\"channel\":\"beta\"}\n", true)]
-    [InlineData("{\"autoUpdate\":true,\"channel\":\"Develop\"}\n", true)]
-    [InlineData("{\"channel\":\"develop\",\"autoUpdate\":true}\n", true)]
-    [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\",\"x\":1}\n", true)]
-    [InlineData("{\"autoUpdate\":true,\"channel\":\"develop\"}\n", false)]
-    public void SettingNotExactlyOn_IsOffAndChangesNothing(string? settings, bool safeMode)
+    /// <summary>Waiting for <c>launchctl</c> and retrying <c>bootstrap</c>.</summary>
+    public sealed class Launchd
     {
-        if (OperatingSystem.IsWindows())
+        [Fact]
+        public void LingeringServiceAndOneFailedBootstrap_AreWaitedForAndRetriedBeforeTheHealthCheck()
         {
-            return;
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.SetLinger(3);
+            home.FailBootstraps(1);
+
+            Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
+
+            AssertResult(home, "\"result\":\"updated\",\"version\":\"1.3.0\",\"previous\":\"1.2.0\"");
+            string print = "launchctl print " + home.Service;
+            string bootstrap = "launchctl bootstrap " + home.Domain + " " + home.ServerPlist;
+            Assert.Equal(
+                ["launchctl bootout " + home.Service, print, "sleep 0.5", print, "sleep 0.5", print, "sleep 0.5", print,
+                    bootstrap, "sleep 1", bootstrap, "health", print],
+                home.Events());
+            Assert.Equal(["0.5", "0.5", "0.5", "1"], home.SleepCalls());
+            Assert.Equal("v1.3.0\n", File.ReadAllText(home.Marker));
         }
 
-        using UpdaterHome home = new();
-        home.SetSettings(settings);
-        if (!safeMode)
+        [Fact]
+        public void LingeringServiceWithAFirstTimeBootstrap_SleepsOnlyWhileItIsStillShown()
         {
-            File.SetUnixFileMode(home.Settings, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead);
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.SetLinger(2);
+
+            Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
+
+            Assert.Equal(["0.5", "0.5"], home.SleepCalls());
+            Assert.Single(home.LaunchctlCalls(), call => call.StartsWith("bootstrap ", StringComparison.Ordinal));
         }
 
-        AssertNothingDone(home, "off", "");
+        [Fact]
+        public void ServiceThatNeverGoes_IsWaitedForThirtyPollsThenBootstrappedAnyway()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.SetLinger(1000);
+
+            Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
+
+            Assert.Equal(Enumerable.Repeat("0.5", 30), home.SleepCalls());
+            List<string> expected = ["launchctl bootout " + home.Service];
+            for (int poll = 0; poll < 30; poll++)
+            {
+                expected.Add("launchctl print " + home.Service);
+                expected.Add("sleep 0.5");
+            }
+
+            expected.Add("launchctl bootstrap " + home.Domain + " " + home.ServerPlist);
+            Assert.Equal(expected, home.Events().Take(expected.Count));
+        }
+
+        [Fact]
+        public void NewServerThatNeverBootstraps_IsBootstrapFailedWithoutAHealthPollForIt()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.FailBootstraps(6);
+
+            Assert.Matches(LinePattern("bootstrap_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+            AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"bootstrap_failed\"");
+            string bootstrap = "bootstrap " + home.Domain + " " + home.ServerPlist;
+            Assert.Equal(
+                ["bootout " + home.Service, .. Enumerable.Repeat(bootstrap, 6), "bootout " + home.Service, bootstrap],
+                home.LaunchctlCalls());
+            Assert.Equal(Enumerable.Repeat("1", 5), home.SleepCalls());
+            List<string> events = [.. home.Events()];
+            Assert.Single(events, call => call == "health");
+            Assert.True(events.IndexOf("health") > events.LastIndexOf("launchctl bootout " + home.Service));
+            Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
+            Assert.False(Directory.Exists(home.Previous));
+            Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
+            Assert.Empty(home.Leftovers());
+        }
+
+        [Fact]
+        public void BootstrapFailedRun_IsNotSkippedAndTheNextRunTriesTheSwapAgain()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.FailBootstraps(6);
+            Assert.Matches(LinePattern("bootstrap_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+            Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
+
+            AssertResult(home, "\"result\":\"updated\",\"version\":\"1.3.0\",\"previous\":\"1.2.0\"");
+            Assert.Equal("v1.3.0\n", File.ReadAllText(home.Marker));
+        }
+
+        [Fact]
+        public void OldServerThatNeverBootstrapsAfterABootstrapFailure_IsRollbackFailedWithoutHealthPolls()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.FailBootstraps(12);
+
+            Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+            AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
+            Assert.Equal(12, home.LaunchctlCalls().Count(call => call.StartsWith("bootstrap ", StringComparison.Ordinal)));
+            Assert.DoesNotContain(HealthCall, home.CurlCalls());
+        }
+
+        [Fact]
+        public void OldServerThatNeverBootstrapsAfterNoAnswer_IsRollbackFailedWithoutPollingItsHealth()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "9.9.9");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.FailBootstrapsPerBootout(0, 6);
+
+            Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+            AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
+            Assert.Equal(15, home.CurlCalls().Count(call => call == HealthCall));
+            IReadOnlyList<string> afterRollback = [.. home.Events().Reverse().TakeWhile(call => call != "launchctl bootout " + home.Service)];
+            Assert.Equal(6, afterRollback.Count(call => call.StartsWith("launchctl bootstrap ", StringComparison.Ordinal)));
+            Assert.DoesNotContain("health", afterRollback);
+        }
+
+        [Fact]
+        public void OldServerThatNeverBootstrapsAfterAFailedRename_IsRollbackFailedWithoutHealthPolls()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.FailMoveFrom("/controlroom-1.3.0-osx-arm64");
+            home.FailBootstraps(6);
+
+            Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+            AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
+            Assert.Equal(6, home.LaunchctlCalls().Count(call => call.StartsWith("bootstrap ", StringComparison.Ordinal)));
+            Assert.DoesNotContain(HealthCall, home.CurlCalls());
+            Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
+        }
+
+        [Fact]
+        public void RollbackAfterNoAnswer_WaitsAfterEveryBootoutAndRetriesEveryBootstrap()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "9.9.9");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.SetLinger(1);
+            home.FailBootstrapsPerBootout(1, 1);
+
+            Assert.Matches(LinePattern("rolled_back v1.2.0 v1.3.0"), home.RunOnce());
+
+            AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"no_answer\"");
+            AssertWaitAndRetryAfterEveryBootout(home, bootouts: 2);
+            Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
+        }
+
+        [Fact]
+        public void SwapFailedAfterAFailedRename_WaitsAfterTheBootoutAndRetriesTheBootstrap()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.FailMoveFrom("/controlroom-1.3.0-osx-arm64");
+            home.SetLinger(1);
+            home.FailBootstraps(1);
+
+            Assert.Matches(LinePattern("swap_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+            AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"swap\"");
+            AssertWaitAndRetryAfterEveryBootout(home, bootouts: 1);
+            Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
+        }
+
+        [Fact]
+        public void SwapFailedAfterAFailedMarkerWrite_WaitsAfterEveryBootoutAndRetriesEveryBootstrap()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.FailMoveTo("/installed-release");
+            home.SetLinger(1);
+            home.FailBootstrapsPerBootout(1, 1);
+
+            Assert.Matches(LinePattern("swap_failed v1.2.0 v1.3.0"), home.RunOnce());
+
+            AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"swap\"");
+            AssertWaitAndRetryAfterEveryBootout(home, bootouts: 2);
+        }
     }
 
-    [Fact]
-    public void SymlinkedSetting_IsOff()
+    /// <summary>The start delay and the waits while a job runs.</summary>
+    public sealed class Waits
     {
-        if (OperatingSystem.IsWindows())
+        [Theory]
+        [InlineData("1")]
+        [InlineData("60")]
+        [InlineData("600")]
+        public void StartDelay_SleepsFirstThenRunsAsBefore(string delay)
         {
-            return;
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.SetRedirect(Releases + "/tag/v1.2.0");
+
+            Assert.Matches(LinePattern("current v1.2.0 v1.2.0"), home.RunOnce("--start-delay", delay));
+            Assert.Equal([delay], home.SleepCalls());
+            Assert.Equal([NothingHeld], home.SleepStates());
+            Assert.Single(home.CurlCalls());
         }
 
-        using UpdaterHome home = new();
-        string target = Path.Combine(home.Path, "elsewhere.json");
-        File.WriteAllText(target, "{\"autoUpdate\":true}\n");
-        File.SetUnixFileMode(target, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-        File.Delete(home.Settings);
-        File.CreateSymbolicLink(home.Settings, target);
-
-        AssertNothingDone(home, "off", "");
-    }
-
-    [Fact]
-    public void LooseSupportFolder_IsOff()
-    {
-        if (OperatingSystem.IsWindows())
+        [Fact]
+        public void StartDelay_ComesBeforeEveryLaunchctlAndCurlCall()
         {
-            return;
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+
+            Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce("--start-delay", "60"));
+            IReadOnlyList<string> events = home.Events();
+            Assert.Equal("sleep 60", events[0]);
+            Assert.DoesNotContain("sleep 60", events.Skip(1));
+            Assert.Contains("launchctl bootout " + home.Service, events);
+            Assert.Equal(["60"], home.SleepCalls());
+            Assert.Equal([NothingHeld], home.SleepStates());
         }
 
-        using UpdaterHome home = new();
-        File.SetUnixFileMode(home.Support, AccessToken.FolderMode | UnixFileMode.GroupRead | UnixFileMode.GroupExecute);
-
-        AssertNothingDone(home, "off", "");
-    }
-
-    [Theory]
-    [InlineData(null)]
-    [InlineData("1.2.0\n")]
-    [InlineData("v1.2.0+build\n")]
-    [InlineData("v01.2.0\n")]
-    public void MissingOrInvalidMarker_IsNotRelease(string? marker)
-    {
-        if (OperatingSystem.IsWindows())
+        [Fact]
+        public void StartDelay_ReadsTheSettingOnlyAfterTheDelay()
         {
-            return;
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.SetRedirect(Releases + "/tag/v1.2.0");
+            home.OnSleepWrite(1, home.Settings, "{\"autoUpdate\":false}\n");
+
+            Assert.Matches(LinePattern("off"), home.RunOnce("--start-delay", "60"));
+            Assert.Equal(["60"], home.SleepCalls());
+            Assert.Empty(home.CurlCalls());
+            Assert.Empty(home.AllLaunchctlCalls());
         }
 
-        using UpdaterHome home = new();
-        home.SetMarker(marker);
-
-        AssertNothingDone(home, "not_release", "");
-    }
-
-    [Fact]
-    public void FreshLock_IsBusyAndKeepsTheLock()
-    {
-        if (OperatingSystem.IsWindows())
+        [Fact]
+        public void WithoutStartDelay_DoesNotSleepFirst()
         {
-            return;
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.SetRedirect(Releases + "/tag/v1.2.0");
+
+            Assert.Matches(LinePattern("current v1.2.0 v1.2.0"), home.RunOnce());
+            Assert.Empty(home.SleepCalls());
         }
 
-        using UpdaterHome home = new();
-        Directory.CreateDirectory(home.Lock);
-
-        AssertNothingDone(home, "busy", " v1.2.0");
-        Assert.True(Directory.Exists(home.Lock));
-    }
-
-    [Fact]
-    public void LockOlderThanAnHour_IsRemovedAndTheRunGoesOn()
-    {
-        if (OperatingSystem.IsWindows())
+        [Theory]
+        [InlineData("--factory-root|ROOT|--start-delay|0")]
+        [InlineData("--factory-root|ROOT|--start-delay|601")]
+        [InlineData("--factory-root|ROOT|--start-delay|060")]
+        [InlineData("--factory-root|ROOT|--start-delay|6x")]
+        [InlineData("--factory-root|ROOT|--start-delay|-1")]
+        [InlineData("--factory-root|ROOT|--start-delay|")]
+        [InlineData("--factory-root|ROOT|--start-delay| 60")]
+        [InlineData("--factory-root|ROOT|--start-delay|1000")]
+        [InlineData("--factory-root|ROOT|--start-delay")]
+        [InlineData("--factory-root|ROOT|--start-delay|60|x")]
+        [InlineData("--factory-root|ROOT|--delay|60")]
+        [InlineData("--start-delay|60|--factory-root|ROOT")]
+        [InlineData("--factory-root|root|--start-delay|60")]
+        public void BadArgumentList_NeverSleepsAndIsJobRunning(string arguments)
         {
-            return;
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddJob("1-active", "build");
+            home.SetRedirect(Releases + "/tag/v1.2.0");
+
+            AssertNothingDone(home, "job_running", " v1.2.0", arguments: arguments.Split('|'));
+            Assert.False(Directory.Exists(home.Lock));
         }
 
-        using UpdaterHome home = new();
-        Directory.CreateDirectory(home.Lock);
-        Directory.SetLastWriteTimeUtc(home.Lock, DateTime.UtcNow.AddHours(-2));
-        home.SetRedirect(Releases + "/tag/v1.2.0");
-
-        Assert.Matches(LinePattern("current v1.2.0 v1.2.0"), home.RunOnce());
-        Assert.False(Directory.Exists(home.Lock));
-    }
-
-    [Theory]
-    [InlineData("spike")]
-    [InlineData("spec")]
-    [InlineData("build")]
-    [InlineData("review")]
-    public void ActiveJob_IsJobRunning(string stage)
-    {
-        if (OperatingSystem.IsWindows())
+        [Fact]
+        public void StartDelayWithoutSleepOnPath_GoesOnAtOnce()
         {
-            return;
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.SetRedirect(Releases + "/tag/v1.2.0");
+
+            Assert.Matches(LinePattern("current v1.2.0 v1.2.0"), home.RunOnceWithoutSleep("--start-delay", "60"));
+            Assert.Single(home.CurlCalls());
         }
 
-        using UpdaterHome home = new();
-        home.AddJob("1-done", "done");
-        home.AddJob("2-active", stage);
-
-        AssertNothingDone(home, "job_running", " v1.2.0", waits: RetryWaits);
-        Assert.False(Directory.Exists(home.Lock));
-    }
-
-    [Fact]
-    public void FinishedJobs_DoNotStopTheRun()
-    {
-        if (OperatingSystem.IsWindows())
+        [Fact]
+        public void JobThatEndsDuringTheSecondWait_RunGoesOnAfterTwoWaitingLines()
         {
-            return;
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddJob("1-active", "build");
+            home.SetRedirect(Releases + "/tag/v1.2.0");
+            home.OnSleepFinishJob(2, "1-active");
+
+            IReadOnlyList<string> lines = home.RunAll();
+
+            Assert.Equal(3, lines.Count);
+            Assert.Matches(LinePattern("waiting v1.2.0"), lines[0]);
+            Assert.Matches(LinePattern("waiting v1.2.0"), lines[1]);
+            Assert.Matches(LinePattern("current v1.2.0 v1.2.0"), lines[2]);
+            Assert.Equal(["900", "900"], home.SleepCalls());
+            Assert.Equal([NothingHeld, NothingHeld], home.SleepStates());
+            Assert.Single(home.CurlCalls());
+            Assert.False(File.Exists(home.Result));
+            Assert.False(Directory.Exists(home.Lock));
         }
 
-        using UpdaterHome home = new();
-        home.AddJob("1-done", "done");
-        home.AddJob("2-approve", "approve");
-        home.AddJob("3-human", "needs-human");
-        home.SetRedirect(Releases + "/tag/v1.2.0");
-
-        Assert.Matches(LinePattern("current v1.2.0 v1.2.0"), home.RunOnce());
-    }
-
-    [Theory]
-    [InlineData("v1.2.0")]
-    [InlineData("v1.1.9")]
-    [InlineData("v0.9.99")]
-    [InlineData("v1.3.0-rc.1")]
-    public void LatestNotNewerOrAPrerelease_IsCurrentAndChangesNothing(string latest)
-    {
-        if (OperatingSystem.IsWindows())
+        [Fact]
+        public void JobThatEndsDuringTheFirstWait_UpdatesAfterTheStartDelayAndOneWait()
         {
-            return;
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddJob("1-active", "review");
+            home.AddRelease("1.3.0", "1.3.0");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+            home.OnSleepFinishJob(2, "1-active");
+
+            IReadOnlyList<string> lines = home.RunAll("--start-delay", "60");
+
+            Assert.Equal(2, lines.Count);
+            Assert.Matches(LinePattern("waiting v1.2.0"), lines[0]);
+            Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), lines[1]);
+            Assert.Equal(["60", "900"], home.SleepCalls());
+            Assert.Equal([NothingHeld, NothingHeld], home.SleepStates());
+            AssertResult(home, "\"result\":\"updated\",\"version\":\"1.3.0\",\"previous\":\"1.2.0\"");
+            Assert.Empty(home.Leftovers());
         }
 
-        using UpdaterHome home = new();
-        home.SetRedirect(Releases + "/tag/" + latest);
-
-        AssertNothingDone(home, "current", " v1.2.0 " + latest, curlCalls: 1);
-    }
-
-    [Theory]
-    [InlineData("check")]
-    [InlineData("no_answer")]
-    public void LatestThatFailedItsCheckOrStart_IsSkipped(string reason)
-    {
-        if (OperatingSystem.IsWindows())
+        [Fact]
+        public void JobThatNeverEnds_WaitsTwentyThreeTimesThenIsJobRunning()
         {
-            return;
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddJob("1-active", "build");
+            home.SetRedirect(Releases + "/tag/v1.3.0");
+
+            AssertNothingDone(home, "job_running", " v1.2.0", waits: RetryWaits);
+            Assert.Empty(home.CurlCalls());
+            Assert.Equal(Enumerable.Repeat(NothingHeld, RetryWaits), home.SleepStates());
+            Assert.False(File.Exists(home.Result));
+            Assert.False(Directory.Exists(home.Lock));
         }
 
-        using UpdaterHome home = new();
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.SetResult("{\"run\":\"20261118T200000Z\",\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\""
-            + reason + "\"}\n");
-
-        AssertNothingDone(home, "skipped_failed", " v1.2.0 v1.3.0", curlCalls: 1);
-    }
-
-    [Theory]
-    [InlineData("{\"run\":\"20261118T200000Z\",\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"swap\"}\n")]
-    [InlineData("{\"run\":\"20261118T200000Z\",\"result\":\"update_failed\",\"version\":\"1.2.9\",\"reason\":\"check\"}\n")]
-    public void OtherFailedResults_DoNotSkip(string result)
-    {
-        if (OperatingSystem.IsWindows())
+        [Fact]
+        public void LockTakenDuringAWait_IsBusyAndKeepsTheOtherRunsLock()
         {
-            return;
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddJob("1-active", "build");
+            home.SetRedirect(Releases + "/tag/v1.2.0");
+            home.OnSleep(1, "mkdir " + UpdaterHome.Quote(home.Lock));
+
+            IReadOnlyList<string> lines = home.RunAll();
+
+            Assert.Equal(2, lines.Count);
+            Assert.Matches(LinePattern("waiting v1.2.0"), lines[0]);
+            Assert.Matches(LinePattern("busy v1.2.0"), lines[1]);
+            Assert.Equal(["900"], home.SleepCalls());
+            Assert.Equal([NothingHeld], home.SleepStates());
+            Assert.True(Directory.Exists(home.Lock));
+            Assert.Empty(home.CurlCalls());
+            Assert.Empty(home.AllLaunchctlCalls());
         }
 
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.SetResult(result);
-
-        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
-    }
-
-    [Theory]
-    [InlineData(null)]
-    [InlineData(Releases + "/tag/1.3.0")]
-    [InlineData("https://example.com/releases/tag/v1.3.0")]
-    public void NoLatestRelease_IsLatestFailedWithNoResult(string? redirect)
-    {
-        if (OperatingSystem.IsWindows())
+        [Fact]
+        public void SettingTurnedOffDuringAWait_IsOffWithoutFurtherWaits()
         {
-            return;
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddJob("1-active", "build");
+            home.OnSleepWrite(1, home.Settings, "{\"autoUpdate\":false}\n");
+
+            IReadOnlyList<string> lines = home.RunAll();
+
+            Assert.Equal(2, lines.Count);
+            Assert.Matches(LinePattern("waiting v1.2.0"), lines[0]);
+            Assert.Matches(LinePattern("off"), lines[1]);
+            Assert.Equal(["900"], home.SleepCalls());
+            Assert.Empty(home.CurlCalls());
+            Assert.False(Directory.Exists(home.Lock));
         }
 
-        using UpdaterHome home = new();
-        if (redirect is not null)
+        [Fact]
+        public void ReleaseMarkerGoneDuringAWait_IsNotReleaseWithoutFurtherWaits()
         {
-            home.SetRedirect(redirect);
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddJob("1-active", "build");
+            home.OnSleep(1, "rm -f " + UpdaterHome.Quote(home.Marker));
+
+            IReadOnlyList<string> lines = home.RunAll();
+
+            Assert.Equal(2, lines.Count);
+            Assert.Matches(LinePattern("waiting v1.2.0"), lines[0]);
+            Assert.Matches(LinePattern("not_release"), lines[1]);
+            Assert.Equal(["900"], home.SleepCalls());
+            Assert.Empty(home.CurlCalls());
         }
 
-        AssertNothingDone(home, "latest_failed", " v1.2.0", curlCalls: 1);
-    }
-
-    [Fact]
-    public void FailedDownload_IsDownloadFailedWithNoResult()
-    {
-        if (OperatingSystem.IsWindows())
+        [Fact]
+        public void RunningJobWithoutSleepOnPath_IsJobRunningWithoutWaiting()
         {
-            return;
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using UpdaterHome home = new();
+            home.AddJob("1-active", "build");
+            home.SetRedirect(Releases + "/tag/v1.2.0");
+
+            Assert.Matches(LinePattern("job_running v1.2.0"), home.RunOnceWithoutSleep());
+            Assert.Empty(home.CurlCalls());
+            Assert.Empty(home.AllLaunchctlCalls());
+            Assert.False(Directory.Exists(home.Lock));
         }
-
-        using UpdaterHome home = new();
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-
-        AssertNothingDone(home, "download_failed", " v1.2.0 v1.3.0", curlCalls: 2);
-    }
-
-    [Fact]
-    public void SigningOff_RunsNoCodesignAndUpdates()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-
-        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
-
-        Assert.Empty(home.CodesignCalls());
-        Assert.Equal("v1.3.0\n", File.ReadAllText(home.Marker));
-    }
-
-    [Theory]
-    [InlineData(ScriptFixtures.Fingerprint + "\n")]
-    [InlineData("0123456789ABCDEF0123456789abcdefABCDEF01")]
-    public void ValidSigningCopy_VerifiesEveryTopLevelNativeFileThenUpdates(string content)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.SetSigningCopy(content);
-        string fingerprint = content.TrimEnd('\n');
-
-        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
-
-        IReadOnlyList<string[]> calls = home.CodesignCalls();
-        string[] expected = ["ControlRoom.Server", "libSystem.Native.dylib", "createdump"];
-        Assert.Equal(expected.Length, calls.Count);
-        for (int index = 0; index < expected.Length; index++)
-        {
-            string requirement = index == 0
-                ? ScriptFixtures.ServerRequirement(fingerprint)
-                : ScriptFixtures.LibraryRequirement(fingerprint);
-            Assert.Equal(4, calls[index].Length);
-            Assert.Equal(["--verify", "--strict", requirement], calls[index][..3]);
-            Assert.StartsWith(System.IO.Path.Combine(home.Support, ".release."), calls[index][3], StringComparison.Ordinal);
-            Assert.EndsWith("/out/controlroom-1.3.0-osx-arm64/" + expected[index], calls[index][3], StringComparison.Ordinal);
-        }
-
-        AssertResult(home, "\"result\":\"updated\",\"version\":\"1.3.0\",\"previous\":\"1.2.0\"");
-        Assert.Empty(home.Leftovers());
-    }
-
-    [Theory]
-    [InlineData("short")]
-    [InlineData("long")]
-    [InlineData("junk")]
-    [InlineData("two-breaks")]
-    [InlineData("empty")]
-    [InlineData("symlink")]
-    [InlineData("mode-644")]
-    [InlineData("mode-400")]
-    [InlineData("folder")]
-    public void InvalidSigningCopy_IsCheckFailedLikeAFailingCheck(string fault)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        switch (fault)
-        {
-            case "short":
-                home.SetSigningCopy(ScriptFixtures.Fingerprint[1..] + "\n");
-                break;
-            case "long":
-                home.SetSigningCopy(ScriptFixtures.Fingerprint + "0");
-                break;
-            case "junk":
-                home.SetSigningCopy(ScriptFixtures.Fingerprint[..39] + "z\n");
-                break;
-            case "two-breaks":
-                home.SetSigningCopy(ScriptFixtures.Fingerprint + "\n\n");
-                break;
-            case "empty":
-                home.SetSigningCopy("");
-                break;
-            case "symlink":
-                string target = System.IO.Path.Combine(home.Path, "real-fingerprint");
-                File.WriteAllText(target, ScriptFixtures.Fingerprint + "\n");
-                File.SetUnixFileMode(target, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-                File.CreateSymbolicLink(home.SigningCopy, target);
-                break;
-            case "mode-644":
-                home.SetSigningCopy(ScriptFixtures.Fingerprint + "\n");
-                File.SetUnixFileMode(home.SigningCopy,
-                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
-                break;
-            case "mode-400":
-                home.SetSigningCopy(ScriptFixtures.Fingerprint + "\n");
-                File.SetUnixFileMode(home.SigningCopy, UnixFileMode.UserRead);
-                break;
-            default:
-                Directory.CreateDirectory(home.SigningCopy);
-                break;
-        }
-
-        IReadOnlyList<string> before = home.Snapshot("server");
-
-        Assert.Matches(LinePattern("check_failed v1.2.0 v1.3.0"), home.RunOnce());
-
-        Assert.Empty(home.CodesignCalls());
-        Assert.Empty(home.LaunchctlCalls());
-        Assert.Equal(before, home.Snapshot("server"));
-        Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
-        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"check\"");
-        Assert.Empty(home.Leftovers());
-    }
-
-    [Fact]
-    public void FailingSignatureCheck_IsCheckFailedNeverBootsOutAndIsSkippedNextRun()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.SetSigningCopy(ScriptFixtures.Fingerprint + "\n");
-        home.SetCodesignExit(1);
-        IReadOnlyList<string> before = home.Snapshot("server");
-
-        Assert.Matches(LinePattern("check_failed v1.2.0 v1.3.0"), home.RunOnce());
-
-        Assert.Single(home.CodesignCalls());
-        Assert.Empty(home.LaunchctlCalls());
-        Assert.Equal(before, home.Snapshot("server"));
-        Assert.False(Directory.Exists(home.Previous));
-        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"check\"");
-        Assert.Empty(home.Leftovers());
-
-        Assert.Matches(LinePattern("skipped_failed v1.2.0 v1.3.0"), home.RunOnce());
-        Assert.Single(home.CodesignCalls());
-        Assert.Empty(home.LaunchctlCalls());
-    }
-
-    [Fact]
-    public void SigningOnAndNoCodesignOnPath_IsCheckFailed()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.SetSigningCopy(ScriptFixtures.Fingerprint + "\n");
-
-        Assert.Matches(LinePattern("check_failed v1.2.0 v1.3.0"), home.RunOnceWithoutCodesign());
-
-        Assert.Empty(home.CodesignCalls());
-        Assert.Empty(home.LaunchctlCalls());
-        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"check\"");
-        Assert.Empty(home.Leftovers());
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void FailedCheck_IsCheckFailedWithACheckResultAndTheServerUntouched(bool symlinkEntry)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0", badChecksum: !symlinkEntry, symlinkEntry: symlinkEntry);
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        IReadOnlyList<string> before = home.Snapshot("server");
-
-        Assert.Matches(LinePattern("check_failed v1.2.0 v1.3.0"), home.RunOnce());
-
-        Assert.Empty(home.LaunchctlCalls());
-        Assert.Equal(before, home.Snapshot("server"));
-        Assert.False(Directory.Exists(home.Previous));
-        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"check\"");
-        Assert.Empty(home.Leftovers());
-    }
-
-    [Theory]
-    [InlineData("{\"autoUpdate\":true}")]
-    [InlineData("{\"autoUpdate\":true,\"channel\":\"stable\"}")]
-    [InlineData("{\"autoUpdate\":true,\"channel\":\"stable\"}\n")]
-    public void StableChannel_IgnoresDevelopBuildsAndNeverAsksForTheList(string settings)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.SetSettings(settings);
-        home.SetList("[{\"tag_name\":\"v1.2.1-develop.9\"},{\"tag_name\":\"v1.2.0\"}]");
-        home.AddRelease("1.2.1-develop.9", "1.2.1-develop.9");
-        home.SetRedirect(Releases + "/tag/v1.2.0");
-
-        AssertNothingDone(home, "current", " v1.2.0 v1.2.0", curlCalls: 1);
-        Assert.DoesNotContain(home.CurlCalls(), call => call.Contains("api.github.com", StringComparison.Ordinal));
-    }
-
-    [Theory]
-    [InlineData("v1.2.1-develop.3", "v1.2.1", "updated")]
-    [InlineData("v1.2.1-develop.3", "v1.2.0", "current")]
-    public void StableChannel_ComparesAnInstalledDevelopBuildBySemVer(string installed, string latest, string word)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new(installed);
-        home.AddRelease(latest[1..], latest[1..]);
-        home.SetRedirect(Releases + "/tag/" + latest);
-
-        Assert.Matches(LinePattern(word + " " + installed + " " + latest), home.RunOnce());
-    }
-
-    [Fact]
-    public void DevelopChannel_IgnoresATagWithALeadingZeroPrereleaseIdentifier()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.SetSettings(Develop);
-        home.SetList("[{\"tag_name\":\"v1.2.5-01\"},{\"tag_name\":\"v1.2.0\"}]");
-        home.AddRelease("1.2.5-01", "1.2.5-01");
-        home.SetRedirect(Releases + "/tag/v1.2.0");
-
-        AssertNothingDone(home, "current", " v1.2.0 v1.2.0", curlCalls: 1);
-    }
-
-    [Fact]
-    public void DevelopChannel_PicksDevelopTenOverNineAndInstallsIt()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.SetSettings(Develop);
-        home.SetList("[\n  {\n    \"tag_name\": \"v1.2.1-develop.9\",\n    \"body\": \"see \\\"tag_name\\\":\\\"v9.9.9\\\"\"\n  },\n"
-            + "  {\"tag_name\":\"v1.2.1-develop.10\",\"prerelease\":true},{\"tag_name\":\"v1.2.0\"},"
-            + "{\"tag_name\":\"v9.0.0-rc.1\"},{\"tag_name\":\"v9.0.0-develop.01\"},{\"tag_name\":\"v9.0.0+b\"},"
-            + "{\"tag_name\":\"9.0.0\"},{\"tag_name\":\"v9.0.0-develop.1.1\"},{\"tag_name\":\"v9.0.0-develop.*\"}\n]\n");
-        home.AddRelease("1.2.1-develop.10", "1.2.1-develop.10");
-
-        string line = home.RunOnce();
-
-        Assert.Matches(LinePattern("updated v1.2.0 v1.2.1-develop.10"), line);
-        Assert.Equal("v1.2.1-develop.10\n", File.ReadAllText(home.Marker));
-        AssertResult(home, "\"result\":\"updated\",\"version\":\"1.2.1-develop.10\",\"previous\":\"1.2.0\"");
-        IReadOnlyList<string> curl = home.CurlCalls();
-        Assert.Equal(ListCall, curl[0]);
-        Assert.Single(curl, call => call.Contains("api.github.com", StringComparison.Ordinal));
-        Assert.DoesNotContain(curl, call => call.Contains("-w ", StringComparison.Ordinal));
-        Assert.DoesNotContain("-L", curl[0], StringComparison.Ordinal);
-        Assert.Contains(curl, call => call.EndsWith(
-            Releases + "/download/v1.2.1-develop.10/controlroom-1.2.1-develop.10-osx-arm64.tar.gz", StringComparison.Ordinal));
-        Assert.Contains(curl, call => call.EndsWith(Releases + "/download/v1.2.1-develop.10/SHA256SUMS", StringComparison.Ordinal));
-        AssertNoToken(home);
-        Assert.Empty(home.Leftovers());
-    }
-
-    [Fact]
-    public void DevelopChannel_MovesFromADevelopBuildToTheProperRelease()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new("v1.2.1-develop.10");
-        home.SetSettings(Develop);
-        home.SetList("[{\"tag_name\":\"v1.2.1-develop.10\"},{\"tag_name\":\"v1.2.1\"},{\"tag_name\":\"v1.2.0\"}]");
-        home.AddRelease("1.2.1", "1.2.1");
-
-        Assert.Matches(LinePattern("updated v1.2.1-develop.10 v1.2.1"), home.RunOnce());
-        Assert.Equal("v1.2.1\n", File.ReadAllText(home.Marker));
-    }
-
-    [Theory]
-    [InlineData("v1.2.1-develop.10", "[{\"tag_name\":\"v1.2.1-develop.9\"},{\"tag_name\":\"v1.2.0\"}]", "v1.2.1-develop.9")]
-    [InlineData("v1.2.1-develop.10", "[{\"tag_name\":\"v1.2.1-develop.10\"}]", "v1.2.1-develop.10")]
-    [InlineData("v1.2.1", "[{\"tag_name\":\"v1.2.1-develop.10\"}]", "v1.2.1-develop.10")]
-    public void DevelopChannel_NothingNewer_IsCurrent(string installed, string list, string best)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new(installed);
-        home.SetSettings(Develop);
-        home.SetList(list);
-
-        AssertNothingDone(home, "current", " " + installed + " " + best, curlCalls: 1);
-    }
-
-    [Theory]
-    [InlineData(null)]
-    [InlineData("[]")]
-    [InlineData("{\"message\":\"rate limited\"}")]
-    [InlineData("[{\"tag_name\":\"v9.0.0-rc.1\"},{\"tag_name\":\"v9.0.0+b\"}]")]
-    [InlineData("too-big")]
-    public void DevelopChannel_NoListOrNoValidTag_IsLatestFailed(string? list)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.SetSettings(Develop);
-        if (list is not null)
-        {
-            home.SetList(list == "too-big" ? "[{\"tag_name\":\"v9.0.0\"}]".PadRight(1048577) : list);
-        }
-
-        AssertNothingDone(home, "latest_failed", " v1.2.0", curlCalls: 1);
-        Assert.Equal(ListCall, Assert.Single(home.CurlCalls()));
-    }
-
-    [Fact]
-    public void DevelopChannel_BadChecksum_IsCheckFailedAndTheServerUntouched()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.SetSettings(Develop);
-        home.SetList("[{\"tag_name\":\"v1.2.1-develop.4\"}]");
-        home.AddRelease("1.2.1-develop.4", "1.2.1-develop.4", badChecksum: true);
-        IReadOnlyList<string> before = home.Snapshot("server");
-
-        Assert.Matches(LinePattern("check_failed v1.2.0 v1.2.1-develop.4"), home.RunOnce());
-
-        Assert.Empty(home.LaunchctlCalls());
-        Assert.Equal(before, home.Snapshot("server"));
-        Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
-        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.2.1-develop.4\",\"reason\":\"check\"");
-        Assert.Empty(home.Leftovers());
-    }
-
-    [Fact]
-    public void DevelopChannel_NoAnswerFromTheNewBuild_RollsBack()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.SetSettings(Develop);
-        home.SetList("[{\"tag_name\":\"v1.2.1-develop.4\"}]");
-        home.AddRelease("1.2.1-develop.4", "9.9.9");
-
-        Assert.Matches(LinePattern("rolled_back v1.2.0 v1.2.1-develop.4"), home.RunOnce());
-
-        Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
-        Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
-        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.2.1-develop.4\",\"reason\":\"no_answer\"");
-        AssertNoToken(home);
-        Assert.Empty(home.Leftovers());
-    }
-
-    [Fact]
-    public void DevelopChannel_BuildThatFailedItsCheck_IsSkipped()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.SetSettings(Develop);
-        home.SetList("[{\"tag_name\":\"v1.2.1-develop.4\"}]");
-        home.SetResult("{\"run\":\"20261118T200000Z\",\"result\":\"update_failed\",\"version\":\"1.2.1-develop.4\","
-            + "\"reason\":\"check\"}\n");
-
-        AssertNothingDone(home, "skipped_failed", " v1.2.0 v1.2.1-develop.4", curlCalls: 1);
-    }
-
-    [Fact]
-    public void LingeringServiceAndOneFailedBootstrap_AreWaitedForAndRetriedBeforeTheHealthCheck()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.SetLinger(3);
-        home.FailBootstraps(1);
-
-        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
-
-        AssertResult(home, "\"result\":\"updated\",\"version\":\"1.3.0\",\"previous\":\"1.2.0\"");
-        string print = "launchctl print " + home.Service;
-        string bootstrap = "launchctl bootstrap " + home.Domain + " " + home.ServerPlist;
-        Assert.Equal(
-            ["launchctl bootout " + home.Service, print, "sleep 0.5", print, "sleep 0.5", print, "sleep 0.5", print,
-                bootstrap, "sleep 1", bootstrap, "health", print],
-            home.Events());
-        Assert.Equal(["0.5", "0.5", "0.5", "1"], home.SleepCalls());
-        Assert.Equal("v1.3.0\n", File.ReadAllText(home.Marker));
-    }
-
-    [Fact]
-    public void LingeringServiceWithAFirstTimeBootstrap_SleepsOnlyWhileItIsStillShown()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.SetLinger(2);
-
-        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
-
-        Assert.Equal(["0.5", "0.5"], home.SleepCalls());
-        Assert.Single(home.LaunchctlCalls(), call => call.StartsWith("bootstrap ", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void ServiceThatNeverGoes_IsWaitedForThirtyPollsThenBootstrappedAnyway()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.SetLinger(1000);
-
-        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
-
-        Assert.Equal(Enumerable.Repeat("0.5", 30), home.SleepCalls());
-        List<string> expected = ["launchctl bootout " + home.Service];
-        for (int poll = 0; poll < 30; poll++)
-        {
-            expected.Add("launchctl print " + home.Service);
-            expected.Add("sleep 0.5");
-        }
-
-        expected.Add("launchctl bootstrap " + home.Domain + " " + home.ServerPlist);
-        Assert.Equal(expected, home.Events().Take(expected.Count));
-    }
-
-    [Fact]
-    public void NewServerThatNeverBootstraps_IsBootstrapFailedWithoutAHealthPollForIt()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.FailBootstraps(6);
-
-        Assert.Matches(LinePattern("bootstrap_failed v1.2.0 v1.3.0"), home.RunOnce());
-
-        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"bootstrap_failed\"");
-        string bootstrap = "bootstrap " + home.Domain + " " + home.ServerPlist;
-        Assert.Equal(
-            ["bootout " + home.Service, .. Enumerable.Repeat(bootstrap, 6), "bootout " + home.Service, bootstrap],
-            home.LaunchctlCalls());
-        Assert.Equal(Enumerable.Repeat("1", 5), home.SleepCalls());
-        List<string> events = [.. home.Events()];
-        Assert.Single(events, call => call == "health");
-        Assert.True(events.IndexOf("health") > events.LastIndexOf("launchctl bootout " + home.Service));
-        Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
-        Assert.False(Directory.Exists(home.Previous));
-        Assert.Equal("v1.2.0\n", File.ReadAllText(home.Marker));
-        Assert.Empty(home.Leftovers());
-    }
-
-    [Fact]
-    public void BootstrapFailedRun_IsNotSkippedAndTheNextRunTriesTheSwapAgain()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.FailBootstraps(6);
-        Assert.Matches(LinePattern("bootstrap_failed v1.2.0 v1.3.0"), home.RunOnce());
-
-        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce());
-
-        AssertResult(home, "\"result\":\"updated\",\"version\":\"1.3.0\",\"previous\":\"1.2.0\"");
-        Assert.Equal("v1.3.0\n", File.ReadAllText(home.Marker));
-    }
-
-    [Fact]
-    public void OldServerThatNeverBootstrapsAfterABootstrapFailure_IsRollbackFailedWithoutHealthPolls()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.FailBootstraps(12);
-
-        Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
-
-        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
-        Assert.Equal(12, home.LaunchctlCalls().Count(call => call.StartsWith("bootstrap ", StringComparison.Ordinal)));
-        Assert.DoesNotContain(HealthCall, home.CurlCalls());
-    }
-
-    [Fact]
-    public void OldServerThatNeverBootstrapsAfterNoAnswer_IsRollbackFailedWithoutPollingItsHealth()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "9.9.9");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.FailBootstrapsPerBootout(0, 6);
-
-        Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
-
-        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
-        Assert.Equal(15, home.CurlCalls().Count(call => call == HealthCall));
-        IReadOnlyList<string> afterRollback = [.. home.Events().Reverse().TakeWhile(call => call != "launchctl bootout " + home.Service)];
-        Assert.Equal(6, afterRollback.Count(call => call.StartsWith("launchctl bootstrap ", StringComparison.Ordinal)));
-        Assert.DoesNotContain("health", afterRollback);
-    }
-
-    [Fact]
-    public void OldServerThatNeverBootstrapsAfterAFailedRename_IsRollbackFailedWithoutHealthPolls()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.FailMoveFrom("/controlroom-1.3.0-osx-arm64");
-        home.FailBootstraps(6);
-
-        Assert.Matches(LinePattern("rollback_failed v1.2.0 v1.3.0"), home.RunOnce());
-
-        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"rollback_failed\"");
-        Assert.Equal(6, home.LaunchctlCalls().Count(call => call.StartsWith("bootstrap ", StringComparison.Ordinal)));
-        Assert.DoesNotContain(HealthCall, home.CurlCalls());
-        Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
-    }
-
-    [Fact]
-    public void RollbackAfterNoAnswer_WaitsAfterEveryBootoutAndRetriesEveryBootstrap()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "9.9.9");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.SetLinger(1);
-        home.FailBootstrapsPerBootout(1, 1);
-
-        Assert.Matches(LinePattern("rolled_back v1.2.0 v1.3.0"), home.RunOnce());
-
-        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"no_answer\"");
-        AssertWaitAndRetryAfterEveryBootout(home, bootouts: 2);
-        Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
-    }
-
-    [Fact]
-    public void SwapFailedAfterAFailedRename_WaitsAfterTheBootoutAndRetriesTheBootstrap()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.FailMoveFrom("/controlroom-1.3.0-osx-arm64");
-        home.SetLinger(1);
-        home.FailBootstraps(1);
-
-        Assert.Matches(LinePattern("swap_failed v1.2.0 v1.3.0"), home.RunOnce());
-
-        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"swap\"");
-        AssertWaitAndRetryAfterEveryBootout(home, bootouts: 1);
-        Assert.Equal("{\"version\":\"1.2.0\"}", File.ReadAllText(Path.Combine(home.Server, "health")));
-    }
-
-    [Fact]
-    public void SwapFailedAfterAFailedMarkerWrite_WaitsAfterEveryBootoutAndRetriesEveryBootstrap()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.FailMoveTo("/installed-release");
-        home.SetLinger(1);
-        home.FailBootstrapsPerBootout(1, 1);
-
-        Assert.Matches(LinePattern("swap_failed v1.2.0 v1.3.0"), home.RunOnce());
-
-        AssertResult(home, "\"result\":\"update_failed\",\"version\":\"1.3.0\",\"reason\":\"swap\"");
-        AssertWaitAndRetryAfterEveryBootout(home, bootouts: 2);
-    }
-
-    [Theory]
-    [InlineData("1")]
-    [InlineData("60")]
-    [InlineData("600")]
-    public void StartDelay_SleepsFirstThenRunsAsBefore(string delay)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.SetRedirect(Releases + "/tag/v1.2.0");
-
-        Assert.Matches(LinePattern("current v1.2.0 v1.2.0"), home.RunOnce("--start-delay", delay));
-        Assert.Equal([delay], home.SleepCalls());
-        Assert.Equal([NothingHeld], home.SleepStates());
-        Assert.Single(home.CurlCalls());
-    }
-
-    [Fact]
-    public void StartDelay_ComesBeforeEveryLaunchctlAndCurlCall()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-
-        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), home.RunOnce("--start-delay", "60"));
-        IReadOnlyList<string> events = home.Events();
-        Assert.Equal("sleep 60", events[0]);
-        Assert.DoesNotContain("sleep 60", events.Skip(1));
-        Assert.Contains("launchctl bootout " + home.Service, events);
-        Assert.Equal(["60"], home.SleepCalls());
-        Assert.Equal([NothingHeld], home.SleepStates());
-    }
-
-    [Fact]
-    public void StartDelay_ReadsTheSettingOnlyAfterTheDelay()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.SetRedirect(Releases + "/tag/v1.2.0");
-        home.OnSleepWrite(1, home.Settings, "{\"autoUpdate\":false}\n");
-
-        Assert.Matches(LinePattern("off"), home.RunOnce("--start-delay", "60"));
-        Assert.Equal(["60"], home.SleepCalls());
-        Assert.Empty(home.CurlCalls());
-        Assert.Empty(home.AllLaunchctlCalls());
-    }
-
-    [Fact]
-    public void WithoutStartDelay_DoesNotSleepFirst()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.SetRedirect(Releases + "/tag/v1.2.0");
-
-        Assert.Matches(LinePattern("current v1.2.0 v1.2.0"), home.RunOnce());
-        Assert.Empty(home.SleepCalls());
-    }
-
-    [Theory]
-    [InlineData("--factory-root|ROOT|--start-delay|0")]
-    [InlineData("--factory-root|ROOT|--start-delay|601")]
-    [InlineData("--factory-root|ROOT|--start-delay|060")]
-    [InlineData("--factory-root|ROOT|--start-delay|6x")]
-    [InlineData("--factory-root|ROOT|--start-delay|-1")]
-    [InlineData("--factory-root|ROOT|--start-delay|")]
-    [InlineData("--factory-root|ROOT|--start-delay| 60")]
-    [InlineData("--factory-root|ROOT|--start-delay|1000")]
-    [InlineData("--factory-root|ROOT|--start-delay")]
-    [InlineData("--factory-root|ROOT|--start-delay|60|x")]
-    [InlineData("--factory-root|ROOT|--delay|60")]
-    [InlineData("--start-delay|60|--factory-root|ROOT")]
-    [InlineData("--factory-root|root|--start-delay|60")]
-    public void BadArgumentList_NeverSleepsAndIsJobRunning(string arguments)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddJob("1-active", "build");
-        home.SetRedirect(Releases + "/tag/v1.2.0");
-
-        AssertNothingDone(home, "job_running", " v1.2.0", arguments: arguments.Split('|'));
-        Assert.False(Directory.Exists(home.Lock));
-    }
-
-    [Fact]
-    public void StartDelayWithoutSleepOnPath_GoesOnAtOnce()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.SetRedirect(Releases + "/tag/v1.2.0");
-
-        Assert.Matches(LinePattern("current v1.2.0 v1.2.0"), home.RunOnceWithoutSleep("--start-delay", "60"));
-        Assert.Single(home.CurlCalls());
-    }
-
-    [Fact]
-    public void JobThatEndsDuringTheSecondWait_RunGoesOnAfterTwoWaitingLines()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddJob("1-active", "build");
-        home.SetRedirect(Releases + "/tag/v1.2.0");
-        home.OnSleepFinishJob(2, "1-active");
-
-        IReadOnlyList<string> lines = home.RunAll();
-
-        Assert.Equal(3, lines.Count);
-        Assert.Matches(LinePattern("waiting v1.2.0"), lines[0]);
-        Assert.Matches(LinePattern("waiting v1.2.0"), lines[1]);
-        Assert.Matches(LinePattern("current v1.2.0 v1.2.0"), lines[2]);
-        Assert.Equal(["900", "900"], home.SleepCalls());
-        Assert.Equal([NothingHeld, NothingHeld], home.SleepStates());
-        Assert.Single(home.CurlCalls());
-        Assert.False(File.Exists(home.Result));
-        Assert.False(Directory.Exists(home.Lock));
-    }
-
-    [Fact]
-    public void JobThatEndsDuringTheFirstWait_UpdatesAfterTheStartDelayAndOneWait()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddJob("1-active", "review");
-        home.AddRelease("1.3.0", "1.3.0");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-        home.OnSleepFinishJob(2, "1-active");
-
-        IReadOnlyList<string> lines = home.RunAll("--start-delay", "60");
-
-        Assert.Equal(2, lines.Count);
-        Assert.Matches(LinePattern("waiting v1.2.0"), lines[0]);
-        Assert.Matches(LinePattern("updated v1.2.0 v1.3.0"), lines[1]);
-        Assert.Equal(["60", "900"], home.SleepCalls());
-        Assert.Equal([NothingHeld, NothingHeld], home.SleepStates());
-        AssertResult(home, "\"result\":\"updated\",\"version\":\"1.3.0\",\"previous\":\"1.2.0\"");
-        Assert.Empty(home.Leftovers());
-    }
-
-    [Fact]
-    public void JobThatNeverEnds_WaitsTwentyThreeTimesThenIsJobRunning()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddJob("1-active", "build");
-        home.SetRedirect(Releases + "/tag/v1.3.0");
-
-        AssertNothingDone(home, "job_running", " v1.2.0", waits: RetryWaits);
-        Assert.Empty(home.CurlCalls());
-        Assert.Equal(Enumerable.Repeat(NothingHeld, RetryWaits), home.SleepStates());
-        Assert.False(File.Exists(home.Result));
-        Assert.False(Directory.Exists(home.Lock));
-    }
-
-    [Fact]
-    public void LockTakenDuringAWait_IsBusyAndKeepsTheOtherRunsLock()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddJob("1-active", "build");
-        home.SetRedirect(Releases + "/tag/v1.2.0");
-        home.OnSleep(1, "mkdir " + UpdaterHome.Quote(home.Lock));
-
-        IReadOnlyList<string> lines = home.RunAll();
-
-        Assert.Equal(2, lines.Count);
-        Assert.Matches(LinePattern("waiting v1.2.0"), lines[0]);
-        Assert.Matches(LinePattern("busy v1.2.0"), lines[1]);
-        Assert.Equal(["900"], home.SleepCalls());
-        Assert.Equal([NothingHeld], home.SleepStates());
-        Assert.True(Directory.Exists(home.Lock));
-        Assert.Empty(home.CurlCalls());
-        Assert.Empty(home.AllLaunchctlCalls());
-    }
-
-    [Fact]
-    public void SettingTurnedOffDuringAWait_IsOffWithoutFurtherWaits()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddJob("1-active", "build");
-        home.OnSleepWrite(1, home.Settings, "{\"autoUpdate\":false}\n");
-
-        IReadOnlyList<string> lines = home.RunAll();
-
-        Assert.Equal(2, lines.Count);
-        Assert.Matches(LinePattern("waiting v1.2.0"), lines[0]);
-        Assert.Matches(LinePattern("off"), lines[1]);
-        Assert.Equal(["900"], home.SleepCalls());
-        Assert.Empty(home.CurlCalls());
-        Assert.False(Directory.Exists(home.Lock));
-    }
-
-    [Fact]
-    public void ReleaseMarkerGoneDuringAWait_IsNotReleaseWithoutFurtherWaits()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddJob("1-active", "build");
-        home.OnSleep(1, "rm -f " + UpdaterHome.Quote(home.Marker));
-
-        IReadOnlyList<string> lines = home.RunAll();
-
-        Assert.Equal(2, lines.Count);
-        Assert.Matches(LinePattern("waiting v1.2.0"), lines[0]);
-        Assert.Matches(LinePattern("not_release"), lines[1]);
-        Assert.Equal(["900"], home.SleepCalls());
-        Assert.Empty(home.CurlCalls());
-    }
-
-    [Fact]
-    public void RunningJobWithoutSleepOnPath_IsJobRunningWithoutWaiting()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using UpdaterHome home = new();
-        home.AddJob("1-active", "build");
-        home.SetRedirect(Releases + "/tag/v1.2.0");
-
-        Assert.Matches(LinePattern("job_running v1.2.0"), home.RunOnceWithoutSleep());
-        Assert.Empty(home.CurlCalls());
-        Assert.Empty(home.AllLaunchctlCalls());
-        Assert.False(Directory.Exists(home.Lock));
     }
 
     /// <summary>With one lingering <c>print</c> and one failing bootstrap per bootout: every bootout is followed by

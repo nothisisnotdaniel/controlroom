@@ -196,47 +196,56 @@ public sealed class TokenApiTests
         return data;
     }
 
-    [Theory]
-    [MemberData(nameof(RefusedRequests))]
-    public async Task Api_WithoutTheRightBearerTokenIsRefusedWithAFixedBody(string path, string variant)
+    /// <summary>Requests to the <c>/api/</c> gate, all on one shared read-only server.</summary>
+    public sealed class Gate : IClassFixture<SamplesServer>
     {
-        using TempFactoryRoot root = Samples();
-        using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
-        string token = factory.ReadToken();
-        using HttpRequestMessage request = new(HttpMethod.Get, WithVariantQuery(path, variant, token));
-        AddVariantHeader(request, variant, token);
+        private readonly SamplesServer server;
 
-        using HttpResponseMessage response = await client.SendAsync(request);
-        string body = await response.Content.ReadAsStringAsync();
-
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.Equal("Bearer", string.Join(",", response.Headers.WwwAuthenticate.Select(value => value.ToString())));
-        Assert.Equal("no-store", response.Headers.CacheControl?.ToString());
-        Assert.Equal("{\"error\":\"unauthorized\"}", body);
-        Assert.DoesNotContain(token, body, StringComparison.Ordinal);
-        Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
-    }
-
-    [Theory]
-    [MemberData(nameof(Api))]
-    public async Task Api_WithTheTokenGivesTheSameResponseAsWithoutTheGate(string path)
-    {
-        using TempFactoryRoot root = Samples();
-        using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateTokenClient();
-
-        using HttpResponseMessage response = await client.GetAsync(path);
-
-        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
-        if (path.StartsWith("/api/x", StringComparison.Ordinal) || path == "/api")
+        public Gate(SamplesServer server)
         {
-            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+            this.server = server;
         }
-        else
+
+        [Theory]
+        [MemberData(nameof(RefusedRequests), MemberType = typeof(TokenApiTests))]
+        public async Task Api_WithoutTheRightBearerTokenIsRefusedWithAFixedBody(string path, string variant)
         {
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            ServerFactory factory = server.Factory;
+            using HttpClient client = factory.CreateClient();
+            string token = factory.ReadToken();
+            using HttpRequestMessage request = new(HttpMethod.Get, WithVariantQuery(path, variant, token));
+            AddVariantHeader(request, variant, token);
+
+            using HttpResponseMessage response = await client.SendAsync(request);
+            string body = await response.Content.ReadAsStringAsync();
+
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+            Assert.Equal("Bearer", string.Join(",", response.Headers.WwwAuthenticate.Select(value => value.ToString())));
+            Assert.Equal("no-store", response.Headers.CacheControl?.ToString());
+            Assert.Equal("{\"error\":\"unauthorized\"}", body);
+            Assert.DoesNotContain(token, body, StringComparison.Ordinal);
             Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+        }
+
+        [Theory]
+        [MemberData(nameof(Api), MemberType = typeof(TokenApiTests))]
+        public async Task Api_WithTheTokenGivesTheSameResponseAsWithoutTheGate(string path)
+        {
+            ServerFactory factory = server.Factory;
+            using HttpClient client = factory.CreateTokenClient();
+
+            using HttpResponseMessage response = await client.GetAsync(path);
+
+            Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+            if (path.StartsWith("/api/x", StringComparison.Ordinal) || path == "/api")
+            {
+                Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+            }
+            else
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+            }
         }
     }
 
@@ -267,38 +276,67 @@ public sealed class TokenApiTests
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/board")).StatusCode);
     }
 
-    [Theory]
-    [InlineData("//api/board")]
-    [InlineData("/api/./board")]
-    [InlineData("/api/x/../board")]
-    [InlineData("/%61pi/board")]
-    [InlineData("/api%2Fboard")]
-    [InlineData("/api/board/")]
-    public async Task Api_OddPathFormsNeverGiveDataWithoutAToken(string path)
+    /// <summary>Odd path forms, all on one shared read-only server.</summary>
+    public sealed class OddPaths : IClassFixture<SamplesServer>
     {
-        using TempFactoryRoot root = Samples();
-        using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        private readonly SamplesServer server;
 
-        using HttpResponseMessage response = await client.GetAsync(path);
-        string body = await response.Content.ReadAsStringAsync();
+        public OddPaths(SamplesServer server)
+        {
+            this.server = server;
+        }
 
-        Assert.NotEqual(HttpStatusCode.OK, response.StatusCode);
-        Assert.DoesNotContain("\"jobs\"", body, StringComparison.Ordinal);
-        Assert.DoesNotContain(factory.ReadToken(), body, StringComparison.Ordinal);
+        [Theory]
+        [InlineData("//api/board")]
+        [InlineData("/api/./board")]
+        [InlineData("/api/x/../board")]
+        [InlineData("/%61pi/board")]
+        [InlineData("/api%2Fboard")]
+        [InlineData("/api/board/")]
+        public async Task Api_OddPathFormsNeverGiveDataWithoutAToken(string path)
+        {
+            ServerFactory factory = server.Factory;
+            using HttpClient client = factory.CreateClient();
+
+            using HttpResponseMessage response = await client.GetAsync(path);
+            string body = await response.Content.ReadAsStringAsync();
+
+            Assert.NotEqual(HttpStatusCode.OK, response.StatusCode);
+            Assert.DoesNotContain("\"jobs\"", body, StringComparison.Ordinal);
+            Assert.DoesNotContain(factory.ReadToken(), body, StringComparison.Ordinal);
+        }
     }
 
-    [Theory]
-    [MemberData(nameof(Shell))]
-    public async Task Shell_LoadsWithoutAToken(string path)
+    /// <summary>The app shell, all on one shared read-only server on an empty root.</summary>
+    public sealed class PublicShell : IClassFixture<EmptyRootServer>
     {
-        using TempFactoryRoot root = new();
-        using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        private readonly EmptyRootServer server;
 
-        using HttpResponseMessage response = await client.GetAsync(path);
+        public PublicShell(EmptyRootServer server)
+        {
+            this.server = server;
+        }
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        [Theory]
+        [MemberData(nameof(Shell), MemberType = typeof(TokenApiTests))]
+        public async Task Shell_LoadsWithoutAToken(string path)
+        {
+            ServerFactory factory = server.Factory;
+            using HttpClient client = factory.CreateClient();
+
+            using HttpResponseMessage response = await client.GetAsync(path);
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+    }
+
+    /// <summary>A <see cref="SharedServer"/> on the <see cref="Samples"/> root.</summary>
+    public sealed class SamplesServer : SharedServer
+    {
+        public SamplesServer()
+            : base(Samples())
+        {
+        }
     }
 
     private static TempFactoryRoot Samples()

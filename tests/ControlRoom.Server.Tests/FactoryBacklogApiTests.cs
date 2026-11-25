@@ -40,406 +40,426 @@ public sealed class FactoryBacklogApiTests
         return data;
     }
 
-    [Fact]
-    public async Task Backlogs_ListFactoryLastFromTheDevelopWorktree()
+    /// <summary>The reads from the develop worktree and a missing or wrong worktree.</summary>
+    public sealed class Reads
     {
-        using Setup setup = Setup.Create(withAlpha: true);
+        [Fact]
+        public async Task Backlogs_ListFactoryLastFromTheDevelopWorktree()
+        {
+            using Setup setup = Setup.Create(withAlpha: true);
 
-        JsonElement factory = await setup.FactoryEntry();
+            JsonElement factory = await setup.FactoryEntry();
 
-        JsonElement[] projects = [.. (await setup.Backlogs()).RootElement.GetProperty("projects").EnumerateArray()];
-        Assert.Equal(["Alpha", "factory"], projects.Select(project => project.GetProperty("name").GetString()));
-        Assert.True(factory.GetProperty("readable").GetBoolean());
-        Assert.False(factory.GetProperty("pending").GetBoolean());
-        Assert.False(factory.TryGetProperty("reason", out _));
-        Assert.False(projects[0].TryGetProperty("reason", out _));
-        Assert.Equal(Sha(File.ReadAllBytes(setup.DevelopBacklogPath)), factory.GetProperty("version").GetString());
-        Assert.Equal(
-            [2, 5], factory.GetProperty("open").EnumerateArray().Select(entry => entry.GetProperty("number").GetInt32()));
-        Assert.Equal(3, factory.GetProperty("approval")[0].GetProperty("number").GetInt32());
-        Assert.Equal("bug", factory.GetProperty("open")[0].GetProperty("category").GetString());
-        Assert.Equal(2, factory.GetProperty("next").GetProperty("number").GetInt32());
-        Assert.Equal(RootBacklog, File.ReadAllText(setup.RootBacklogPath));
+            JsonElement[] projects = [.. (await setup.Backlogs()).RootElement.GetProperty("projects").EnumerateArray()];
+            Assert.Equal(["Alpha", "factory"], projects.Select(project => project.GetProperty("name").GetString()));
+            Assert.True(factory.GetProperty("readable").GetBoolean());
+            Assert.False(factory.GetProperty("pending").GetBoolean());
+            Assert.False(factory.TryGetProperty("reason", out _));
+            Assert.False(projects[0].TryGetProperty("reason", out _));
+            Assert.Equal(Sha(File.ReadAllBytes(setup.DevelopBacklogPath)), factory.GetProperty("version").GetString());
+            Assert.Equal(
+                [2, 5], factory.GetProperty("open").EnumerateArray().Select(entry => entry.GetProperty("number").GetInt32()));
+            Assert.Equal(3, factory.GetProperty("approval")[0].GetProperty("number").GetInt32());
+            Assert.Equal("bug", factory.GetProperty("open")[0].GetProperty("category").GetString());
+            Assert.Equal(2, factory.GetProperty("next").GetProperty("number").GetInt32());
+            Assert.Equal(RootBacklog, File.ReadAllText(setup.RootBacklogPath));
+        }
+
+        [Fact]
+        public async Task Story_ComesFromTheDevelopWorktree()
+        {
+            using Setup setup = Setup.Create();
+            using HttpClient client = setup.Factory.CreateTokenClient();
+
+            using JsonDocument story = JsonDocument.Parse(await client.GetStringAsync("/api/story?project=factory&number=2"));
+            Assert.Equal("factory", story.RootElement.GetProperty("project").GetString());
+            Assert.Equal(StoryTwo, story.RootElement.GetProperty("markdown").GetString());
+            Assert.Equal(Sha(Encoding.UTF8.GetBytes(StoryTwo)), story.RootElement.GetProperty("storyVersion").GetString());
+            using HttpResponseMessage rootOnly = await client.GetAsync("/api/story?project=factory&number=9");
+            Assert.Equal(HttpStatusCode.NotFound, rootOnly.StatusCode);
+        }
+
+        [Fact]
+        public async Task MissingFolder_IsNoWorktreeAndNothingIsCreated()
+        {
+            using Setup setup = Setup.Create(develop: DevelopKind.Missing);
+            string worktrees = TempFactoryRoot.Git(setup.Root.Path, "worktree", "list", "--porcelain");
+            string branches = TempFactoryRoot.Git(setup.Root.Path, "for-each-ref", "--format=%(refname)", "refs/heads/");
+
+            JsonElement factory = await setup.FactoryEntry();
+            using HttpResponseMessage change = await setup.Post(new { action = "approve", line = 3 }, new string('0', 64));
+            using HttpClient client = setup.Factory.CreateTokenClient();
+            using HttpResponseMessage story = await client.GetAsync("/api/story?project=factory&number=1");
+
+            Assert.False(factory.GetProperty("readable").GetBoolean());
+            Assert.Equal("no_worktree", factory.GetProperty("reason").GetString());
+            Assert.Equal(JsonValueKind.Null, factory.GetProperty("version").ValueKind);
+            await AssertError(change, HttpStatusCode.Conflict, "no_worktree");
+            Assert.Equal(HttpStatusCode.NotFound, story.StatusCode);
+            Assert.False(Directory.Exists(setup.DevelopPath));
+            Assert.False(Directory.Exists(setup.WorktreesFolder));
+            Assert.Equal(worktrees, TempFactoryRoot.Git(setup.Root.Path, "worktree", "list", "--porcelain"));
+            Assert.Equal(
+                branches, TempFactoryRoot.Git(setup.Root.Path, "for-each-ref", "--format=%(refname)", "refs/heads/"));
+        }
+
+        [Theory]
+        [InlineData(DevelopKind.PlainFolder)]
+        [InlineData(DevelopKind.OtherBranch)]
+        [InlineData(DevelopKind.Detached)]
+        public async Task FolderNotOnDevelop_IsNotDevelopAndChangesAreRefused(DevelopKind kind)
+        {
+            using Setup setup = Setup.Create(develop: kind);
+            string head = TempFactoryRoot.Git(setup.Root.Path, "rev-parse", "refs/heads/develop");
+            byte[] before = File.ReadAllBytes(setup.DevelopBacklogPath);
+
+            JsonElement factory = await setup.FactoryEntry();
+            using HttpResponseMessage change = await setup.Post(new { action = "approve", line = 3 });
+
+            Assert.False(factory.GetProperty("readable").GetBoolean());
+            Assert.Equal("not_develop", factory.GetProperty("reason").GetString());
+            await AssertError(change, HttpStatusCode.Conflict, "not_develop");
+            Assert.Equal(before, File.ReadAllBytes(setup.DevelopBacklogPath));
+            Assert.Equal(head, TempFactoryRoot.Git(setup.Root.Path, "rev-parse", "refs/heads/develop"));
+            Assert.False(Directory.Exists(setup.WorktreesFolder));
+        }
     }
 
-    [Fact]
-    public async Task Story_ComesFromTheDevelopWorktree()
+    /// <summary>Each action commits on develop.</summary>
+    public sealed class Commits
     {
-        using Setup setup = Setup.Create();
-        using HttpClient client = setup.Factory.CreateTokenClient();
+        [Fact]
+        public async Task Approve_CommitsOnDevelopOnly()
+        {
+            using Setup setup = Setup.Create();
+            await setup.AssertDevelopCommit(new { action = "approve", line = 3 }, "backlog: approve #3", ["factory/backlog.md"]);
+            Assert.Contains("- [ ] [#3]", File.ReadAllText(setup.DevelopBacklogPath), StringComparison.Ordinal);
+        }
 
-        using JsonDocument story = JsonDocument.Parse(await client.GetStringAsync("/api/story?project=factory&number=2"));
-        Assert.Equal("factory", story.RootElement.GetProperty("project").GetString());
-        Assert.Equal(StoryTwo, story.RootElement.GetProperty("markdown").GetString());
-        Assert.Equal(Sha(Encoding.UTF8.GetBytes(StoryTwo)), story.RootElement.GetProperty("storyVersion").GetString());
-        using HttpResponseMessage rootOnly = await client.GetAsync("/api/story?project=factory&number=9");
-        Assert.Equal(HttpStatusCode.NotFound, rootOnly.StatusCode);
+        [Fact]
+        public async Task Drop_CommitsTheBacklogAndTheDeletedStory()
+        {
+            using Setup setup = Setup.Create();
+            await setup.AssertDevelopCommit(
+                new { action = "drop", line = 3 }, "backlog: drop #3", ["factory/backlog.md", "factory/backlog/003-three.md"]);
+            Assert.False(File.Exists(Path.Combine(setup.DevelopFolder, "backlog", "003-three.md")));
+        }
+
+        [Fact]
+        public async Task TopAndPlace_CommitMoves()
+        {
+            using Setup setup = Setup.Create();
+            string version = await setup.AssertDevelopCommit(
+                new { action = "top", line = 5 }, "backlog: move #5 to top", ["factory/backlog.md"]);
+            await setup.AssertDevelopCommit(
+                new { action = "place", line = 2, target = 3, where = "after" }, "backlog: move #5", ["factory/backlog.md"],
+                version);
+        }
+
+        [Fact]
+        public async Task StopLineActions_CommitStopLine()
+        {
+            using Setup setup = Setup.Create();
+            string version = await setup.AssertDevelopCommit(
+                new { action = "stop_add", line = 2 }, "backlog: stop line", ["factory/backlog.md"]);
+            version = await setup.AssertDevelopCommit(
+                new { action = "stop_move", line = 3, target = 6, where = "after" }, "backlog: stop line",
+                ["factory/backlog.md"], version);
+            await setup.AssertDevelopCommit(
+                new { action = "stop_remove", line = 6 }, "backlog: stop line", ["factory/backlog.md"], version);
+            Assert.DoesNotContain("[stop]", File.ReadAllText(setup.DevelopBacklogPath), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task AddAndCapture_CommitTheBacklogAndTheNewStory()
+        {
+            using Setup setup = Setup.Create();
+            string version = await setup.AssertDevelopCommit(
+                new { action = "add", title = "New idea", what = "Do it.", why = "Because.", where = "bottom" },
+                "backlog: add #6", ["factory/backlog.md", "factory/backlog/006-new-idea.md"]);
+            await setup.AssertDevelopCommit(
+                new { action = "capture", text = "Captured idea" }, "backlog: capture #7",
+                ["factory/backlog.md", "factory/backlog/007-captured-idea.md"], version);
+            Assert.Contains(
+                "- 2026-01-02: Draft from ControlRoom",
+                File.ReadAllText(Path.Combine(setup.DevelopFolder, "backlog", "007-captured-idea.md")),
+                StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task TitleAndStory_CommitTheirFiles()
+        {
+            using Setup setup = Setup.Create();
+            string version = await setup.AssertDevelopCommit(
+                new { action = "title", line = 2, title = "Renamed two" }, "backlog: edit title of #2",
+                ["factory/backlog.md", "factory/backlog/002-two.md"]);
+            string story = File.ReadAllText(Path.Combine(setup.DevelopFolder, "backlog", "002-two.md"));
+            await setup.AssertDevelopCommit(
+                new { action = "story", line = 2, storyVersion = Sha(Encoding.UTF8.GetBytes(story)), markdown = "# 002 X\n" },
+                "backlog: edit story #2", ["factory/backlog/002-two.md"], version);
+        }
+
+        [Fact]
+        public async Task DoneNoteAndCategory_CommitTheirFiles()
+        {
+            using Setup setup = Setup.Create();
+            string version = await setup.AssertDevelopCommit(
+                new { action = "done", line = 4 }, "backlog: done #4", ["factory/backlog.md"]);
+            version = await setup.AssertDevelopCommit(
+                new { action = "note", line = 2, storyVersion = Sha(Encoding.UTF8.GetBytes(StoryTwo)), note = "Remember" },
+                "backlog: note on #2", ["factory/backlog/002-two.md"], version);
+            string story = File.ReadAllText(Path.Combine(setup.DevelopFolder, "backlog", "002-two.md"));
+            Assert.Contains("- 2026-01-02: Remember", story, StringComparison.Ordinal);
+            await setup.AssertDevelopCommit(
+                new { action = "category", line = 2, storyVersion = Sha(Encoding.UTF8.GetBytes(story)), category = "docs" },
+                "backlog: category #2", ["factory/backlog/002-two.md"], version);
+        }
+
+        [Fact]
+        public async Task FinishedFactoryJob_StillWritesDevelop()
+        {
+            using Setup setup = Setup.Create();
+            setup.Root.AddJob("1-done", JobSamples.State("factory", "done", 1));
+            setup.Root.AddJob("2-other", JobSamples.State("Alpha", "build", 1));
+
+            await setup.AssertDevelopCommit(new { action = "approve", line = 3 }, "backlog: approve #3", ["factory/backlog.md"]);
+            Assert.Equal("", TempFactoryRoot.Git(setup.Root.Path, "for-each-ref", "refs/heads/backlog"));
+        }
     }
 
-    [Fact]
-    public async Task MissingFolder_IsNoWorktreeAndNothingIsCreated()
+    /// <summary>Changes while a factory job runs go to the backlog branch.</summary>
+    public sealed class RunningJob
     {
-        using Setup setup = Setup.Create(develop: DevelopKind.Missing);
-        string worktrees = TempFactoryRoot.Git(setup.Root.Path, "worktree", "list", "--porcelain");
-        string branches = TempFactoryRoot.Git(setup.Root.Path, "for-each-ref", "--format=%(refname)", "refs/heads/");
+        [Theory]
+        [MemberData(nameof(RunningStages), MemberType = typeof(FactoryBacklogApiTests))]
+        public async Task RunningFactoryJob_CommitsOnTheBacklogBranch(string stage, bool checkedOut)
+        {
+            using Setup setup = Setup.Create();
+            string? own = checkedOut ? setup.AddBacklogWorktree() : null;
+            setup.Root.AddJob("1-running", JobSamples.State("factory", stage, 1));
+            string develop = TempFactoryRoot.Git(setup.Root.Path, "rev-parse", "refs/heads/develop");
+            string main = TempFactoryRoot.Git(setup.Root.Path, "rev-parse", "refs/heads/main");
+            byte[] developBytes = File.ReadAllBytes(setup.DevelopBacklogPath);
 
-        JsonElement factory = await setup.FactoryEntry();
-        using HttpResponseMessage change = await setup.Post(new { action = "approve", line = 3 }, new string('0', 64));
-        using HttpClient client = setup.Factory.CreateTokenClient();
-        using HttpResponseMessage story = await client.GetAsync("/api/story?project=factory&number=1");
+            using JsonDocument result = await setup.Change(new { action = "approve", line = 3 });
 
-        Assert.False(factory.GetProperty("readable").GetBoolean());
-        Assert.Equal("no_worktree", factory.GetProperty("reason").GetString());
-        Assert.Equal(JsonValueKind.Null, factory.GetProperty("version").ValueKind);
-        await AssertError(change, HttpStatusCode.Conflict, "no_worktree");
-        Assert.Equal(HttpStatusCode.NotFound, story.StatusCode);
-        Assert.False(Directory.Exists(setup.DevelopPath));
-        Assert.False(Directory.Exists(setup.WorktreesFolder));
-        Assert.Equal(worktrees, TempFactoryRoot.Git(setup.Root.Path, "worktree", "list", "--porcelain"));
-        Assert.Equal(
-            branches, TempFactoryRoot.Git(setup.Root.Path, "for-each-ref", "--format=%(refname)", "refs/heads/"));
+            string worktree = own ?? Path.Combine(setup.WorktreesFolder, "factory");
+            string written = Path.Combine(worktree, "factory", "backlog.md");
+            Assert.False(result.RootElement.GetProperty("pushed").GetBoolean());
+            Assert.False(result.RootElement.TryGetProperty("warning", out _));
+            Assert.Equal(Sha(File.ReadAllBytes(written)), result.RootElement.GetProperty("version").GetString());
+            Assert.Equal("1", TempFactoryRoot.Git(setup.Root.Path, "rev-list", "--count", "refs/heads/develop..refs/heads/backlog"));
+            Assert.Equal(
+                "backlog: approve #3", TempFactoryRoot.Git(setup.Root.Path, "log", "-1", "--format=%s", "refs/heads/backlog"));
+            Assert.Equal(
+                "factory/backlog.md",
+                TempFactoryRoot.Git(setup.Root.Path, "show", "--name-only", "--format=", "refs/heads/backlog"));
+            Assert.Equal(develop, TempFactoryRoot.Git(setup.Root.Path, "rev-parse", "refs/heads/develop"));
+            Assert.Equal(main, TempFactoryRoot.Git(setup.Root.Path, "rev-parse", "refs/heads/main"));
+            Assert.Equal(developBytes, File.ReadAllBytes(setup.DevelopBacklogPath));
+            Assert.Equal(RootBacklog, File.ReadAllText(setup.RootBacklogPath));
+            Assert.Equal(checkedOut, !Directory.Exists(Path.Combine(setup.WorktreesFolder, "factory")));
+
+            JsonElement factory = await setup.FactoryEntry();
+            Assert.True(factory.GetProperty("pending").GetBoolean());
+            Assert.Equal(result.RootElement.GetProperty("version").GetString(), factory.GetProperty("version").GetString());
+            Assert.Equal(0, factory.GetProperty("approval").GetArrayLength());
+        }
+
+        [Fact]
+        public async Task RunningFactoryJob_StoryAndSecondChangeUseTheBacklogWorktree()
+        {
+            using Setup setup = Setup.Create();
+            setup.Root.AddJob("1-running", JobSamples.State("factory", "build", 1));
+            using JsonDocument first = await setup.Change(new { action = "approve", line = 3 });
+
+            using JsonDocument second = await setup.Change(
+                new { action = "note", line = 2, storyVersion = Sha(Encoding.UTF8.GetBytes(StoryTwo)), note = "Later" },
+                first.RootElement.GetProperty("version").GetString());
+
+            using HttpClient client = setup.Factory.CreateTokenClient();
+            using JsonDocument story = JsonDocument.Parse(await client.GetStringAsync("/api/story?project=factory&number=2"));
+            Assert.Contains("- 2026-01-02: Later", story.RootElement.GetProperty("markdown").GetString(), StringComparison.Ordinal);
+            Assert.Equal(StoryTwo, File.ReadAllText(Path.Combine(setup.DevelopFolder, "backlog", "002-two.md")));
+            Assert.Equal("2", TempFactoryRoot.Git(setup.Root.Path, "rev-list", "--count", "refs/heads/develop..refs/heads/backlog"));
+        }
     }
 
-    [Theory]
-    [InlineData(DevelopKind.PlainFolder)]
-    [InlineData(DevelopKind.OtherBranch)]
-    [InlineData(DevelopKind.Detached)]
-    public async Task FolderNotOnDevelop_IsNotDevelopAndChangesAreRefused(DevelopKind kind)
+    /// <summary>The push to <c>origin</c> and its failures.</summary>
+    public sealed class Pushes
     {
-        using Setup setup = Setup.Create(develop: kind);
-        string head = TempFactoryRoot.Git(setup.Root.Path, "rev-parse", "refs/heads/develop");
-        byte[] before = File.ReadAllBytes(setup.DevelopBacklogPath);
+        [Fact]
+        public async Task Push_GoesToOriginDevelop()
+        {
+            using Setup setup = Setup.Create();
+            string origin = setup.AddOrigin();
 
-        JsonElement factory = await setup.FactoryEntry();
-        using HttpResponseMessage change = await setup.Post(new { action = "approve", line = 3 });
+            using JsonDocument result = await setup.Change(new { action = "approve", line = 3 });
 
-        Assert.False(factory.GetProperty("readable").GetBoolean());
-        Assert.Equal("not_develop", factory.GetProperty("reason").GetString());
-        await AssertError(change, HttpStatusCode.Conflict, "not_develop");
-        Assert.Equal(before, File.ReadAllBytes(setup.DevelopBacklogPath));
-        Assert.Equal(head, TempFactoryRoot.Git(setup.Root.Path, "rev-parse", "refs/heads/develop"));
-        Assert.False(Directory.Exists(setup.WorktreesFolder));
+            Assert.True(result.RootElement.GetProperty("pushed").GetBoolean());
+            Assert.False(result.RootElement.TryGetProperty("warning", out _));
+            Assert.Equal(
+                TempFactoryRoot.Git(setup.DevelopPath, "rev-parse", "HEAD"),
+                TempFactoryRoot.Git(origin, "rev-parse", "refs/heads/develop"));
+        }
+
+        [Fact]
+        public async Task RejectedPush_KeepsTheCommitAndWarns()
+        {
+            using Setup setup = Setup.Create();
+            string origin = setup.AddOrigin();
+            string clone = Path.Combine(setup.Own, "clone");
+            TempFactoryRoot.Git(setup.Own, "clone", "-q", "-b", "develop", origin, clone);
+            TempFactoryRoot.Git(clone, "config", "user.name", "Other");
+            TempFactoryRoot.Git(clone, "config", "user.email", "other@example.invalid");
+            TempFactoryRoot.Git(clone, "config", "commit.gpgsign", "false");
+            File.WriteAllText(Path.Combine(clone, "other.txt"), "x\n");
+            TempFactoryRoot.Git(clone, "add", "other.txt");
+            TempFactoryRoot.Git(clone, "commit", "-q", "-m", "other");
+            TempFactoryRoot.Git(clone, "push", "-q", "origin", "develop");
+            string remote = TempFactoryRoot.Git(origin, "rev-parse", "refs/heads/develop");
+
+            await AssertPushFailed(setup, origin, remote);
+        }
+
+        [Fact]
+        public async Task FailedPush_KeepsTheCommitAndWarns()
+        {
+            using Setup setup = Setup.Create();
+            string origin = setup.AddOrigin();
+            string remote = TempFactoryRoot.Git(origin, "rev-parse", "refs/heads/develop");
+            TempFactoryRoot.Git(setup.Root.Path, "remote", "set-url", "origin", Path.Combine(setup.Own, "missing.git"));
+
+            await AssertPushFailed(setup, origin, remote);
+        }
+
+        [Fact]
+        public async Task BacklogBranchChange_IsNeverPushed()
+        {
+            using Setup setup = Setup.Create();
+            string origin = setup.AddOrigin();
+            string remote = TempFactoryRoot.Git(origin, "rev-parse", "refs/heads/develop");
+            setup.Root.AddJob("1-running", JobSamples.State("factory", "review", 1));
+
+            using JsonDocument result = await setup.Change(new { action = "approve", line = 3 });
+
+            Assert.False(result.RootElement.GetProperty("pushed").GetBoolean());
+            Assert.False(result.RootElement.TryGetProperty("warning", out _));
+            Assert.Equal("", TempFactoryRoot.Git(origin, "for-each-ref", "refs/heads/backlog"));
+            Assert.Equal(remote, TempFactoryRoot.Git(origin, "rev-parse", "refs/heads/develop"));
+        }
     }
 
-    [Fact]
-    public async Task Approve_CommitsOnDevelopOnly()
+    /// <summary>The refusals and the dependencies on the factory.</summary>
+    public sealed class Refusals
     {
-        using Setup setup = Setup.Create();
-        await setup.AssertDevelopCommit(new { action = "approve", line = 3 }, "backlog: approve #3", ["factory/backlog.md"]);
-        Assert.Contains("- [ ] [#3]", File.ReadAllText(setup.DevelopBacklogPath), StringComparison.Ordinal);
-    }
+        [Fact]
+        public async Task StaleVersion_IsChanged()
+        {
+            using Setup setup = Setup.Create();
+            await setup.AssertRefused(new { action = "approve", line = 3 }, HttpStatusCode.Conflict, "changed", new string('0', 64));
+        }
 
-    [Fact]
-    public async Task Drop_CommitsTheBacklogAndTheDeletedStory()
-    {
-        using Setup setup = Setup.Create();
-        await setup.AssertDevelopCommit(
-            new { action = "drop", line = 3 }, "backlog: drop #3", ["factory/backlog.md", "factory/backlog/003-three.md"]);
-        Assert.False(File.Exists(Path.Combine(setup.DevelopFolder, "backlog", "003-three.md")));
-    }
+        [Fact]
+        public async Task DirtyBacklog_IsDirty()
+        {
+            using Setup setup = Setup.Create();
+            File.AppendAllText(Path.Combine(setup.DevelopFolder, "backlog", "002-two.md"), "uncommitted\n");
+            await setup.AssertRefused(new { action = "approve", line = 3 }, HttpStatusCode.Conflict, "dirty");
+        }
 
-    [Fact]
-    public async Task TopAndPlace_CommitMoves()
-    {
-        using Setup setup = Setup.Create();
-        string version = await setup.AssertDevelopCommit(
-            new { action = "top", line = 5 }, "backlog: move #5 to top", ["factory/backlog.md"]);
-        await setup.AssertDevelopCommit(
-            new { action = "place", line = 2, target = 3, where = "after" }, "backlog: move #5", ["factory/backlog.md"],
-            version);
-    }
+        [Fact]
+        public async Task SymlinkedStory_IsNotFollowed()
+        {
+            using Setup setup = Setup.Create();
+            string story = Path.Combine(setup.DevelopFolder, "backlog", "002-two.md");
+            string outside = Path.Combine(setup.Own, "outside.md");
+            File.WriteAllText(outside, StoryTwo);
+            File.Delete(story);
+            File.CreateSymbolicLink(story, outside);
+            TempFactoryRoot.Git(setup.DevelopPath, "add", "-A");
+            TempFactoryRoot.Git(setup.DevelopPath, "commit", "-q", "-m", "link");
 
-    [Fact]
-    public async Task StopLineActions_CommitStopLine()
-    {
-        using Setup setup = Setup.Create();
-        string version = await setup.AssertDevelopCommit(
-            new { action = "stop_add", line = 2 }, "backlog: stop line", ["factory/backlog.md"]);
-        version = await setup.AssertDevelopCommit(
-            new { action = "stop_move", line = 3, target = 6, where = "after" }, "backlog: stop line",
-            ["factory/backlog.md"], version);
-        await setup.AssertDevelopCommit(
-            new { action = "stop_remove", line = 6 }, "backlog: stop line", ["factory/backlog.md"], version);
-        Assert.DoesNotContain("[stop]", File.ReadAllText(setup.DevelopBacklogPath), StringComparison.Ordinal);
-    }
+            await setup.AssertRefused(
+                new { action = "story", line = 2, storyVersion = Sha(Encoding.UTF8.GetBytes(StoryTwo)), markdown = "# x\n" },
+                HttpStatusCode.BadRequest, "invalid");
+            Assert.Equal(StoryTwo, File.ReadAllText(outside));
+        }
 
-    [Fact]
-    public async Task AddAndCapture_CommitTheBacklogAndTheNewStory()
-    {
-        using Setup setup = Setup.Create();
-        string version = await setup.AssertDevelopCommit(
-            new { action = "add", title = "New idea", what = "Do it.", why = "Because.", where = "bottom" },
-            "backlog: add #6", ["factory/backlog.md", "factory/backlog/006-new-idea.md"]);
-        await setup.AssertDevelopCommit(
-            new { action = "capture", text = "Captured idea" }, "backlog: capture #7",
-            ["factory/backlog.md", "factory/backlog/007-captured-idea.md"], version);
-        Assert.Contains(
-            "- 2026-01-02: Draft from ControlRoom",
-            File.ReadAllText(Path.Combine(setup.DevelopFolder, "backlog", "007-captured-idea.md")),
-            StringComparison.Ordinal);
-    }
+        [Fact]
+        public async Task SecondStopLine_IsStopLine()
+        {
+            using Setup setup = Setup.Create();
+            File.WriteAllText(
+                setup.DevelopBacklogPath, DevelopBacklog + "- [stop] Auto stops here\n- [stop] Auto stops here\n");
+            TempFactoryRoot.Git(setup.DevelopPath, "commit", "-q", "-am", "stops");
 
-    [Fact]
-    public async Task TitleAndStory_CommitTheirFiles()
-    {
-        using Setup setup = Setup.Create();
-        string version = await setup.AssertDevelopCommit(
-            new { action = "title", line = 2, title = "Renamed two" }, "backlog: edit title of #2",
-            ["factory/backlog.md", "factory/backlog/002-two.md"]);
-        string story = File.ReadAllText(Path.Combine(setup.DevelopFolder, "backlog", "002-two.md"));
-        await setup.AssertDevelopCommit(
-            new { action = "story", line = 2, storyVersion = Sha(Encoding.UTF8.GetBytes(story)), markdown = "# 002 X\n" },
-            "backlog: edit story #2", ["factory/backlog/002-two.md"], version);
-    }
+            await setup.AssertRefused(new { action = "stop_add", line = 2 }, HttpStatusCode.Conflict, "stop_line");
+        }
 
-    [Fact]
-    public async Task DoneNoteAndCategory_CommitTheirFiles()
-    {
-        using Setup setup = Setup.Create();
-        string version = await setup.AssertDevelopCommit(
-            new { action = "done", line = 4 }, "backlog: done #4", ["factory/backlog.md"]);
-        version = await setup.AssertDevelopCommit(
-            new { action = "note", line = 2, storyVersion = Sha(Encoding.UTF8.GetBytes(StoryTwo)), note = "Remember" },
-            "backlog: note on #2", ["factory/backlog/002-two.md"], version);
-        string story = File.ReadAllText(Path.Combine(setup.DevelopFolder, "backlog", "002-two.md"));
-        Assert.Contains("- 2026-01-02: Remember", story, StringComparison.Ordinal);
-        await setup.AssertDevelopCommit(
-            new { action = "category", line = 2, storyVersion = Sha(Encoding.UTF8.GetBytes(story)), category = "docs" },
-            "backlog: category #2", ["factory/backlog/002-two.md"], version);
-    }
+        [Fact]
+        public async Task BrokenServerWorktree_IsWorktreeFailed()
+        {
+            using Setup setup = Setup.Create();
+            setup.Root.AddJob("1-running", JobSamples.State("factory", "build", 1));
+            Directory.CreateDirectory(setup.WorktreesFolder);
+            File.WriteAllText(Path.Combine(setup.WorktreesFolder, "factory"), "not a folder\n");
 
-    [Fact]
-    public async Task FinishedFactoryJob_StillWritesDevelop()
-    {
-        using Setup setup = Setup.Create();
-        setup.Root.AddJob("1-done", JobSamples.State("factory", "done", 1));
-        setup.Root.AddJob("2-other", JobSamples.State("Alpha", "build", 1));
+            await setup.AssertRefused(new { action = "approve", line = 3 }, HttpStatusCode.InternalServerError, "worktree_failed");
+            Assert.Equal("", TempFactoryRoot.Git(setup.Root.Path, "for-each-ref", "refs/heads/backlog"));
+        }
 
-        await setup.AssertDevelopCommit(new { action = "approve", line = 3 }, "backlog: approve #3", ["factory/backlog.md"]);
-        Assert.Equal("", TempFactoryRoot.Git(setup.Root.Path, "for-each-ref", "refs/heads/backlog"));
-    }
+        [Fact]
+        public async Task RootCheckoutOnBacklog_IsNeverWritten()
+        {
+            using Setup setup = Setup.Create();
+            TempFactoryRoot.Git(setup.Root.Path, "checkout", "-q", "-b", "backlog", "develop");
+            setup.Root.AddJob("1-running", JobSamples.State("factory", "build", 1));
+            string backlog = TempFactoryRoot.Git(setup.Root.Path, "rev-parse", "refs/heads/backlog");
+            byte[] root = File.ReadAllBytes(setup.RootBacklogPath);
 
-    [Theory]
-    [MemberData(nameof(RunningStages))]
-    public async Task RunningFactoryJob_CommitsOnTheBacklogBranch(string stage, bool checkedOut)
-    {
-        using Setup setup = Setup.Create();
-        string? own = checkedOut ? setup.AddBacklogWorktree() : null;
-        setup.Root.AddJob("1-running", JobSamples.State("factory", stage, 1));
-        string develop = TempFactoryRoot.Git(setup.Root.Path, "rev-parse", "refs/heads/develop");
-        string main = TempFactoryRoot.Git(setup.Root.Path, "rev-parse", "refs/heads/main");
-        byte[] developBytes = File.ReadAllBytes(setup.DevelopBacklogPath);
+            await setup.AssertRefused(
+                new { action = "approve", line = 3 }, HttpStatusCode.InternalServerError, "worktree_failed",
+                rootBacklog: root);
 
-        using JsonDocument result = await setup.Change(new { action = "approve", line = 3 });
+            Assert.Equal(backlog, TempFactoryRoot.Git(setup.Root.Path, "rev-parse", "refs/heads/backlog"));
+            Assert.Equal("", TempFactoryRoot.Git(setup.Root.Path, "status", "--porcelain", "--", "factory/backlog.md", "factory/backlog"));
+        }
 
-        string worktree = own ?? Path.Combine(setup.WorktreesFolder, "factory");
-        string written = Path.Combine(worktree, "factory", "backlog.md");
-        Assert.False(result.RootElement.GetProperty("pushed").GetBoolean());
-        Assert.False(result.RootElement.TryGetProperty("warning", out _));
-        Assert.Equal(Sha(File.ReadAllBytes(written)), result.RootElement.GetProperty("version").GetString());
-        Assert.Equal("1", TempFactoryRoot.Git(setup.Root.Path, "rev-list", "--count", "refs/heads/develop..refs/heads/backlog"));
-        Assert.Equal(
-            "backlog: approve #3", TempFactoryRoot.Git(setup.Root.Path, "log", "-1", "--format=%s", "refs/heads/backlog"));
-        Assert.Equal(
-            "factory/backlog.md",
-            TempFactoryRoot.Git(setup.Root.Path, "show", "--name-only", "--format=", "refs/heads/backlog"));
-        Assert.Equal(develop, TempFactoryRoot.Git(setup.Root.Path, "rev-parse", "refs/heads/develop"));
-        Assert.Equal(main, TempFactoryRoot.Git(setup.Root.Path, "rev-parse", "refs/heads/main"));
-        Assert.Equal(developBytes, File.ReadAllBytes(setup.DevelopBacklogPath));
-        Assert.Equal(RootBacklog, File.ReadAllText(setup.RootBacklogPath));
-        Assert.Equal(checkedOut, !Directory.Exists(Path.Combine(setup.WorktreesFolder, "factory")));
+        [Fact]
+        public async Task ProjectDependency_OnFactory_IsMetOnceDoneInDevelop()
+        {
+            using Setup setup = Setup.Create(withAlpha: true);
 
-        JsonElement factory = await setup.FactoryEntry();
-        Assert.True(factory.GetProperty("pending").GetBoolean());
-        Assert.Equal(result.RootElement.GetProperty("version").GetString(), factory.GetProperty("version").GetString());
-        Assert.Equal(0, factory.GetProperty("approval").GetArrayLength());
-    }
+            JsonElement alpha = (await setup.Backlogs()).RootElement.GetProperty("projects")[0];
+            JsonElement factory = await setup.FactoryEntry();
+            Assert.True(alpha.GetProperty("open")[0].GetProperty("waiting").GetBoolean());
+            JsonElement after = alpha.GetProperty("blocked")[0].GetProperty("after")[0];
+            Assert.Equal("factory", after.GetProperty("project").GetString());
+            Assert.False(after.GetProperty("missing").GetBoolean());
+            Assert.True(factory.GetProperty("open")[1].GetProperty("waiting").GetBoolean());
 
-    [Fact]
-    public async Task RunningFactoryJob_StoryAndSecondChangeUseTheBacklogWorktree()
-    {
-        using Setup setup = Setup.Create();
-        setup.Root.AddJob("1-running", JobSamples.State("factory", "build", 1));
-        using JsonDocument first = await setup.Change(new { action = "approve", line = 3 });
+            File.WriteAllText(setup.DevelopBacklogPath, DevelopBacklog.Replace("- [ ] [#2]", "- [x] [#2]", StringComparison.Ordinal));
+            TempFactoryRoot.Git(setup.DevelopPath, "commit", "-q", "-am", "done two");
 
-        using JsonDocument second = await setup.Change(
-            new { action = "note", line = 2, storyVersion = Sha(Encoding.UTF8.GetBytes(StoryTwo)), note = "Later" },
-            first.RootElement.GetProperty("version").GetString());
+            alpha = (await setup.Backlogs()).RootElement.GetProperty("projects")[0];
+            factory = await setup.FactoryEntry();
+            Assert.False(alpha.GetProperty("open")[0].GetProperty("waiting").GetBoolean());
+            Assert.Equal(0, alpha.GetProperty("blocked").GetArrayLength());
+            Assert.False(factory.GetProperty("open")[0].GetProperty("waiting").GetBoolean());
+        }
 
-        using HttpClient client = setup.Factory.CreateTokenClient();
-        using JsonDocument story = JsonDocument.Parse(await client.GetStringAsync("/api/story?project=factory&number=2"));
-        Assert.Contains("- 2026-01-02: Later", story.RootElement.GetProperty("markdown").GetString(), StringComparison.Ordinal);
-        Assert.Equal(StoryTwo, File.ReadAllText(Path.Combine(setup.DevelopFolder, "backlog", "002-two.md")));
-        Assert.Equal("2", TempFactoryRoot.Git(setup.Root.Path, "rev-list", "--count", "refs/heads/develop..refs/heads/backlog"));
-    }
+        [Fact]
+        public async Task ProjectDependency_OnUnreadableFactory_WaitsAndIsNotMissing()
+        {
+            using Setup setup = Setup.Create(withAlpha: true, develop: DevelopKind.Missing);
 
-    [Fact]
-    public async Task Push_GoesToOriginDevelop()
-    {
-        using Setup setup = Setup.Create();
-        string origin = setup.AddOrigin();
+            JsonElement alpha = (await setup.Backlogs()).RootElement.GetProperty("projects")[0];
 
-        using JsonDocument result = await setup.Change(new { action = "approve", line = 3 });
-
-        Assert.True(result.RootElement.GetProperty("pushed").GetBoolean());
-        Assert.False(result.RootElement.TryGetProperty("warning", out _));
-        Assert.Equal(
-            TempFactoryRoot.Git(setup.DevelopPath, "rev-parse", "HEAD"),
-            TempFactoryRoot.Git(origin, "rev-parse", "refs/heads/develop"));
-    }
-
-    [Fact]
-    public async Task RejectedPush_KeepsTheCommitAndWarns()
-    {
-        using Setup setup = Setup.Create();
-        string origin = setup.AddOrigin();
-        string clone = Path.Combine(setup.Own, "clone");
-        TempFactoryRoot.Git(setup.Own, "clone", "-q", "-b", "develop", origin, clone);
-        TempFactoryRoot.Git(clone, "config", "user.name", "Other");
-        TempFactoryRoot.Git(clone, "config", "user.email", "other@example.invalid");
-        TempFactoryRoot.Git(clone, "config", "commit.gpgsign", "false");
-        File.WriteAllText(Path.Combine(clone, "other.txt"), "x\n");
-        TempFactoryRoot.Git(clone, "add", "other.txt");
-        TempFactoryRoot.Git(clone, "commit", "-q", "-m", "other");
-        TempFactoryRoot.Git(clone, "push", "-q", "origin", "develop");
-        string remote = TempFactoryRoot.Git(origin, "rev-parse", "refs/heads/develop");
-
-        await AssertPushFailed(setup, origin, remote);
-    }
-
-    [Fact]
-    public async Task FailedPush_KeepsTheCommitAndWarns()
-    {
-        using Setup setup = Setup.Create();
-        string origin = setup.AddOrigin();
-        string remote = TempFactoryRoot.Git(origin, "rev-parse", "refs/heads/develop");
-        TempFactoryRoot.Git(setup.Root.Path, "remote", "set-url", "origin", Path.Combine(setup.Own, "missing.git"));
-
-        await AssertPushFailed(setup, origin, remote);
-    }
-
-    [Fact]
-    public async Task BacklogBranchChange_IsNeverPushed()
-    {
-        using Setup setup = Setup.Create();
-        string origin = setup.AddOrigin();
-        string remote = TempFactoryRoot.Git(origin, "rev-parse", "refs/heads/develop");
-        setup.Root.AddJob("1-running", JobSamples.State("factory", "review", 1));
-
-        using JsonDocument result = await setup.Change(new { action = "approve", line = 3 });
-
-        Assert.False(result.RootElement.GetProperty("pushed").GetBoolean());
-        Assert.False(result.RootElement.TryGetProperty("warning", out _));
-        Assert.Equal("", TempFactoryRoot.Git(origin, "for-each-ref", "refs/heads/backlog"));
-        Assert.Equal(remote, TempFactoryRoot.Git(origin, "rev-parse", "refs/heads/develop"));
-    }
-
-    [Fact]
-    public async Task StaleVersion_IsChanged()
-    {
-        using Setup setup = Setup.Create();
-        await setup.AssertRefused(new { action = "approve", line = 3 }, HttpStatusCode.Conflict, "changed", new string('0', 64));
-    }
-
-    [Fact]
-    public async Task DirtyBacklog_IsDirty()
-    {
-        using Setup setup = Setup.Create();
-        File.AppendAllText(Path.Combine(setup.DevelopFolder, "backlog", "002-two.md"), "uncommitted\n");
-        await setup.AssertRefused(new { action = "approve", line = 3 }, HttpStatusCode.Conflict, "dirty");
-    }
-
-    [Fact]
-    public async Task SymlinkedStory_IsNotFollowed()
-    {
-        using Setup setup = Setup.Create();
-        string story = Path.Combine(setup.DevelopFolder, "backlog", "002-two.md");
-        string outside = Path.Combine(setup.Own, "outside.md");
-        File.WriteAllText(outside, StoryTwo);
-        File.Delete(story);
-        File.CreateSymbolicLink(story, outside);
-        TempFactoryRoot.Git(setup.DevelopPath, "add", "-A");
-        TempFactoryRoot.Git(setup.DevelopPath, "commit", "-q", "-m", "link");
-
-        await setup.AssertRefused(
-            new { action = "story", line = 2, storyVersion = Sha(Encoding.UTF8.GetBytes(StoryTwo)), markdown = "# x\n" },
-            HttpStatusCode.BadRequest, "invalid");
-        Assert.Equal(StoryTwo, File.ReadAllText(outside));
-    }
-
-    [Fact]
-    public async Task SecondStopLine_IsStopLine()
-    {
-        using Setup setup = Setup.Create();
-        File.WriteAllText(
-            setup.DevelopBacklogPath, DevelopBacklog + "- [stop] Auto stops here\n- [stop] Auto stops here\n");
-        TempFactoryRoot.Git(setup.DevelopPath, "commit", "-q", "-am", "stops");
-
-        await setup.AssertRefused(new { action = "stop_add", line = 2 }, HttpStatusCode.Conflict, "stop_line");
-    }
-
-    [Fact]
-    public async Task BrokenServerWorktree_IsWorktreeFailed()
-    {
-        using Setup setup = Setup.Create();
-        setup.Root.AddJob("1-running", JobSamples.State("factory", "build", 1));
-        Directory.CreateDirectory(setup.WorktreesFolder);
-        File.WriteAllText(Path.Combine(setup.WorktreesFolder, "factory"), "not a folder\n");
-
-        await setup.AssertRefused(new { action = "approve", line = 3 }, HttpStatusCode.InternalServerError, "worktree_failed");
-        Assert.Equal("", TempFactoryRoot.Git(setup.Root.Path, "for-each-ref", "refs/heads/backlog"));
-    }
-
-    [Fact]
-    public async Task RootCheckoutOnBacklog_IsNeverWritten()
-    {
-        using Setup setup = Setup.Create();
-        TempFactoryRoot.Git(setup.Root.Path, "checkout", "-q", "-b", "backlog", "develop");
-        setup.Root.AddJob("1-running", JobSamples.State("factory", "build", 1));
-        string backlog = TempFactoryRoot.Git(setup.Root.Path, "rev-parse", "refs/heads/backlog");
-        byte[] root = File.ReadAllBytes(setup.RootBacklogPath);
-
-        await setup.AssertRefused(
-            new { action = "approve", line = 3 }, HttpStatusCode.InternalServerError, "worktree_failed",
-            rootBacklog: root);
-
-        Assert.Equal(backlog, TempFactoryRoot.Git(setup.Root.Path, "rev-parse", "refs/heads/backlog"));
-        Assert.Equal("", TempFactoryRoot.Git(setup.Root.Path, "status", "--porcelain", "--", "factory/backlog.md", "factory/backlog"));
-    }
-
-    [Fact]
-    public async Task ProjectDependency_OnFactory_IsMetOnceDoneInDevelop()
-    {
-        using Setup setup = Setup.Create(withAlpha: true);
-
-        JsonElement alpha = (await setup.Backlogs()).RootElement.GetProperty("projects")[0];
-        JsonElement factory = await setup.FactoryEntry();
-        Assert.True(alpha.GetProperty("open")[0].GetProperty("waiting").GetBoolean());
-        JsonElement after = alpha.GetProperty("blocked")[0].GetProperty("after")[0];
-        Assert.Equal("factory", after.GetProperty("project").GetString());
-        Assert.False(after.GetProperty("missing").GetBoolean());
-        Assert.True(factory.GetProperty("open")[1].GetProperty("waiting").GetBoolean());
-
-        File.WriteAllText(setup.DevelopBacklogPath, DevelopBacklog.Replace("- [ ] [#2]", "- [x] [#2]", StringComparison.Ordinal));
-        TempFactoryRoot.Git(setup.DevelopPath, "commit", "-q", "-am", "done two");
-
-        alpha = (await setup.Backlogs()).RootElement.GetProperty("projects")[0];
-        factory = await setup.FactoryEntry();
-        Assert.False(alpha.GetProperty("open")[0].GetProperty("waiting").GetBoolean());
-        Assert.Equal(0, alpha.GetProperty("blocked").GetArrayLength());
-        Assert.False(factory.GetProperty("open")[0].GetProperty("waiting").GetBoolean());
-    }
-
-    [Fact]
-    public async Task ProjectDependency_OnUnreadableFactory_WaitsAndIsNotMissing()
-    {
-        using Setup setup = Setup.Create(withAlpha: true, develop: DevelopKind.Missing);
-
-        JsonElement alpha = (await setup.Backlogs()).RootElement.GetProperty("projects")[0];
-
-        Assert.True(alpha.GetProperty("open")[0].GetProperty("waiting").GetBoolean());
-        Assert.False(alpha.GetProperty("blocked")[0].GetProperty("after")[0].GetProperty("missing").GetBoolean());
-        Assert.False(alpha.GetProperty("stopped").GetBoolean());
+            Assert.True(alpha.GetProperty("open")[0].GetProperty("waiting").GetBoolean());
+            Assert.False(alpha.GetProperty("blocked")[0].GetProperty("after")[0].GetProperty("missing").GetBoolean());
+            Assert.False(alpha.GetProperty("stopped").GetBoolean());
+        }
     }
 
     private static async Task AssertPushFailed(Setup setup, string origin, string remote)
