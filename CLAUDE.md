@@ -271,7 +271,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `manifest.webmanifest`, `icons/`, `app.js`, `board.js`, `act.js`, `status.js`, `releases.js` and `room.js`.
   - `wwwroot/room.js` (ControlRoom): the app values the RoomKit scripts read as globals, loaded as the first
     `<script>` of `index.html` and by `sw.js` through `importScripts("/room.js")`: `TokenKey`, `CaptureProjectKey`,
-    `HistoryProjectKey`, `PushAppTexts` (`homeScreen`, `denied`), `CacheVersion` (`v23`), `CacheName`, `Shell` (the
+    `HistoryProjectKey`, `PushAppTexts` (`homeScreen`, `denied`), `CacheVersion` (`v24`), `CacheName`, `Shell` (the
     shell list, with `/room.js`), `PushAppTitles` (`updated`), `PushFallbackTitle`, `PushDefaultTag` and
     `PushUpdatePrefix`. The script order below starts with `room.js`.
   - Scripts: every app value of `launch-agent.sh` and `updater.sh` is in the block between `# roomkit:app-begin`
@@ -465,8 +465,12 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     fingerprint, older answers dropped by a request counter; a refresh replaces only the blocks, never one with focus,
     and keeps an open commit list open (`releaseOpen`); fixed texts in `ReleaseTexts`), `push.js` (Notifications section on the
     board: state texts, Turn on (permission only from the tap), done and update switches, Send test, Turn off),
-    `sw.js` (service worker: caches only the fixed app shell, never `/api/`; bump its cache version when the
-    shell list changes; `push` shows a notification from fixed titles, `notificationclick` opens `#job/<id>`,
+    `sw.js` (service worker: caches only the fixed app shell, never `/api/`; network-first (`fetch` with `cache:
+    "no-cache"`, only ok answers stored under the bare pathname, the cached copy only when the fetch rejects, else
+    `Response.error()`); install pre-caches with `no-cache` requests and calls `skipWaiting()`, activate deletes every
+    other cache, then `clients.claim()`; bump `CacheVersion` in `room.js` whenever a shell file changes and append
+    `<version> <sha256>` to `tests/ControlRoom.Server.Tests/shell-cache.ledger` (`ShellCacheLedgerTests` hashes the
+    served shell); `push` shows a notification from fixed titles, `notificationclick` opens `#job/<id>`,
     `#backlogs` or `#jobs`; `/health` is never cached), `manifest.webmanifest`, `icons/` (opaque RGB PNGs, 180/192/512 px)).
   - `scripts/launch-agent.sh`: POSIX `sh` LaunchAgent installer (publish, `bootout`, replace, plist `0644`,
     `bootstrap`; refuses symlinks; never reads the token). After every `bootout` (server and updater) it polls
