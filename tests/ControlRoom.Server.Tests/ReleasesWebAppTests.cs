@@ -97,7 +97,7 @@ public sealed partial class ReleasesWebAppTests
         Assert.Contains("element(\"code\", \"release-sha\", row.sha)", log, StringComparison.Ordinal);
         Assert.Contains("link.href = \"#job/\" + row.job;", log, StringComparison.Ordinal);
         Assert.Contains("element(\"span\", \"release-subject\", row.subject)", log, StringComparison.Ordinal);
-        Assert.Contains("const ReleaseJobPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}$/;", js, StringComparison.Ordinal);
+        Assert.Contains("const ReleaseJobPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}(\\.[0-9a-f]{32})?$/;", js, StringComparison.Ordinal);
         Assert.Contains("const ReleaseShaPattern = /^[0-9a-f]{7}$/;", js, StringComparison.Ordinal);
     }
 

@@ -125,7 +125,7 @@ public sealed partial class ServiceWorkerTests
         Assert.True(click >= 0);
         Assert.Contains("url = \"/#job/\" + job;", js, StringComparison.Ordinal);
         Assert.Contains("url = \"/#backlogs\";", js, StringComparison.Ordinal);
-        Assert.Contains("const PushJobPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}$/;", js, StringComparison.Ordinal);
+        Assert.Contains("const PushJobPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}(\\.[0-9a-f]{32})?$/;", js, StringComparison.Ordinal);
         string onClick = js[click..];
         Assert.Contains("self.clients.openWindow(url)", onClick, StringComparison.Ordinal);
         Assert.Contains("data.url.startsWith(\"/#\")", onClick, StringComparison.Ordinal);

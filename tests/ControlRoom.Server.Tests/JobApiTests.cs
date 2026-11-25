@@ -392,4 +392,28 @@ public sealed class JobApiTests
         Assert.Equal("{\"action\":\"unreadable\"}", json.RootElement.GetProperty("request").GetRawText());
         Assert.Equal("unreadable", json.RootElement.GetProperty("job").GetProperty("request").GetString());
     }
+
+    [Fact]
+    public async Task Job_UuidSuffixedIdReturnsItsRecordsAndAnUpperCaseSuffixIsNotFound()
+    {
+        using TempFactoryRoot root = new();
+        string suffixed = "405-auto-pause." + JobSamples.Uuid;
+        root.AddJob(suffixed, JobSamples.State("Alpha", "build", 1));
+        root.AddRecord(suffixed, "spec.md", "# Spec\n");
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+
+        using HttpResponseMessage response = await client.GetAsync("/api/job?id=" + suffixed);
+        using JsonDocument json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        using HttpResponseMessage upper =
+            await client.GetAsync("/api/job?id=405-auto-pause." + JobSamples.Uuid.ToUpperInvariant());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(suffixed, json.RootElement.GetProperty("job").GetProperty("id").GetString());
+        Assert.Equal(
+            "spec.md",
+            Assert.Single(json.RootElement.GetProperty("records").EnumerateArray()).GetProperty("name").GetString());
+        Assert.Equal(HttpStatusCode.NotFound, upper.StatusCode);
+        Assert.Equal(NotFound, await upper.Content.ReadAsStringAsync());
+    }
 }

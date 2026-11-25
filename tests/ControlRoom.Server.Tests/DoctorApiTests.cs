@@ -193,6 +193,33 @@ public sealed class DoctorApiTests
     }
 
     [Fact]
+    public async Task UuidSuffixedIds_AreListedAsUncommittedAndAsMergedBranchesLikeLegacyOnes()
+    {
+        using TempFactoryRoot root = new();
+        string suffixed = "405-auto-pause." + JobSamples.Uuid;
+        string upper = "406-upper." + JobSamples.Uuid.ToUpperInvariant();
+        string alpha = root.AddProject("Alpha", "");
+        TempFactoryRoot.InitGit(alpha, "develop");
+        TempFactoryRoot.Git(alpha, "branch", "factory/398-legacy");
+        TempFactoryRoot.Git(alpha, "branch", "factory/" + suffixed);
+        TempFactoryRoot.Git(alpha, "branch", "factory/" + upper);
+        TempFactoryRoot.InitGit(root.Path, "main");
+        root.AddJob("398-legacy", State("Alpha", "done", null));
+        root.AddJob(suffixed, State("Alpha", "done", null));
+        root.AddRecord(suffixed, "build.md", "x");
+        root.AddRecord(upper, "state.json", State("Alpha", "done", null));
+
+        using JsonDocument json = await Get(root);
+
+        Assert.Equal(["398-legacy", suffixed], Strings(json.RootElement.GetProperty("uncommitted")));
+        Assert.Equal(
+            ["Alpha factory/398-legacy", "Alpha factory/" + suffixed],
+            json.RootElement.GetProperty("mergedBranches").EnumerateArray()
+                .Select(b => b.GetProperty("project").GetString() + " " + b.GetProperty("branch").GetString()));
+        Assert.Empty(json.RootElement.GetProperty("unreadable").EnumerateArray());
+    }
+
+    [Fact]
     public async Task Stories_ReportsEachProblemInFileOrderThenOrphans_WithoutLeavingTheBacklogFolder()
     {
         using TempFactoryRoot root = new();

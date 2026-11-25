@@ -357,7 +357,7 @@ public sealed partial class WebAppTests
         Assert.Contains("const BoardRoute = \"#jobs\";", js, StringComparison.Ordinal);
         Assert.Contains("const JobRoute = \"#job/\";", js, StringComparison.Ordinal);
         Assert.Contains("return JobRoute + encodeURIComponent(id);", js, StringComparison.Ordinal);
-        Assert.Contains("const JobIdPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}$/;", js, StringComparison.Ordinal);
+        Assert.Contains("const JobIdPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}(\\.[0-9a-f]{32})?$/;", js, StringComparison.Ordinal);
         Assert.Contains("\"/api/job?id=\" + encodeURIComponent(id)", js, StringComparison.Ordinal);
         Assert.Contains("if (openedFromBoard) {", js, StringComparison.Ordinal);
         Assert.Contains("history.back();", js, StringComparison.Ordinal);
