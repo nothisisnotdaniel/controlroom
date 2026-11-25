@@ -172,7 +172,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   not about this factory's job format. Its web files are static web assets at base path `/` (same URLs; a path in
   both `wwwroot` folders fails the build; outside Development `RoomKitApp` loads them through the static web assets
   manifest). `src/ControlRoom.Server` is the app on it: `ControlRoomApp` (`RoomKitOptions` with today's values,
-  `StateJsonJobFormat`, its endpoints), and `RoomKitApp.Run` is the whole `Program.cs`. ControlRoom uses RoomKit's
+  `StateJsonJobFormat`, its endpoints), and `RoomKitApp.Run(args, Options, Map, new FactoryModule(Jobs))` is the whole
+  `Program.cs`. Since #153 RoomKit is a core (shell, security, push with pluggable `IPushSource`s, updates; no job
+  format, factory root or git) plus the opt-in `FactoryModule` (factory root, backlog/job endpoints and web files,
+  `BacklogWorktree`, the job/backlog push source, `CaptureNote`); a core-only app answers 404 for the module's routes
+  and files. ControlRoom uses RoomKit's
   public API only; RoomKit's `InternalsVisibleTo` names only the two test assemblies.
   Run: `dotnet run --project src/ControlRoom.Server` (listens on `127.0.0.1:8100` only; the factory root is the
   parent of the folder holding `ControlRoom.slnx`, or `--FactoryRoot <path>`).
@@ -231,8 +235,12 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   - Since #386 the units below are split: `src/RoomKit/` holds `RoomKitApp` (was `ServerApp`'s build: Kestrel,
     headers, `HostCheck`, the method rule with the POST allow-list built from RoomKit's routes plus the app's
     `RoomRoutes.MapPost` routes (fixed `/api/` paths only), the token gate, static files, push and update services,
-    the `version` and `token` commands), `RoomKitOptions`, `IJobFormat` (`RoomJob`, `RoomJobFolder`), `RoomRoutes`,
-    `RoomContext` (the process-wide options and job format) and the shared units `AccessToken`, `TokenCommand`,
+    the `version` and `token` commands; without the module a `HiddenFileProvider` hides the module's web files),
+    `FactoryModule` (#153: the opt-in factory root, services, endpoints, `POST /api/backlog/change` and web files),
+    `RoomServices` (`AddPushSource` hook before the host is built), `IPushSource` and `PushEvent` (an app's own
+    `{"kind","title","tag"}` pushes), `FactoryPushSource` (the job and backlog events), `RoomKitOptions`, `IJobFormat`
+    (`RoomJob`, `RoomJobFolder`), `RoomRoutes`, `RoomContext` (the process-wide options and job format; the core-only
+    `Use(options)` makes `Jobs` throw) and the shared units `AccessToken`, `TokenCommand`,
     `HostCheck`, `ServerEndpoint`, `FactoryRootLocator`, `ProjectFinder`, `SafeFileReader`, `SafeFileWriter`,
     `BacklogReader`, `BacklogParser`, `BacklogWaiting`, `BacklogPlan`, `BacklogsEndpoint`, `BacklogEditor`,
     `ProjectGit`, `BacklogWorktree`, `BacklogSource`, `BacklogChangeEndpoint`, `StoryReader`, `StoryCategory`,
@@ -316,7 +324,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     atomic writes, `EnsureFolder`/`IsReady`, `PrivateFileException`), `PushStore` (`push-keys.json`/`push.json` next to the token file;
     `PushSubscriptionRules`: endpoint host allowlist and key checks), `PushSender` (`PushPayload` with the fixed
     reason table, `PushTransport` (the injectable `HttpMessageHandler`), one POST per subscription, `404`/`410`
-    removes it), `PushWatcher` (hosted service, `Scan()` every 30 s on `TimeProvider`; first scan is the baseline),
+    removes it), `PushWatcher` (hosted service, `Scan()` every 30 s on `TimeProvider` over every `IPushSource` (a throwing one logs only a fixed text) plus the updater result; first scan is the baseline),
     `PushEndpoint` (`GET /api/push`, `POST /api/push/subscribe|unsubscribe|settings|test`), `PushTestLimiter`
     (one test send per 10 s), `UnixOwner` (`geteuid`, `lstat` uid via P/Invoke), `AppVersion` (informational version without
     `+build`, else `dev`), `VersionCommand` (`version`), `VersionEndpoint` (`GET /api/version`), `UpdateCheck` (`SemVer` (2.0.0 precedence, no build metadata),
@@ -498,7 +506,10 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     through `find-identity -p codesigning` without `-v`; never prints `security`'s output, no password argument; exit 1
     on a `security` failure, 2 on wrong usage); `.github/signing/entitlements.plist`.
   - `tests/RoomKit.Tests/` (references only RoomKit): `SampleRoom` (a test-only app, port 8201, repo
-    `example/sampleroom`, a fake job format in `work/jobs/<id>/job.txt`) hosted by `SampleServerFactory`, and
+    `example/sampleroom`, a fake job format in `work/jobs/<id>/job.txt`, with `FactoryModule`) hosted by
+    `SampleServerFactory`, `CoreRoom` (core only, port 8202, no job format or `CaptureNote`; `QueuedPushSource`)
+    hosted by `CoreServerFactory` and tested in `CoreRoomTests` (own collection, no parallel runs, restores the
+    `SampleRoom` context), and
     `RoomKitLibraryTests` (source scan, friends, `docs/roomkit.md` names every public type, `dotnet pack` contents);
     `TempFactoryRoot`, `TempTokenFolder`, `PushFakes`, `PushTestData` and `RepoCopy` are linked from
     `ControlRoom.Server.Tests`. `RepoCopy` copies `src/`, `docs/` and the root files to a temp folder for
