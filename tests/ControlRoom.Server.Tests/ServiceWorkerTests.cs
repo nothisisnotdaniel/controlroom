@@ -33,22 +33,58 @@ public sealed partial class ServiceWorkerTests
 
         Assert.Matches(VersionConstant(), room);
         Assert.Contains("const CacheName = \"controlroom-shell-\" + CacheVersion;", room, StringComparison.Ordinal);
-        Assert.Contains("cache.addAll(Shell)", js, StringComparison.Ordinal);
         int activate = js.IndexOf("addEventListener(\"activate\"", StringComparison.Ordinal);
         Assert.True(activate >= 0);
-        string onActivate = js[activate..];
+        string onActivate = js[activate..js.IndexOf("function isShellRequest(", StringComparison.Ordinal)];
         Assert.Contains("caches.keys()", onActivate, StringComparison.Ordinal);
         Assert.Contains("name !== CacheName", onActivate, StringComparison.Ordinal);
         Assert.Contains("caches.delete(name)", onActivate, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task Cache_VersionIsBumpedForTheEditScript()
+    public async Task Install_PrecachesTheShellPastTheHttpCacheAndTakesOverAtOnce()
+    {
+        string js = await Fetch();
+
+        int install = js.IndexOf("self.addEventListener(\"install\", (event) => {", StringComparison.Ordinal);
+        int activate = js.IndexOf("self.addEventListener(\"activate\", (event) => {", StringComparison.Ordinal);
+        Assert.True(install >= 0 && install < activate);
+        string onInstall = js[install..activate];
+        Assert.Contains("event.waitUntil(caches.open(CacheName)", onInstall, StringComparison.Ordinal);
+        Assert.Contains("cache.addAll(Shell.map((path) => new Request(path, { cache: \"no-cache\" })))", onInstall,
+            StringComparison.Ordinal);
+        int addAll = onInstall.IndexOf("cache.addAll(", StringComparison.Ordinal);
+        int skip = onInstall.IndexOf(".then(() => self.skipWaiting())", StringComparison.Ordinal);
+        Assert.True(addAll >= 0 && addAll < skip);
+        Assert.DoesNotContain("cache.addAll(Shell)", js, StringComparison.Ordinal);
+        Assert.Single(SkipWaiting().Matches(js));
+    }
+
+    [Fact]
+    public async Task Activate_DeletesEveryOtherCacheThenClaimsTheOpenPages()
+    {
+        string js = await Fetch();
+
+        int activate = js.IndexOf("self.addEventListener(\"activate\", (event) => {", StringComparison.Ordinal);
+        int end = js.IndexOf("function isShellRequest(", StringComparison.Ordinal);
+        Assert.True(activate >= 0 && activate < end);
+        string onActivate = js[activate..end];
+        Assert.Contains("event.waitUntil(", onActivate, StringComparison.Ordinal);
+        Assert.Contains("names.filter((name) => name !== CacheName).map((name) => caches.delete(name))", onActivate,
+            StringComparison.Ordinal);
+        int delete = onActivate.IndexOf("caches.delete(name)", StringComparison.Ordinal);
+        int claim = onActivate.IndexOf(".then(() => self.clients.claim())", StringComparison.Ordinal);
+        Assert.True(delete >= 0 && delete < claim);
+        Assert.Single(ClientsClaim().Matches(js));
+    }
+
+    [Fact]
+    public async Task Cache_VersionIsBumpedForNetworkFirst()
     {
         string js = await Fetch();
         string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v23\";", room, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v24\";", room, StringComparison.Ordinal);
         Assert.Contains("  \"/edit.js\",\n", room, StringComparison.Ordinal);
         Assert.Contains("  \"/counts.js\",\n", room, StringComparison.Ordinal);
         Assert.Contains("  \"/live.js\",\n", room, StringComparison.Ordinal);
@@ -77,19 +113,36 @@ public sealed partial class ServiceWorkerTests
     }
 
     [Fact]
-    public async Task Fetch_IsStaleWhileRevalidateAndStoresOnlyOkResponses()
+    public async Task Fetch_IsNetworkFirstAndStoresOnlyOkResponses()
     {
         string js = await Fetch();
 
-        Assert.Contains("const key = new URL(event.request.url).pathname;", js, StringComparison.Ordinal);
-        Assert.Contains("const cached = await cache.match(key);", js, StringComparison.Ordinal);
-        Assert.Contains("await cache.put(key, response.clone());", js, StringComparison.Ordinal);
-        Assert.Contains("const network = fetch(event.request)", js, StringComparison.Ordinal);
-        int ok = js.IndexOf("if (response.ok) {", StringComparison.Ordinal);
-        int put = js.IndexOf("cache.put(", StringComparison.Ordinal);
-        Assert.True(ok >= 0 && ok < put);
+        int start = js.IndexOf("async function networkFirst(event) {", StringComparison.Ordinal);
+        int end = js.IndexOf("self.addEventListener(\"fetch\"", StringComparison.Ordinal);
+        Assert.True(start >= 0 && start < end);
+        string body = js[start..end];
+        Assert.Contains("event.respondWith(networkFirst(event));", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("staleWhileRevalidate", js, StringComparison.Ordinal);
+        Assert.Contains("const key = new URL(event.request.url).pathname;", body, StringComparison.Ordinal);
+
+        // The network is asked first, past the HTTP cache.
+        int network = body.IndexOf("response = await fetch(event.request, { cache: \"no-cache\" });", StringComparison.Ordinal);
+        int rejected = body.IndexOf("} catch {", StringComparison.Ordinal);
+        int match = body.IndexOf("const cached = await cache.match(key);", StringComparison.Ordinal);
+        int fallback = body.IndexOf("return cached || Response.error();", StringComparison.Ordinal);
+        int ok = body.IndexOf("if (response.ok) {", StringComparison.Ordinal);
+        int put = body.IndexOf("await cache.put(key, response.clone());", StringComparison.Ordinal);
+        int answer = body.IndexOf("return response;", StringComparison.Ordinal);
+        Assert.True(network >= 0 && network < rejected, "fetch comes first");
+        // cache.match is read only inside the rejection branch, which returns before any ok/put code.
+        Assert.True(rejected < match && match < fallback && fallback < ok, "cache only when the fetch rejects");
+        Assert.True(ok < put && put < answer, "only ok responses are stored, every answer is returned");
+        Assert.Single(CacheMatch().Matches(js));
         Assert.Single(Put().Matches(js));
-        Assert.Contains("return cached;", js, StringComparison.Ordinal);
+        Assert.Single(FetchCall().Matches(js));
+        Assert.DoesNotContain("return cached;", js, StringComparison.Ordinal);
+        Assert.Equal(1, CountOf(body, "return cached"));
+        Assert.Equal(2, CountOf(body, "return "));
     }
 
     [Fact]
@@ -174,4 +227,28 @@ public sealed partial class ServiceWorkerTests
 
     [GeneratedRegex("\\.put\\(")]
     private static partial Regex Put();
+
+    [GeneratedRegex("\\.match\\(")]
+    private static partial Regex CacheMatch();
+
+    [GeneratedRegex("\\bfetch\\(")]
+    private static partial Regex FetchCall();
+
+    [GeneratedRegex("self\\.skipWaiting\\(\\)")]
+    private static partial Regex SkipWaiting();
+
+    [GeneratedRegex("self\\.clients\\.claim\\(\\)")]
+    private static partial Regex ClientsClaim();
+
+    private static int CountOf(string text, string part)
+    {
+        int count = 0;
+        for (int at = text.IndexOf(part, StringComparison.Ordinal); at >= 0;
+             at = text.IndexOf(part, at + part.Length, StringComparison.Ordinal))
+        {
+            count++;
+        }
+
+        return count;
+    }
 }
