@@ -33,7 +33,7 @@ const ReleasesApi = "/api/releases";
 const ReleaseTagPattern = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const ReleaseVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const ReleaseShaPattern = /^[0-9a-f]{7}$/;
-const ReleaseJobPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}$/;
+const ReleaseJobPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}(\.[0-9a-f]{32})?$/;
 const ReleaseBumps = ["minor", "patch"];
 
 let releaseRequest = 0;

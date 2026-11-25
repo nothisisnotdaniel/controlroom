@@ -178,6 +178,15 @@ public sealed class InboxApiTests
             { "# S\n\n## Notes\n\nProposed by job ../../etc\n", null },
             { "# S\n\n## Notes\n\nProposed by job 12-<b>x</b>\n", null },
             { "# S\n\n### Notes\n\nProposed by job 12-deep\n", null },
+            { Notes("405-auto-pause." + JobReaderTests.Uuid), "405-auto-pause." + JobReaderTests.Uuid },
+            { "# S\n\n## Notes\n\nProposed by job 405-a." + JobReaderTests.Uuid + ".\n", "405-a." + JobReaderTests.Uuid },
+            { "# S\n\n## Notes\n\nProposed by job 1-" + new string('a', 78) + "." + JobReaderTests.Uuid + "\n",
+                "1-" + new string('a', 78) + "." + JobReaderTests.Uuid },
+            { "# S\n\n## Notes\n\nProposed by job 1-" + new string('a', 79) + "." + JobReaderTests.Uuid + "\n", null },
+            { "# S\n\n## Notes\n\nProposed by job 405-a." + JobReaderTests.Uuid.ToUpperInvariant() + "\n", null },
+            { "# S\n\n## Notes\n\nProposed by job 405-a." + JobReaderTests.Uuid[..31] + "\n", null },
+            { "# S\n\n## Notes\n\nProposed by job 405-a." + JobReaderTests.Uuid + "0\n", null },
+            { "# S\n\n## Notes\n\nProposed by job 405-a.." + JobReaderTests.Uuid + "\n", null },
         };
     }
 

@@ -415,6 +415,6 @@ internal static partial class JobReader
     [GeneratedRegex(@"\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\z", RegexOptions.CultureInvariant)]
     private static partial Regex UpdatedPattern();
 
-    [GeneratedRegex(@"\A[0-9]{1,6}-[a-z0-9-]{1,80}\z", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"\A[0-9]{1,6}-[a-z0-9-]{1,80}(\.[0-9a-f]{32})?\z", RegexOptions.CultureInvariant)]
     public static partial Regex IdPattern();
 }

@@ -77,7 +77,7 @@ const Reviewers = ["security", "ux", "ui", "code"];
 
 const BoardRoute = "#jobs";
 const JobRoute = "#job/";
-const JobIdPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}$/;
+const JobIdPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}(\.[0-9a-f]{32})?$/;
 const ProjectKey = "controlroom.project";
 const PollInterval = 5000;
 // Reviews start with "VERDICT: PASS" or "VERDICT: CHANGES"; decisions start with a bare APPROVE or ESCALATE.

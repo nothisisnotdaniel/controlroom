@@ -36,6 +36,11 @@ public sealed class WebAssetSplitTests
     };
 
     // Edits made after the split, each as (text now, text on develop then): the factory backlog section (402).
+    // #407: job ids may end in "." plus 32 lower-case hex characters.
+    private const string JobPatternNow = "{1,80}(\\.[0-9a-f]{32})?$/;";
+
+    private const string JobPatternDevelop = "{1,80}$/;";
+
     private static readonly Dictionary<string, (string Now, string Develop)[]> LaterEdits = new(StringComparer.Ordinal)
     {
         ["app.js"] =
@@ -58,6 +63,10 @@ public sealed class WebAssetSplitTests
             ("  no_worktree: \"The factory's develop worktree is missing. Nothing was changed.\",\n",
                 ""),
         ],
+        ["board.js"] = [("const JobIdPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternNow,
+            "const JobIdPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternDevelop)],
+        ["releases.js"] = [("const ReleaseJobPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternNow,
+            "const ReleaseJobPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternDevelop)],
     };
 
     private static readonly string[] KitGlobals =
@@ -195,6 +204,8 @@ public sealed class WebAssetSplitTests
         {
             develop[i] = develop[i]
                 .Replace("let tag = \"controlroom\";", "let tag = PushDefaultTag;", StringComparison.Ordinal)
+                .Replace("const PushJobPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternDevelop,
+                    "const PushJobPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternNow, StringComparison.Ordinal)
                 .Replace("\"ControlRoom \" + version", "PushUpdatePrefix + version", StringComparison.Ordinal)
                 .Replace("The old version didn't come back. Check the Mac.",
                     "The old version didn't restart. Check the computer running the server.", StringComparison.Ordinal);

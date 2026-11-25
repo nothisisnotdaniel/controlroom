@@ -9,7 +9,10 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   to the home screen as a web app (PWA). There is no native app.
 - **Projects:** a project is a top-level folder of the factory root, apart from `factory` and dot-folders,
   that has a `CLAUDE.md` (the same rule as the `/factory` skill). Each has its own git repo, `backlog.md`
-  and `develop` branch. Jobs are `factory/jobs/<id>/state.json` plus their Markdown records.
+  and `develop` branch. Jobs are `factory/jobs/<id>/state.json` plus their Markdown records; a job id
+  (`JobReader.IdPattern`, and the same rule in `board.js`, `releases.js` and `sw.js`) is
+  `[0-9]{1,6}-[a-z0-9-]{1,80}`, optionally followed by `.` and exactly 32 lower-case hex characters (job.py's
+  `<n>-<slug>.<uuid>` since factory #40).
 - **Access:** the server listens on `127.0.0.1` only, never on `0.0.0.0` or a LAN address. The user reaches
   it from the iPhone through Tailscale (`tailscale serve` gives HTTPS on the user's own tailnet and proxies to
   the local port), so nothing is reachable from the internet. Every request is first checked by `HostCheck`
@@ -291,7 +294,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `StoryEndpoint` (`GET /api/story?project=&number=`, with `markdown`,
     `storyVersion` and `category`), `InboxEndpoint` (`GET /api/inbox`: every `[?]` line as `{project, version, line, number, title,
     rest, job}` plus `unreadable` project names, `no-store`; `job` from the first `Proposed by job <id>` in the story's
-    `## Notes` through `StoryReader`, kept only as `^[0-9]{1,6}-[a-z0-9]+(-[a-z0-9]+)*$` up to 80 chars; with a job first by
+    `## Notes` through `StoryReader`, kept only as `^[0-9]{1,6}-[a-z0-9]+(-[a-z0-9]+)*(\.[0-9a-f]{32})?$` with up to 80 chars before the optional suffix; with a job first by
     its number, then without, ties by project (ordinal) and line), `TasksEndpoint` (`GET /api/tasks`: every `[h]` line as
     `{project, version, line, number, title, rest, story, after}` split into `ready` and `waiting` by `BacklogWaiting`
     (`after` only the unmet dependencies, `project` always set), plus `unreadable` names, `no-store`; project order, then

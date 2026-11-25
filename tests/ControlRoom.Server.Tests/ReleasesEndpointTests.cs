@@ -152,6 +152,23 @@ public sealed class ReleasesEndpointTests
     }
 
     [Fact]
+    public async Task Log_LinksAUuidSuffixedMergeAndNotAnUpperCaseLookAlike()
+    {
+        using TempFactoryRoot root = new();
+        string repo = Repo(root, "Alpha");
+        string suffixed = "405-auto-pause." + JobReaderTests.Uuid;
+        Merge(repo, suffixed, 1);
+        Merge(repo, "406-upper." + JobReaderTests.Uuid.ToUpperInvariant(), 1);
+
+        JsonElement project = await First(root);
+
+        JsonElement[] log = project.GetProperty("log").EnumerateArray().ToArray();
+        Assert.Equal(JsonValueKind.Null, log[0].GetProperty("job").ValueKind);
+        Assert.Equal("factory: merge " + suffixed, log[1].GetProperty("subject").GetString());
+        Assert.Equal(suffixed, log[1].GetProperty("job").GetString());
+    }
+
+    [Fact]
     public async Task Log_KeepsTheNewest50Rows()
     {
         using TempFactoryRoot root = new();
@@ -210,6 +227,11 @@ public sealed class ReleasesEndpointTests
     [InlineData("factory: merge 12-x extra", null)]
     [InlineData("Factory: merge 12-x", null)]
     [InlineData(" factory: merge 12-x", null)]
+    [InlineData("factory: merge 405-auto-pause.7d54db7b3cd74ead824d89290641e90c", "405-auto-pause.7d54db7b3cd74ead824d89290641e90c")]
+    [InlineData("factory: merge 405-a.7D54DB7B3CD74EAD824D89290641E90C", null)]
+    [InlineData("factory: merge 405-a.7d54db7b3cd74ead824d89290641e90", null)]
+    [InlineData("factory: merge 405-a..7d54db7b3cd74ead824d89290641e90c", null)]
+    [InlineData("factory: merge 405-a.7d54db7b3cd74ead824d89290641e90c\n", null)]
     public void MergedJob_OnlyForAnExactSubjectWithAValidId(string subject, string? expected)
     {
         Assert.Equal(expected, ReleasesEndpoint.MergedJob(subject));

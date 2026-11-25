@@ -415,6 +415,27 @@ public sealed class JobActApiTests
 
     /// <summary>The snapshot without the job folder's own entry (its mtime changes when a file is added) and the
     /// request file.</summary>
+    [Fact]
+    public async Task Approve_UuidSuffixedIdWritesOnlyIntoItsOwnFolder()
+    {
+        using TempFactoryRoot root = new();
+        string suffixed = "405-auto-pause." + JobReaderTests.Uuid;
+        string legacy = root.AddJob("405-auto-pause", State("needs-human", 2));
+        string folder = root.AddJob(suffixed, State("needs-human", 2));
+        string file = Path.Combine(folder, "human.json");
+        IReadOnlyList<string> before = WithoutJobFolder(root.Snapshot(), folder, file);
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+
+        (HttpStatusCode code, _, _) = await Post(client, "{\"id\":\"" + suffixed + "\",\"action\":\"approve\",\"round\":2}");
+
+        Assert.Equal(HttpStatusCode.OK, code);
+        Assert.Equal(Encoding.UTF8.GetBytes(ApproveFile), File.ReadAllBytes(file));
+        Assert.Equal(before, WithoutJobFolder(root.Snapshot(), folder, file));
+        Assert.Equal(["human.json", "state.json"], Directory.GetFiles(folder).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        Assert.Equal(["state.json"], Directory.GetFiles(legacy).Select(Path.GetFileName));
+    }
+
     private static List<string> WithoutJobFolder(IReadOnlyList<string> snapshot, string folder, string file)
     {
         return snapshot
