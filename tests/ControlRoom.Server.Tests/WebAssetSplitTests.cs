@@ -236,9 +236,9 @@ public sealed class WebAssetSplitTests
         Assert.True(start >= 0 && end > start);
         // The shell list block moved, with "/room.js" added and the version raised.
         List<string> block = develop.GetRange(start, end - start + 1);
-        block[0] = "const CacheVersion = \"v24\";";
+        block[0] = "const CacheVersion = \"v25\";";
         block.Insert(block.IndexOf("  \"/token.js\",") + 1, "  \"/room.js\",");
-        int roomStart = room.IndexOf("const CacheVersion = \"v24\";");
+        int roomStart = room.IndexOf("const CacheVersion = \"v25\";");
         Assert.Equal(block, room.GetRange(roomStart, block.Count));
         develop.RemoveRange(start, end - start + 1);
 
