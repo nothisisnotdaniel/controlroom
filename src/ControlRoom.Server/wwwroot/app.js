@@ -26,6 +26,11 @@ const Texts = {
   storyPosition: "Position ",
   stopLine: "Auto stops here",
   stopsBefore: "Auto stops before #",
+  claimOn: "In progress on ",
+  claimAnother: "another machine",
+  claimSince: " since ",
+  claimChecked: " · checked ",
+  claimMinAgo: " min ago",
 };
 
 const Groups = [
@@ -176,6 +181,47 @@ function categoryChip(value) {
   return chip;
 }
 
+// Other machines' item claims per project (from /api/backlogs, set by renderProject): { items: Map(number -> claim),
+// stale, checked (ms or null) }. Only numbers and text values; never used as a path or HTML.
+const projectClaims = new Map();
+
+function readClaims(project) {
+  const items = new Map();
+  for (const claim of asList(project && project.claims)) {
+    const item = asNumber(claim && claim.item);
+    if (item !== null && !items.has(item)) {
+      items.set(item, claim);
+    }
+  }
+  const checked = typeof (project && project.claimsChecked) === "string" ? Date.parse(project.claimsChecked) : NaN;
+  return { items: items, stale: project && project.claimsStale === true, checked: Number.isNaN(checked) ? null : checked };
+}
+
+// "In progress on <machine> since <local time>" (another machine when it is unknown, no since part without a valid
+// time), plus " · checked <n> min ago" while the claims are stale; built only with textContent.
+function claimBadge(projectName, number) {
+  const claims = projectClaims.get(projectName);
+  const claim = claims ? claims.items.get(number) : undefined;
+  if (!claim) {
+    return null;
+  }
+  const machine = asText(claim.machine).trim();
+  let text = Texts.claimOn + (machine !== "" ? machine : Texts.claimAnother);
+  const claimed = typeof claim.claimed === "string" ? new Date(claim.claimed) : null;
+  if (claimed !== null && !Number.isNaN(claimed.getTime())) {
+    text += Texts.claimSince + claimed.toLocaleString([], {
+      month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+  }
+  if (claims.stale && claims.checked !== null) {
+    text += Texts.claimChecked + Math.max(0, Math.floor((Date.now() - claims.checked) / 60000)) + Texts.claimMinAgo;
+  }
+  const badge = document.createElement("span");
+  badge.className = "claim-badge";
+  badge.textContent = text;
+  return badge;
+}
+
 // A story's status as a chip (span.status-chip.status-<key>, a visually-hidden "Status: " and the label as text),
 // or null for a mark outside the fixed map.
 function statusChip(mark) {
@@ -278,6 +324,10 @@ function renderNumberedLine(projectName, version, entry, number, position) {
   const chip = categoryChip(entry.category);
   if (chip !== null) {
     head.appendChild(chip);
+  }
+  const claim = claimBadge(projectName, number);
+  if (claim !== null) {
+    head.appendChild(claim);
   }
   if (entry.waiting === true) {
     head.appendChild(element("span", "badge badge-waiting", Texts.waiting));
@@ -519,7 +569,10 @@ function planSignature(project) {
     return "";
   }
   const stop = asNumber(project.stopLine);
-  return JSON.stringify([project.next || null, project.stopped === true, asList(project.blocked), stop]);
+  // Other machines' claims too; the checked time only while stale (the badge shows its age then).
+  const stale = project.claimsStale === true;
+  const claims = [asList(project.claims), stale, stale ? project.claimsChecked || null : null];
+  return JSON.stringify([project.next || null, project.stopped === true, asList(project.blocked), stop, claims]);
 }
 
 function renderProject(project) {
@@ -527,6 +580,7 @@ function renderProject(project) {
   const name = asText(project && project.name);
   section.dataset.project = name;
   section.dataset.plan = planSignature(project);
+  projectClaims.set(name, readClaims(project));
   section.hidden = backlogSectionHidden(name);
   const version = asText(project && project.version);
   const head = element("div", "project-head");

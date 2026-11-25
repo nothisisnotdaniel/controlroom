@@ -394,7 +394,7 @@ public sealed partial class ChangesApiTests
     }
 
     [GeneratedRegex(
-        "\\A\\{\"jobs\":\"[0-9a-f]{64}\",\"projects\":\\{(\"[^\"]+\":\\{\"backlog\":\"[0-9a-f]{64}\",\"stories\":\"[0-9a-f]{64}\"\\}(,(?=\"))?)*\\}\\}\\z")]
+        "\\A\\{\"jobs\":\"[0-9a-f]{64}\",\"projects\":\\{(\"[^\"]+\":\\{\"backlog\":\"[0-9a-f]{64}\",\"stories\":\"[0-9a-f]{64}\",\"claims\":\"[0-9a-f]{64}\"\\}(,(?=\"))?)*\\}\\}\\z")]
     private static partial Regex Shape();
 
     [Fact]
