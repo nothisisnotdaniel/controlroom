@@ -397,7 +397,7 @@ public sealed class JobApiTests
     public async Task Job_UuidSuffixedIdReturnsItsRecordsAndAnUpperCaseSuffixIsNotFound()
     {
         using TempFactoryRoot root = new();
-        string suffixed = "405-auto-pause." + JobReaderTests.Uuid;
+        string suffixed = "405-auto-pause." + JobSamples.Uuid;
         root.AddJob(suffixed, JobSamples.State("Alpha", "build", 1));
         root.AddRecord(suffixed, "spec.md", "# Spec\n");
         using ServerFactory factory = new(root.Path);
@@ -406,7 +406,7 @@ public sealed class JobApiTests
         using HttpResponseMessage response = await client.GetAsync("/api/job?id=" + suffixed);
         using JsonDocument json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         using HttpResponseMessage upper =
-            await client.GetAsync("/api/job?id=405-auto-pause." + JobReaderTests.Uuid.ToUpperInvariant());
+            await client.GetAsync("/api/job?id=405-auto-pause." + JobSamples.Uuid.ToUpperInvariant());
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(suffixed, json.RootElement.GetProperty("job").GetProperty("id").GetString());

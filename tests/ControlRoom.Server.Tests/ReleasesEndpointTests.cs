@@ -156,9 +156,9 @@ public sealed class ReleasesEndpointTests
     {
         using TempFactoryRoot root = new();
         string repo = Repo(root, "Alpha");
-        string suffixed = "405-auto-pause." + JobReaderTests.Uuid;
+        string suffixed = "405-auto-pause." + JobSamples.Uuid;
         Merge(repo, suffixed, 1);
-        Merge(repo, "406-upper." + JobReaderTests.Uuid.ToUpperInvariant(), 1);
+        Merge(repo, "406-upper." + JobSamples.Uuid.ToUpperInvariant(), 1);
 
         JsonElement project = await First(root);
 

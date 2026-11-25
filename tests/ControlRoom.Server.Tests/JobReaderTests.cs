@@ -199,22 +199,20 @@ public sealed class JobReaderTests
         Assert.Null(JobReader.Parse("1-a", json));
     }
 
-    public const string Uuid = "7d54db7b3cd74ead824d89290641e90c";
-
     [Theory]
     [InlineData("398-x", true)]
-    [InlineData("405-auto-pause." + Uuid, true)]
+    [InlineData("405-auto-pause." + JobSamples.Uuid, true)]
     [InlineData("405-a.7D54DB7B3CD74EAD824D89290641E90C", false)]
     [InlineData("405-a.7d54db7b3cd74ead824d89290641e90", false)]
-    [InlineData("405-a." + Uuid + "0", false)]
+    [InlineData("405-a." + JobSamples.Uuid + "0", false)]
     [InlineData("405-a.7d54db7b3cd74ead824d89290641e90g", false)]
-    [InlineData("405-a.b." + Uuid, false)]
+    [InlineData("405-a.b." + JobSamples.Uuid, false)]
     [InlineData("405.a-b", false)]
-    [InlineData("405-a/" + Uuid, false)]
-    [InlineData("405-a\\" + Uuid, false)]
-    [InlineData("405-a.." + Uuid, false)]
-    [InlineData("405-a." + Uuid + "\n", false)]
-    [InlineData("-a." + Uuid, false)]
+    [InlineData("405-a/" + JobSamples.Uuid, false)]
+    [InlineData("405-a\\" + JobSamples.Uuid, false)]
+    [InlineData("405-a.." + JobSamples.Uuid, false)]
+    [InlineData("405-a." + JobSamples.Uuid + "\n", false)]
+    [InlineData("-a." + JobSamples.Uuid, false)]
     public void IdPattern_TakesAnOptionalLowerHexUuidSuffixOnly(string id, bool matches)
     {
         Assert.Equal(matches, JobReader.IdPattern().IsMatch(id));

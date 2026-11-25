@@ -247,12 +247,12 @@ public sealed class BoardApiTests
     public async Task Board_ListsUuidSuffixedJobsNextToLegacyOnesAndSkipsLookAlikes()
     {
         using TempFactoryRoot root = new();
-        string suffixed = "405-auto-pause." + JobReaderTests.Uuid;
+        string suffixed = "405-auto-pause." + JobSamples.Uuid;
         root.AddJob("398-legacy", JobSamples.State("Alpha", "done", 1));
         root.AddJob(suffixed, JobSamples.State("Alpha", "build", 1));
-        root.AddJob("406-upper." + JobReaderTests.Uuid.ToUpperInvariant(), JobSamples.State("Alpha", "build", 1));
-        root.AddJob("407-short." + JobReaderTests.Uuid[..31], JobSamples.State("Alpha", "build", 1));
-        root.AddJob("408-a.b." + JobReaderTests.Uuid, JobSamples.State("Alpha", "build", 1));
+        root.AddJob("406-upper." + JobSamples.Uuid.ToUpperInvariant(), JobSamples.State("Alpha", "build", 1));
+        root.AddJob("407-short." + JobSamples.Uuid[..31], JobSamples.State("Alpha", "build", 1));
+        root.AddJob("408-a.b." + JobSamples.Uuid, JobSamples.State("Alpha", "build", 1));
         using ServerFactory factory = new(root.Path);
         using HttpClient client = factory.CreateTokenClient();
 

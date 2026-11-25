@@ -3,6 +3,9 @@ namespace ControlRoom.Server.Tests;
 /// <summary><c>state.json</c> texts shared by the job tests.</summary>
 internal static class JobSamples
 {
+    /// <summary>The 32 lower-case hex characters of a job id suffix (`job.py` since factory #40).</summary>
+    public const string Uuid = "7d54db7b3cd74ead824d89290641e90c";
+
     /// <summary>A full state in the factory's real shape, with fields the board doesn't know.</summary>
     public const string FullState =
         """

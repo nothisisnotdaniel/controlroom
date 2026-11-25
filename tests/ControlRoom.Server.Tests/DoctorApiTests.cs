@@ -196,8 +196,8 @@ public sealed class DoctorApiTests
     public async Task UuidSuffixedIds_AreListedAsUncommittedAndAsMergedBranchesLikeLegacyOnes()
     {
         using TempFactoryRoot root = new();
-        string suffixed = "405-auto-pause." + JobReaderTests.Uuid;
-        string upper = "406-upper." + JobReaderTests.Uuid.ToUpperInvariant();
+        string suffixed = "405-auto-pause." + JobSamples.Uuid;
+        string upper = "406-upper." + JobSamples.Uuid.ToUpperInvariant();
         string alpha = root.AddProject("Alpha", "");
         TempFactoryRoot.InitGit(alpha, "develop");
         TempFactoryRoot.Git(alpha, "branch", "factory/398-legacy");

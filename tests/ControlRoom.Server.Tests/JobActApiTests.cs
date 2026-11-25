@@ -419,7 +419,7 @@ public sealed class JobActApiTests
     public async Task Approve_UuidSuffixedIdWritesOnlyIntoItsOwnFolder()
     {
         using TempFactoryRoot root = new();
-        string suffixed = "405-auto-pause." + JobReaderTests.Uuid;
+        string suffixed = "405-auto-pause." + JobSamples.Uuid;
         string legacy = root.AddJob("405-auto-pause", State("needs-human", 2));
         string folder = root.AddJob(suffixed, State("needs-human", 2));
         string file = Path.Combine(folder, "human.json");
