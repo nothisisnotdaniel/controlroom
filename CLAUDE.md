@@ -50,7 +50,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `not_develop`; a missing folder is `no_worktree`; nothing is ever created for it). With no factory job in
     `spike|spec|build|review|approve|needs-human`, edits run `status`, `add`, `commit` and `push -q origin develop` (only
     with an `origin`; a failed push only warns) in the develop worktree. While one runs they go to the root repo's
-    local `backlog` branch: a worktree that already has it checked out (checked: real folder, `branch --show-current`,
+    local `backlog` branch: a worktree that already has it checked out (never the root checkout; checked: real folder, `branch --show-current`,
     the `rev-list` and `merge -q --ff-only refs/heads/develop` as above), else `BacklogWorktree.Ensure` with the root as
     repo (`worktrees/factory`); never pushed. Every factory git path is `factory/backlog.md` or `factory/backlog/…`, and
     git runs in the worktree's top folder (`GIT_CEILING_DIRECTORIES`). The root checkout and `main` are never written.

@@ -391,6 +391,23 @@ public sealed class FactoryBacklogApiTests
     }
 
     [Fact]
+    public async Task RootCheckoutOnBacklog_IsNeverWritten()
+    {
+        using Setup setup = Setup.Create();
+        TempFactoryRoot.Git(setup.Root.Path, "checkout", "-q", "-b", "backlog", "develop");
+        setup.Root.AddJob("1-running", JobSamples.State("factory", "build", 1));
+        string backlog = TempFactoryRoot.Git(setup.Root.Path, "rev-parse", "refs/heads/backlog");
+        byte[] root = File.ReadAllBytes(setup.RootBacklogPath);
+
+        await setup.AssertRefused(
+            new { action = "approve", line = 3 }, HttpStatusCode.InternalServerError, "worktree_failed",
+            rootBacklog: root);
+
+        Assert.Equal(backlog, TempFactoryRoot.Git(setup.Root.Path, "rev-parse", "refs/heads/backlog"));
+        Assert.Equal("", TempFactoryRoot.Git(setup.Root.Path, "status", "--porcelain", "--", "factory/backlog.md", "factory/backlog"));
+    }
+
+    [Fact]
     public async Task ProjectDependency_OnFactory_IsMetOnceDoneInDevelop()
     {
         using Setup setup = Setup.Create(withAlpha: true);
@@ -640,7 +657,8 @@ public sealed class FactoryBacklogApiTests
         }
 
         /// <summary>The change is refused with the status and code, and nothing is committed or written.</summary>
-        public async Task AssertRefused(object fields, HttpStatusCode status, string error, string? version = null)
+        public async Task AssertRefused(
+            object fields, HttpStatusCode status, string error, string? version = null, byte[]? rootBacklog = null)
         {
             string head = TempFactoryRoot.Git(Root.Path, "rev-parse", "refs/heads/develop");
             byte[] before = File.ReadAllBytes(DevelopBacklogPath);
@@ -650,7 +668,7 @@ public sealed class FactoryBacklogApiTests
             await AssertError(response, status, error);
             Assert.Equal(head, TempFactoryRoot.Git(Root.Path, "rev-parse", "refs/heads/develop"));
             Assert.Equal(before, File.ReadAllBytes(DevelopBacklogPath));
-            Assert.Equal(RootBacklog, File.ReadAllText(RootBacklogPath));
+            Assert.Equal(rootBacklog ?? Encoding.UTF8.GetBytes(RootBacklog), File.ReadAllBytes(RootBacklogPath));
         }
 
         public void Dispose()
