@@ -31,6 +31,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#142](backlog/142-update-interval-setting-30-minutes-by.md) Update interval setting, 30 minutes by default → 376-update-interval
 - [x] [#147](backlog/147-show-and-edit-the-factory-backlog.md) Show and edit the factory backlog (after: factory#30) → 402-factory-backlog-section.29a7794e83c64b5d9aa705e1f7718d5a
 - [ ] [#153](backlog/153-modular-roomkit-core-with-an-opt.md) Modular RoomKit core with an opt-in factory module (after: #147)
+- [ ] [#159](backlog/159-show-which-work-items-a-collaborator.md) Show which work items a collaborator is working on (after: factory#54)
 - [x] [#152](backlog/152-windows-executables-for-controlroom.md) Windows executables for ControlRoom → 400-windows-executables-for-controlroom.866b39353c1e4a4a8ef568accfd791ec
 - [stop] Auto stops here
 - [ ] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone (after: #139)
@@ -165,6 +166,5 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#156](backlog/156-drop-the-one-off-controlroom-400.md) Drop the one-off ControlRoom 400 test workflow
 - [ ] [#157](backlog/157-windows-updater-errors-say-what-to.md) Windows updater errors say what to do next
 - [ ] [#158](backlog/158-readable-status-output-from-launch-agent.md) Readable status output from launch-agent.ps1
-- [ ] [#159](backlog/159-show-which-work-items-a-collaborator.md) Show which work items a collaborator is working on (after: factory#54)
 - [?] [#160](backlog/160-refuse-a-symlinked-factory-folder-in.md) Refuse a symlinked factory folder in the develop worktree
 - [?] [#161](backlog/161-clear-not-develop-error-text-for.md) Clear not_develop error text for factory backlog edits
