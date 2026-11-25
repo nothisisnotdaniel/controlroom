@@ -136,6 +136,9 @@ async function loadJobCounts() {
     if (counts === null) {
       throw new Error("data");
     }
+    if (typeof refreshOpenJob === "function") {
+      refreshOpenJob(data.jobs);
+    }
   } catch {
     if (request === jobCountsRequest) {
       jobCounts = null;

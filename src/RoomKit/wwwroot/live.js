@@ -358,9 +358,13 @@ async function checkChanges() {
       }
       return;
     }
+    const previousJobs = liveLast?.jobs;
     const recovered = liveLost;
     setConnectionLost(false);
     noteChanges(next, recovered);
+    if (boardViewsVisible() && typeof recheckPendingCancel === "function") {
+      await recheckPendingCancel(previousJobs !== next.jobs || recovered, { includeForm: previousJobs === undefined });
+    }
     await refreshShownViews();
   } finally {
     livePending = false;

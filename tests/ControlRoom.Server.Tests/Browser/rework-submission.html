@@ -1,0 +1,1136 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Rework submission regression test</title>
+<output id="result">Running</output>
+<output id="board-status"></output>
+<main id="job"></main>
+<main id="board" hidden></main>
+<script src="../../../src/ControlRoom.Server/wwwroot/board.js"></script>
+<script src="../../../src/ControlRoom.Server/wwwroot/act.js"></script>
+<script src="../../../src/RoomKit/wwwroot/counts.js"></script>
+<script src="../../../src/RoomKit/wwwroot/live.js"></script>
+<script>
+"use strict";
+
+const job = { id: "83-test", stage: "needs-human", round: 2, project: "Test" };
+openJobId = job.id;
+const asText = value => typeof value === "string" ? value : "";
+const asList = value => Array.isArray(value) ? value : [];
+const asNumber = Number;
+function element(tag, className, text = "") {
+  const node = document.createElement(tag);
+  node.className = className;
+  node.textContent = text;
+  return node;
+}
+function tokenViewShown() { return false; }
+// Keep the real board cache and refresh logic. The other board widgets are outside this fixture.
+function showJobCounts() {}
+function setBoardStatus() {}
+function loadVersion() {}
+function loadUpdate() {}
+function renderBoard() {}
+function setConnectionLost(lost) { liveLost = lost; }
+function updateRunningTimes() {}
+function refreshStaleBacklogs() {}
+function refreshStaleStory() {}
+function refreshStaleSearch() {}
+function refreshStaleHistory() {}
+function refreshStaleDoctor() {}
+function refreshStaleStatus() {}
+function refreshStaleReleases() {}
+function loadBacklogCounts() { return true; }
+
+let finishPost;
+let postBody;
+let finishRefresh;
+let detailStarted;
+let detailSignal;
+let boardAnswer;
+let nextBoardRead;
+let fingerprint;
+let actionPosts = 0;
+const pollJobs = pollBoard;
+let lastBoard;
+pollBoard = () => (lastBoard = boardAnswer ? pollJobs() : Promise.resolve(false));
+function authFetch(path, options) {
+  if (path === ActRoute) {
+    actionPosts += 1;
+    postBody = JSON.parse(options.body);
+    return new Promise(resolve => { finishPost = resolve; });
+  }
+  if (path === "/api/board") {
+    if (nextBoardRead) {
+      const read = nextBoardRead;
+      nextBoardRead = null;
+      return read();
+    }
+    return Promise.resolve(Response.json(boardAnswer));
+  }
+  if (path === ChangesRoute) {
+    return Promise.resolve(Response.json({ jobs: fingerprint, projects: {} }));
+  }
+  check(path === "/api/job?id=" + job.id, "Unexpected detail fetch");
+  detailSignal = options.signal;
+  return new Promise((resolve, reject) => {
+    finishRefresh = resolve;
+    detailSignal?.addEventListener("abort", () => reject(new Error("Detail timed out")), { once: true });
+    if (detailStarted) {
+      detailStarted();
+      detailStarted = null;
+    }
+  });
+}
+// Observe the completion of the actual board refresh that sendJobAction starts in the background.
+const loadDetail = loadJob;
+let lastRefresh;
+loadJob = (...args) => {
+  lastRefresh = loadDetail(...args);
+  return lastRefresh;
+};
+const postAction = sendJobAction;
+let lastAction;
+sendJobAction = (...args) => (lastAction = postAction(...args));
+function check(condition, message) {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
+
+async function submissionAndCancel() {
+  renderJobPage({ job });
+  const note = document.getElementById("act-note");
+  const send = document.getElementById("act-send");
+  note.value = "  Keep this draft  ";
+  note.dispatchEvent(new Event("input"));
+  const body = { action: "rework", note: "Keep this draft" };
+
+  const refused = sendJobAction(job, body);
+  check(note.readOnly && send.disabled, "The draft was editable during the POST");
+  finishPost(Response.json({ error: "pending" }, { status: 409 }));
+  await refused;
+  check(!note.readOnly && !send.disabled && note.value === "  Keep this draft  ", "The failed POST lost the draft");
+  check(document.getElementById("act-status").textContent === ActErrors.pending, "Missing duplicate message");
+
+  const accepted = sendJobAction(job, body);
+  check(note.readOnly && send.disabled, "The retry left the draft editable");
+  const request = { ...body, round: 2, requested: "2026-01-01T00:00:00Z" };
+  finishPost(Response.json({ request }));
+  await accepted;
+  check(!note.isConnected, "The old form still accepts focus during the follow-up GET");
+  check(document.querySelector(".act-note-text")?.textContent === body.note, "Missing confirmed note during GET");
+  const cancel = document.querySelector(".act-cancel");
+  check(cancel && !cancel.disabled, "Missing Cancel during GET");
+  cancel.focus();
+  finishRefresh(Response.json({ job, request }));
+  await lastRefresh;
+  check(cancel.isConnected && document.activeElement === cancel, "The refresh removed focus from Cancel");
+
+  const heldRefresh = lastRefresh;
+  document.querySelector("#job .back").focus();
+  check(lastRefresh !== heldRefresh, "Leaving Cancel did not release the held refresh");
+  const beforeCancel = lastRefresh;
+  const finishBeforeCancel = finishRefresh;
+  const cancelling = sendJobAction(job, { action: "cancel" });
+  check(cancel.disabled, "A second Cancel was possible during the POST");
+  finishPost(Response.json({ request: null }));
+  await cancelling;
+  const restored = document.getElementById("act-note");
+  check(restored && !restored.readOnly && restored.value === "", "Cancel did not restore the editable form");
+  check(!cancel.isConnected && document.getElementById("act-send").disabled, "Wrong controls after Cancel");
+  check(!document.querySelector(".act-approve").disabled, "Approve stayed disabled after Cancel");
+  check(document.getElementById("act-status").textContent === ActTexts.cancelled, "Missing cancellation notice");
+
+  finishRefresh(Response.error());
+  await lastRefresh;
+  finishBeforeCancel(Response.json({ job, request }));
+  await beforeCancel;
+  check(restored.isConnected && !document.querySelector(".act-cancel"), "A failed or stale GET undid Cancel");
+  const recovered = loadJob(job.id, true);
+  finishRefresh(Response.json({ job, request: null }));
+  await recovered;
+  check(!restored.isConnected && document.getElementById("act-note"), "The recovered GET did not render the form");
+  check(document.getElementById("act-status").textContent === ActTexts.cancelled, "Refresh lost the cancellation notice");
+}
+
+const approve = { action: "approve", round: job.round, requested: "2026-01-02T00:00:00Z" };
+const rework = { ...approve, action: "rework", note: "Keep this replacement note." };
+
+function detail(request) {
+  return { job: { ...job, request: request?.action ?? null }, request };
+}
+
+async function openPending(request = approve) {
+  await lastBoard;
+  leaveJob();
+  boardAnswer = { jobs: [detail(request).job] };
+  showJob(job.id);
+  finishRefresh(Response.json(detail(request)));
+  await lastRefresh;
+  await lastBoard;
+  return document.querySelector(".act-cancel");
+}
+
+async function establishBaseline(value) {
+  await lastBoard;
+  leaveJob();
+  liveLast = null;
+  fingerprint = value;
+  await checkChanges();
+}
+
+async function changedPendingRequest() {
+  const cancel = await openPending();
+  cancel.focus();
+  const unchanged = loadJob(job.id, true);
+  finishRefresh(Response.json(detail({ ...approve })));
+  await unchanged;
+  check(cancel.isConnected && document.activeElement === cancel, "An unchanged Approve lost its focused Cancel");
+
+  const posts = actionPosts;
+  boardAnswer = { jobs: [detail(rework).job] };
+  await pollBoard();
+  cancel.dispatchEvent(new Event("click"));
+  check(actionPosts === posts, "The old Cancel posted for a replacement already seen on the board");
+  check(lastRefresh !== unchanged, "The board replacement did not start a detail refresh");
+  finishRefresh(Response.json(detail(rework)));
+  await lastRefresh;
+  check(document.querySelector(".act-note-text")?.textContent === rework.note, "The replacement Rework was not shown");
+  const next = document.querySelector(".act-cancel");
+  check(next && next !== cancel && !next.disabled, "The replacement did not get its own Cancel");
+}
+
+async function sameActionBetweenPolls() {
+  await establishBaseline("baseline");
+  const cancel = await openPending(rework);
+  const summary = boardText;
+  const posts = actionPosts;
+  cancel.focus();
+
+  async function pollDecision(next, response) {
+    fingerprint = next;
+    const before = lastRefresh;
+    const started = new Promise(resolve => { detailStarted = resolve; });
+    const poll = checkChanges();
+    await Promise.race([started, poll]);
+    check(lastRefresh !== before, "The jobs poll skipped the pending detail with an identical board");
+    cancel.dispatchEvent(new Event("click"));
+    check(actionPosts === posts, "The unverified Cancel posted before the detail returned");
+    finishRefresh(response);
+    await lastRefresh;
+    await poll;
+    check(summary === boardText, "The same-action fixture changed the board summary");
+  }
+
+  await pollDecision("changed-once", Response.json(detail({ ...rework })));
+  check(cancel.isConnected && document.activeElement === cancel && cancel.getAttribute("aria-disabled") !== "true",
+    "Confirming the full request did not preserve the focused, available Cancel");
+  await pollDecision("changed-again", Response.error());
+  cancel.dispatchEvent(new Event("click"));
+  check(actionPosts === posts, "A failed detail check re-enabled the unverified Cancel");
+  const edited = { ...rework, note: "Another note in the same round and second." };
+  await pollDecision("changed-again", Response.json(detail(edited)));
+  cancel.dispatchEvent(new Event("click"));
+  const replacement = document.querySelector(".act-cancel");
+  check(actionPosts === posts && !cancel.isConnected && replacement && !replacement.disabled &&
+    document.querySelector(".act-note-text")?.textContent === edited.note,
+    "The jobs poll kept the obsolete Cancel or failed to show the replacement note");
+}
+
+async function refusedCancelAfterFocusLeaves() {
+  const cancel = await openPending();
+  cancel.focus();
+  const held = loadJob(job.id, true);
+  finishRefresh(Response.json(detail(approve)));
+  await held;
+  const posts = actionPosts;
+  const cancelling = sendJobAction(job, { action: "cancel" });
+  document.querySelector("#job .back").focus();
+  check(lastRefresh === held, "Focus leaving during Cancel released the refresh too early");
+  finishPost(Response.json({ error: "not_pending" }, { status: 409 }));
+  await cancelling;
+  check(lastRefresh !== held, "The refused Cancel left the refresh queued after focus moved");
+  cancel.dispatchEvent(new Event("click"));
+  check(actionPosts === posts + 1 && document.getElementById("act-status").textContent === ActErrors.not_pending,
+    "The refused Cancel stayed actionable or lost the server's refusal");
+  finishRefresh(Response.json(detail(null)));
+  await lastRefresh;
+  check(actionPosts === posts + 1 && document.getElementById("act-note") && !document.querySelector(".act-cancel"),
+    "The refused Cancel did not restore the current form");
+}
+
+async function reopenedJobAfterCancel() {
+  const cancel = await openPending();
+  const posts = actionPosts;
+  const cancelling = sendJobAction(job, { action: "cancel" });
+  const reopened = await openPending();
+  check(reopened && reopened !== cancel && !cancel.isConnected, "The job did not reopen during Cancel");
+  boardAnswer = { jobs: [detail(null).job] };
+  await pollBoard();
+  check(boardText === JSON.stringify(boardAnswer), "The board did not cache the deletion during Cancel");
+  const before = lastRefresh;
+  finishPost(Response.json({ request: null }));
+  await cancelling;
+  check(lastRefresh !== before, "The successful Cancel did not refresh the reopened job");
+  check(document.getElementById("act-note"), "The reopened form depended on the follow-up GET");
+  finishRefresh(Response.error());
+  await lastRefresh;
+  await pollBoard();
+  const note = document.getElementById("act-note");
+  check(actionPosts === posts + 1 && note && !note.readOnly && !document.querySelector(".act-cancel"),
+    "The reopened job still showed the deleted request");
+  check(document.getElementById("act-status").textContent === ActTexts.cancelled,
+    "The reopened job lost the cancellation notice");
+}
+
+async function cancelWhileOpening(request = approve, original = approve, notPending = false) {
+  const old = await openPending(original);
+  const posts = actionPosts;
+  const cancelling = sendJobAction(job, { action: "cancel" });
+  leaveJob();
+  showJob(job.id);
+  const opening = lastRefresh;
+  const finishOpening = finishRefresh;
+  await lastBoard;
+  boardAnswer = { jobs: [detail(null).job] };
+  await pollBoard();
+  check(boardText === JSON.stringify(boardAnswer), "The deletion was not cached during the opening GET");
+
+  // Let the POST consume its JSON before releasing the older, still outstanding opening GET.
+  let readBody;
+  const reading = new Promise(resolve => { readBody = resolve; });
+  const decoded = Promise.resolve(notPending ? { error: "not_pending" } : { request: null });
+  finishPost({ ok: !notPending, status: notPending ? 409 : 200, json() { readBody(); return decoded; } });
+  await reading;
+  await decoded;
+  old.dispatchEvent(new Event("click"));
+  check(actionPosts === posts + 1, "The detached Cancel posted during the opening GET");
+  finishOpening(Response.json(detail(request)));
+  await opening;
+  await cancelling;
+  check(lastRefresh !== opening, "The reopened view did not recheck the confirmed Cancel");
+  finishRefresh(Response.error());
+  await lastRefresh;
+  check(!old.isConnected && actionPosts === posts + 1 && document.querySelector("#job .story-title"),
+    "A failed follow-up GET stranded the initial job load");
+  if (request === original) {
+    const notice = notPending ? ActErrors.not_pending : ActTexts.cancelled;
+    check(document.getElementById("act-note") && document.getElementById("act-status").textContent === notice,
+      "The older opening GET brought back the cancelled decision");
+  } else {
+    check(document.querySelector(".act-note-text")?.textContent === request.note &&
+      !document.querySelector(".act-cancel").disabled && !document.getElementById("act-note"),
+      "Cancel overwrote a newer confirmed decision on the reopened job");
+  }
+}
+
+async function newerDecisionWhileOpening() {
+  await cancelWhileOpening({ ...rework, note: "A new Rework in the same round and second." }, rework);
+}
+
+async function replacementAfterBoardDeletion() {
+  await openPending(rework);
+  const cancelling = sendJobAction(job, { action: "cancel" });
+  const reopened = await openPending(rework);
+  boardAnswer = { jobs: [detail(null).job] };
+  await pollBoard();
+  const posts = actionPosts;
+  reopened.dispatchEvent(new Event("click"));
+  check(actionPosts === posts, "The cached deletion left its old Cancel actionable");
+
+  const newer = { ...rework, note: "Submitted after the deletion." };
+  boardAnswer = { jobs: [detail(newer).job] };
+  fingerprint = "replacement-after-deletion";
+  const before = lastRefresh;
+  const started = new Promise(resolve => { detailStarted = resolve; });
+  const poll = checkChanges();
+  await Promise.race([started, poll]);
+  check(lastRefresh !== before, "The live poll lost the retired decision while Cancel was in flight");
+  finishRefresh(Response.json(detail(newer)));
+  await lastRefresh;
+  await poll;
+  const replacement = document.querySelector(".act-cancel");
+  check(replacement?.disabled && document.querySelector(".act-note-text")?.textContent === newer.note,
+    "The detail did not show the newer decision while Cancel was in flight");
+  finishPost(Response.json({ request: null }));
+  await cancelling;
+  finishRefresh(Response.error());
+  await lastRefresh;
+  check(replacement.isConnected && !replacement.disabled && !document.getElementById("act-note"),
+    "Confirmation removed the replacement decision after a cached deletion");
+}
+
+async function replacementWhileOpening(original = approve, poll = "live") {
+  await establishBaseline("before-opening");
+  await openPending(original);
+  leaveJob();
+  showJob(job.id);
+  const opening = lastRefresh;
+  const finishOpening = finishRefresh;
+  await lastBoard;
+
+  const replacement = { ...rework, note: "Written while this job was opening." };
+  boardAnswer = { jobs: [detail(replacement).job] };
+  const posts = actionPosts;
+  if (poll !== "board") {
+    fingerprint = "changed-while-opening";
+    liveLost = poll === "recovered";
+    await checkChanges();
+  } else {
+    await pollBoard();
+  }
+  check(boardText === JSON.stringify(boardAnswer), "The board did not cache the replacement during opening");
+  finishOpening(Response.json(detail(original)));
+  await opening;
+  const obsolete = document.querySelector(".act-cancel");
+  obsolete?.dispatchEvent(new Event("click"));
+  check(actionPosts === posts, "The old opening detail enabled Cancel after the replacement was observed");
+  check(lastRefresh !== opening, "The opening detail did not recheck the observed change");
+  finishRefresh(Response.json(detail(replacement)));
+  await lastRefresh;
+  await checkChanges();
+  obsolete?.dispatchEvent(new Event("click"));
+  const cancel = document.querySelector(".act-cancel");
+  check(actionPosts === posts && cancel && !cancel.disabled && cancel.getAttribute("aria-disabled") !== "true" &&
+    document.querySelector(".act-note-text")?.textContent === replacement.note,
+    "The replacement was not confirmed after the older opening response");
+}
+
+async function stalledPendingDetail() {
+  await establishBaseline("before-stall");
+  const cancel = await openPending(rework);
+  cancel.focus();
+  const posts = actionPosts;
+  const timeout = AbortSignal.timeout;
+  const deadlines = new Map();
+  AbortSignal.timeout = ms => {
+    const controller = new AbortController();
+    deadlines.set(controller.signal, { ms, controller });
+    return controller.signal;
+  };
+  try {
+    fingerprint = "stalled-detail";
+    const started = new Promise(resolve => { detailStarted = resolve; });
+    const poll = checkChanges();
+    await Promise.race([started, poll]);
+    cancel.dispatchEvent(new Event("click"));
+    check(actionPosts === posts, "Cancel posted while the detail was stalled");
+    const deadline = deadlines.get(detailSignal);
+    check(deadline && deadline.ms > 0 && deadline.ms <= CheckTimeout, "The stalled detail had no bounded deadline");
+    deadline.controller.abort();
+    await poll;
+    cancel.dispatchEvent(new Event("click"));
+    check(!livePending && actionPosts === posts, "Timing out did not release the poll with Cancel still inert");
+  } finally {
+    AbortSignal.timeout = timeout;
+  }
+  const retryStarted = new Promise(resolve => { detailStarted = resolve; });
+  const retry = checkChanges();
+  await Promise.race([retryStarted, retry]);
+  const replacement = { ...rework, note: "Confirmed on the next poll." };
+  finishRefresh(Response.json(detail(replacement)));
+  await retry;
+  cancel.dispatchEvent(new Event("click"));
+  const next = document.querySelector(".act-cancel");
+  check(actionPosts === posts && next && !next.disabled && next.getAttribute("aria-disabled") !== "true" &&
+    document.querySelector(".act-note-text")?.textContent === replacement.note, "The live poll did not recover");
+}
+
+async function reopenedAfterSend(request = approve, observed = request) {
+  await openPending(null);
+  const posts = actionPosts;
+  const body = request.action === "approve" ? { action: "approve" } : { action: "rework", note: request.note };
+  const posting = sendJobAction(job, body);
+  await openPending(null);
+  boardAnswer = { jobs: [detail(observed).job] };
+  await pollBoard();
+  check(boardText === JSON.stringify(boardAnswer) && jobRefreshHeld, "The pending action was not cached while busy");
+  const before = lastRefresh;
+  finishPost(Response.json({ request }));
+  await posting;
+  check(!document.getElementById("act-note") && document.querySelector(".act-cancel"),
+    "The reopened job still offered a decision after the successful " + request.action);
+  check(lastRefresh !== before, "The successful submission did not refresh the reopened job");
+  await lastBoard;
+  finishRefresh(Response.error());
+  await lastRefresh;
+  check(actionPosts === posts + 1 && document.querySelector(".act-waiting")?.textContent.includes(
+    request.action === "approve" ? ActTexts.approveSent : ActTexts.reworkSent), "Lost the confirmed pending action");
+  if (request.note) {
+    check(document.querySelector(".act-note-text")?.textContent === request.note, "Lost the confirmed Rework note");
+  }
+  if (observed !== request) {
+    const stale = document.querySelector(".act-cancel");
+    stale.dispatchEvent(new Event("click"));
+    check(actionPosts === posts + 1, "The successful POST enabled Cancel for a decision the board had replaced");
+    fingerprint = "observed-during-submission";
+    const started = new Promise(resolve => { detailStarted = resolve; });
+    const retry = checkChanges();
+    await Promise.race([started, retry]);
+    finishRefresh(Response.json(detail(observed)));
+    await retry;
+    check(!stale.isConnected && document.querySelector(".act-note-text")?.textContent === observed.note,
+      "The next poll did not confirm the replacement after reopening");
+  }
+}
+
+async function reopenedAfterRefusal(current = approve) {
+  await openPending();
+  const posts = actionPosts;
+  const cancelling = sendJobAction(job, { action: "cancel" });
+  const reopened = await openPending(current);
+  const before = lastRefresh;
+  finishPost(Response.json({ error: "not_pending" }, { status: 409 }));
+  await cancelling;
+  check(lastRefresh !== before, "The reopened Cancel refusal did not recheck the job");
+  finishRefresh(Response.error());
+  await lastRefresh;
+  check(document.getElementById("act-status").textContent === ActErrors.not_pending,
+    "The reopened job discarded the Cancel refusal");
+  if (current === approve) {
+    reopened.dispatchEvent(new Event("click"));
+    check(actionPosts === posts + 1 && document.getElementById("act-note") && !document.querySelector(".act-cancel"),
+      "The refused Cancel could still act after reopening");
+  } else {
+    const next = document.querySelector(".act-cancel");
+    next?.dispatchEvent(new Event("click"));
+    check(actionPosts === posts + 1 && next &&
+      document.querySelector(".act-note-text")?.textContent === current.note, "The refusal removed a newer decision");
+  }
+}
+
+function capturedResponse(finish, response, completed) {
+  return { deliver(value = response) { finish(value); return completed; } };
+}
+
+// A private job for each ordering. The other tab can change the file between a server read/write
+// and delivery of its immutable HTTP response. The page uses its normal showJob, poll and click handlers.
+function decisionFile(initial) {
+  let file = initial;
+  function store(request) {
+    file = request;
+    boardAnswer = { jobs: [detail(request).job] };
+  }
+  store(initial);
+  return {
+    get request() { return file; },
+    cancel() {
+      check(file, "The other tab expected a pending file to cancel");
+      store(null);
+    },
+    write(request) {
+      check(!file, "The other tab tried to replace a file without cancelling it");
+      store(request);
+    },
+    readDetail() {
+      return capturedResponse(finishRefresh, Response.json(detail(file)), lastRefresh);
+    },
+    processPost() {
+      check(postBody.id === job.id && postBody.round === job.round, "Unexpected job or round");
+      let response;
+      if (postBody.action === "cancel" && !file) {
+        response = Response.json({ error: "not_pending" }, { status: 409 });
+      } else if (postBody.action !== "cancel" && file) {
+        response = Response.json({ error: "pending" }, { status: 409 });
+      } else {
+        if (postBody.action === "cancel") {
+          store(null);
+        } else {
+          store({ ...approve, action: postBody.action, ...(postBody.note ? { note: postBody.note } : {}) });
+        }
+        response = Response.json({ request: file });
+      }
+      return capturedResponse(finishPost, response, lastAction);
+    },
+  };
+}
+
+// showJob starts the detail and board GETs together. Capture the board only when the test lets
+// the server read the file, then deliver those bytes independently of later writes.
+function deferBoardRead(onStart) {
+  let finish;
+  nextBoardRead = () => new Promise(resolve => {
+    finish = resolve;
+    onStart?.();
+  });
+  return () => {
+    check(finish, "Expected an outstanding board GET");
+    return capturedResponse(finish, Response.json(boardAnswer), lastBoard);
+  };
+}
+
+function checkInert(button, posts, message) {
+  button.dispatchEvent(new Event("click"));
+  check(actionPosts === posts, message);
+}
+
+const replacementNote = { ...rework, note: "r".repeat(998) + " 🚀" };
+
+async function cachedBoardAfterOpeningDetail() {
+  await openPending(replacementNote);
+  const cached = boardText;
+  const file = decisionFile(replacementNote);
+  file.cancel();
+  file.write(approve);
+  leaveJob();
+  const readBoard = deferBoardRead();
+  const opening = showJob(job.id);
+  await file.readDetail().deliver();
+  await opening;
+  const old = document.querySelector(".act-cancel");
+  old.focus();
+  const posts = actionPosts;
+  file.cancel();
+  file.write(replacementNote);
+  check(JSON.stringify(boardAnswer) === cached, "The replacement must match the cached board bytes");
+  await readBoard().deliver();
+  checkInert(old, posts, "The cache-identical board left Approve's Cancel active");
+  await file.readDetail().deliver();
+  checkInert(old, posts, "The retired opening control sent a Cancel");
+  check(document.querySelector(".act-note-text")?.textContent === file.request.note, "Missing full replacement note");
+}
+
+async function reworkAfterReopeningOnApprove() {
+  await openPending(null);
+  const file = decisionFile(null);
+  const note = document.getElementById("act-note");
+  note.value = replacementNote.note;
+  note.dispatchEvent(new Event("input"));
+  file.write(approve);
+  const send = document.getElementById("act-send");
+  send.dispatchEvent(new Event("click"));
+  const posts = actionPosts;
+  const old = await openPending(file.request);
+  check(document.querySelector(".act-waiting").textContent.includes("Approve"), "The job did not reopen on Approve");
+  file.cancel();
+  await file.processPost().deliver();
+  checkInert(old, posts, "The completed Rework enabled Cancel on the reopened Approve");
+  checkInert(send, posts, "The detached Send submitted the old draft");
+  await lastBoard;
+  await file.readDetail().deliver();
+  checkInert(old, posts, "The retired Approve could cancel the verified Rework");
+  check(document.querySelector(".act-note-text")?.textContent === file.request.note, "Rework lost its submitted note");
+}
+
+async function oldDetailAfterBoardInvalidation() {
+  await establishBaseline("before-approve");
+  await openPending(null);
+  const file = decisionFile(null);
+  const confirm = window.confirm;
+  window.confirm = () => true;
+  try {
+    document.querySelector(".act-approve").dispatchEvent(new Event("click"));
+  } finally {
+    window.confirm = confirm;
+  }
+  const approved = file.processPost();
+  const posts = actionPosts;
+  leaveJob();
+  const readBoard = deferBoardRead();
+  const opening = showJob(job.id);
+  await file.readDetail().deliver();
+  await opening;
+  const original = document.querySelector(".act-cancel");
+
+  fingerprint = "approve-written";
+  const started = new Promise(resolve => { detailStarted = resolve; });
+  const poll = checkChanges();
+  await started;
+  const oldDetail = file.readDetail();
+  file.cancel();
+  file.write(replacementNote);
+  await readBoard().deliver();
+  await oldDetail.deliver();
+  await poll;
+  const afterDetail = document.querySelector(".act-cancel");
+  await approved.deliver();
+  checkInert(original, posts, "The old Approve could cancel the board replacement");
+  if (afterDetail) {
+    checkInert(afterDetail, posts, "An older detail revived Cancel after the board invalidation");
+  }
+  const afterPost = document.querySelector(".act-cancel");
+  if (afterPost) {
+    checkInert(afterPost, posts, "The delayed Approve made the unverified Cancel actionable");
+  }
+  await lastBoard;
+  await file.readDetail().deliver();
+  check(document.querySelector(".act-note-text")?.textContent === file.request.note, "The old detail lost the new note");
+}
+
+async function oldBoardDeletionAfterReplacement(refused = false) {
+  await establishBaseline("cancel-baseline");
+  const original = await openPending(approve);
+  const file = decisionFile(approve);
+  original.dispatchEvent(new Event("click"));
+  const posts = actionPosts;
+  if (refused) {
+    file.cancel();
+  }
+  const cancelled = file.processPost();
+  leaveJob();
+  const readBoard = deferBoardRead();
+  const opening = showJob(job.id);
+  const deletion = readBoard();
+  file.write(replacementNote);
+  await file.readDetail().deliver();
+  await opening;
+  const shownNote = () => document.querySelector(".act-note-text")?.textContent;
+  check(shownNote() === file.request.note, "The reopened detail did not show the replacement");
+  await deletion.deliver();
+  await cancelled.deliver();
+  await lastBoard;
+  finishRefresh(Response.error());
+  await lastRefresh;
+  check(shownNote() === file.request.note && !document.getElementById("act-note"),
+    "An older deletion or Cancel result hid the verified Rework when the detail failed");
+  checkInert(original, posts, "The original Cancel posted after reopening");
+  const replacement = document.querySelector(".act-cancel");
+  replacement.focus();
+  checkInert(replacement, posts, "Cancel became actionable before the failed check was retried");
+  const before = lastRefresh;
+  const started = new Promise(resolve => { detailStarted = resolve; });
+  const poll = checkChanges();
+  await Promise.race([started, poll]);
+  check(before !== lastRefresh, "An unchanged poll did not retry the failed detail");
+  await file.readDetail().deliver();
+  await poll;
+  check(replacement.isConnected && document.activeElement === replacement && !replacement.disabled &&
+    replacement.getAttribute("aria-disabled") !== "true" && shownNote() === file.request.note,
+    "Confirming the replacement lost its note, focus or Cancel");
+  checkInert(original, posts, "The retired Cancel posted after verification");
+}
+
+async function detailCrossingMatchingCountsRead() {
+  const cancel = await openPending(replacementNote);
+  const file = decisionFile(replacementNote);
+  cancel.focus();
+  const posts = actionPosts;
+  file.cancel();
+  file.write(approve);
+  loadJob(job.id, true);
+  const oldDetail = file.readDetail();
+  file.cancel();
+  file.write(replacementNote);
+  await loadJobCounts();
+  await oldDetail.deliver();
+  check(document.querySelector(".act-note-text")?.textContent === file.request.note,
+    "The overlapping detail contradicted the counts GET and hid the confirmed note");
+  checkInert(cancel, posts, "The conflicting full detail left Cancel available");
+  await file.readDetail().deliver();
+  check(cancel.isConnected && document.activeElement === cancel && cancel.getAttribute("aria-disabled") !== "true",
+    "The confirming detail lost the unchanged focused control");
+}
+
+async function duplicateAfterReopeningOnRework() {
+  await openPending(null);
+  const file = decisionFile(null);
+  const note = document.getElementById("act-note");
+  note.value = "Second tab's draft";
+  note.dispatchEvent(new Event("input"));
+  file.write(replacementNote);
+  document.getElementById("act-send").dispatchEvent(new Event("click"));
+  const duplicate = file.processPost();
+  const posts = actionPosts;
+  const cancel = await openPending(file.request);
+  await duplicate.deliver();
+  await lastBoard;
+  finishRefresh(Response.error());
+  await lastRefresh;
+  check(document.getElementById("act-status").textContent === ActErrors.pending &&
+    document.querySelector(".act-note-text")?.textContent === file.request.note,
+    "The delayed duplicate lost its refusal or the pending note");
+  checkInert(cancel, posts, "The duplicate unlocked a pending request during a failed check");
+}
+
+async function retryOpeningOnUnchangedPoll() {
+  await establishBaseline("unchanged-opening");
+  await openPending(replacementNote);
+  const file = decisionFile(replacementNote);
+  leaveJob();
+  const opening = showJob(job.id);
+  await lastBoard;
+  finishRefresh(Response.error());
+  await opening;
+  const before = lastRefresh;
+  const started = new Promise(resolve => { detailStarted = resolve; });
+  const poll = checkChanges();
+  await Promise.race([started, poll]);
+  check(lastRefresh !== before, "An unchanged poll did not retry the failed opening detail");
+  await file.readDetail().deliver();
+  await poll;
+  check(document.querySelector(".act-note-text")?.textContent === file.request.note, "The opening retry lost the note");
+}
+
+async function confirmOnPoll(file, duringCheck = () => {}) {
+  const before = lastRefresh;
+  const started = new Promise(resolve => { detailStarted = resolve; });
+  const poll = checkChanges();
+  await Promise.race([started, poll]);
+  detailStarted = null;
+  check(lastRefresh !== before, "The live poll did not start the required detail GET");
+  duringCheck();
+  await file.readDetail().deliver();
+  await poll;
+}
+
+async function draftDuringDetail() {
+  await openPending(null);
+  const file = decisionFile(null);
+  file.write(approve);
+  await pollBoard();
+  const pending = file.readDetail();
+  const note = document.getElementById("act-note");
+  const hint = document.getElementById(note.getAttribute("aria-describedby"));
+  const send = document.getElementById("act-send");
+  const posts = actionPosts;
+  note.focus();
+  note.value = replacementNote.note + "!";
+  note.dispatchEvent(new Event("input"));
+  await pending.deliver();
+  check(note.isConnected && note === document.activeElement && note.value === replacementNote.note + "!" &&
+    note.getAttribute("aria-invalid") === "true" && hint.isConnected && hint.textContent === ActTexts.noteTooLong,
+    "The pending detail removed the focused overlong draft or its linked error");
+  check(send.disabled, "Send accepted the overlong draft after refresh");
+  checkInert(send, posts, "The overlong draft sent a POST");
+  note.value = replacementNote.note;
+  note.dispatchEvent(new Event("input"));
+  check(!send.disabled && send.getAttribute("aria-disabled") !== "true" && note.getAttribute("aria-invalid") === "false",
+    "The corrected 1,000-scalar draft stayed invalid or locked");
+}
+
+async function uncertainCancel(unreadable = false) {
+  await establishBaseline("before-cancel");
+  const old = await openPending(approve);
+  const file = decisionFile(approve);
+  old.dispatchEvent(new Event("click"));
+  const posts = actionPosts;
+  const deleted = file.processPost();
+  file.write(replacementNote);
+  const before = lastRefresh;
+  await deleted.deliver(unreadable ? new Response("{", { status: 200 }) : Promise.reject(new TypeError("lost")));
+  checkInert(old, posts, "Cancel posted again after its response was lost or unreadable");
+  check(lastRefresh !== before, "The uncertain Cancel did not check detail");
+  finishRefresh(Response.error());
+  await lastRefresh;
+  checkInert(old, posts, "A failed verification unlocked the uncertain Cancel");
+  await confirmOnPoll(file, () => checkInert(old, posts, "The retry enabled Cancel before verification"));
+  checkInert(old, posts, "The retired Cancel sent a POST for the replacement");
+  const cancel = document.querySelector(".act-cancel");
+  check(cancel && cancel !== old && cancel.getAttribute("aria-disabled") !== "true" && !cancel.disabled &&
+    document.querySelector(".act-note-text")?.textContent === file.request.note, "The verified replacement was lost");
+}
+
+async function firstFingerprintDuringOpen(detailFirst = true) {
+  await lastBoard;
+  leaveJob();
+  liveLast = null;
+  fingerprint = "first-live-fingerprint";
+  const file = decisionFile(rework);
+  const opening = showJob(job.id);
+  const older = file.readDetail();
+  await lastBoard;
+  if (detailFirst) {
+    await older.deliver();
+    await opening;
+  }
+  file.cancel();
+  file.write(replacementNote);
+  const posts = actionPosts;
+  let old;
+  if (detailFirst) {
+    old = document.querySelector(".act-cancel");
+    old.focus();
+    await confirmOnPoll(file, () => checkInert(old, posts, "Cancel could act on the first live fingerprint"));
+  } else {
+    await checkChanges();
+    await older.deliver();
+    await opening;
+    old = document.querySelector(".act-cancel");
+    checkInert(old, posts, "The older opening detail enabled Cancel after the first fingerprint");
+    await file.readDetail().deliver();
+  }
+  checkInert(old, posts, "The opening Cancel could delete the same-action replacement");
+  check(document.querySelector(".act-note-text")?.textContent === file.request.note, "The first live check lost the full replacement note");
+}
+
+async function firstFingerprintAfterEmptyDetail() {
+  await openPending(null);
+  liveLast = null;
+  fingerprint = "first-after-empty-detail";
+  const file = decisionFile(null);
+  const form = document.getElementById("act-note");
+  file.write(replacementNote);
+  await confirmOnPoll(file);
+  check(!form.isConnected && document.querySelector(".act-note-text")?.textContent === file.request.note,
+    "The first live check left the new Rework hidden behind an empty form");
+}
+
+async function retryAfterStageChange() {
+  await establishBaseline("review-stage");
+  const review = { ...job, stage: "review", request: null };
+  boardAnswer = { jobs: [review] };
+  const opening = showJob(job.id);
+  finishRefresh(Response.json({ job: review, request: null }));
+  await opening;
+  await lastBoard;
+  check(!document.getElementById("act"), "Expected the open review stage without a decision form");
+  const file = decisionFile(replacementNote);
+  fingerprint = "needs-human-stage";
+  const before = lastRefresh;
+  await checkChanges();
+  check(before !== lastRefresh, "The stage change did not fetch detail");
+  finishRefresh(Response.error());
+  await lastRefresh;
+  await confirmOnPoll(file);
+  const cancel = document.querySelector(".act-cancel");
+  check(cancel && !cancel.disabled && cancel.getAttribute("aria-disabled") !== "true" &&
+    document.querySelector(".act-note-text")?.textContent === file.request.note, "The unchanged poll did not recover the new stage and its full note");
+  const verified = lastRefresh;
+  await checkChanges();
+  check(verified === lastRefresh, "A successful verification kept retrying the stage change");
+}
+
+async function draftWithEarlierDetail(duringSend) {
+  await establishBaseline("before-held-draft");
+  await openPending(null);
+  const file = decisionFile(null);
+  const note = document.getElementById("act-note");
+  note.focus();
+  note.value = replacementNote.note;
+  note.dispatchEvent(new Event("input"));
+  file.write(rework);
+  await pollBoard();
+  await confirmOnPoll(file);
+  check(note.isConnected && note.value === replacementNote.note, "The competing detail erased the draft");
+  let delayedRead;
+  if (duringSend) {
+    const before = lastRefresh;
+    liveLost = true;
+    await checkChanges();
+    check(lastRefresh !== before, "Connection recovery did not start another detail GET");
+    if (duringSend === "repeat") {
+      delayedRead = file.readDetail();
+    }
+  }
+  file.cancel();
+  const posts = actionPosts;
+  document.getElementById("act-send").dispatchEvent(new Event("click"));
+  check(actionPosts === posts + 1, "The held draft did not send");
+  const accepted = file.processPost();
+  check(file.request.note === replacementNote.note, "Send did not save the complete draft");
+  if (duringSend === "replacement") {
+    file.cancel();
+    file.write({ ...rework, note: "b".repeat(999) + "Z" });
+    delayedRead = file.readDetail();
+  }
+  if (delayedRead) {
+    await delayedRead.deliver();
+  }
+  await accepted.deliver();
+  const pendingNote = () => document.querySelector(".act-note-text")?.textContent;
+  check(pendingNote() === file.request.note, "The successful Send showed the wrong pending note");
+  if (delayedRead) {
+    checkInert(document.querySelector(".act-cancel"), posts + 1, "Cancel posted before the overlapping read was verified");
+  }
+  await lastBoard;
+  finishRefresh(Response.error());
+  await lastRefresh;
+  check(pendingNote() === file.request.note, "A failed follow-up GET changed the pending note");
+  await confirmOnPoll(file);
+}
+
+async function fingerprintAfterCancel() {
+  await establishBaseline("before-deletion");
+  const original = await openPending(approve);
+  const file = decisionFile(approve);
+  original.dispatchEvent(new Event("click"));
+  await file.processPost().deliver();
+  await lastBoard;
+  check(document.getElementById("act-note") && !file.request, "Cancel did not restore the empty form");
+
+  file.write(rework);
+  const earlier = file.readDetail();
+  file.cancel();
+  file.write(replacementNote);
+  const posts = actionPosts;
+  fingerprint = "note-replaced";
+  const detailRead = new Promise(resolve => { detailStarted = resolve; });
+  let boardStarted;
+  const boardRead = new Promise(resolve => { boardStarted = resolve; });
+  const readBoard = deferBoardRead(boardStarted);
+  const poll = checkChanges();
+  await Promise.race([detailRead, boardRead]);
+  detailStarted = null;
+  await earlier.deliver();
+  const obsolete = document.querySelector(".act-cancel");
+  if (obsolete) {
+    checkInert(obsolete, posts, "The pre-fingerprint detail enabled Cancel for a replaced note");
+  }
+  checkInert(original, posts, "The original Cancel posted after deletion");
+  await file.readDetail().deliver();
+  await boardRead;
+  await readBoard().deliver();
+  await poll;
+  const verified = document.querySelector(".act-cancel");
+  check(verified && !verified.disabled && verified.getAttribute("aria-disabled") !== "true" &&
+    document.querySelector(".act-note-text")?.textContent === file.request.note,
+    "The matching Rework board left the full replacement unverified");
+}
+
+async function draftAfterFailedCheck(correctOverlong = false) {
+  await openPending(null);
+  const file = decisionFile(null);
+  liveLast = null;
+  fingerprint = "first-check-fails";
+  const started = new Promise(resolve => { detailStarted = resolve; });
+  const poll = checkChanges();
+  await started;
+  finishRefresh(Response.error());
+  await poll;
+
+  const posts = actionPosts;
+  const note = document.getElementById("act-note");
+  const send = document.getElementById("act-send");
+  const text = correctOverlong ? replacementNote.note : "a".repeat(998) + "Z";
+  note.focus();
+  if (correctOverlong) {
+    note.value = text + "!";
+    note.dispatchEvent(new Event("input"));
+    check(note.getAttribute("aria-invalid") === "true" && send.disabled, "The overlong correction draft was accepted");
+    checkInert(send, posts, "The 1,001-scalar draft sent a POST after the failed check");
+  }
+  note.value = text;
+  note.dispatchEvent(new Event("input"));
+  check(document.activeElement === note && !send.disabled && note.getAttribute("aria-invalid") !== "true",
+    "The valid draft lost focus or stayed invalid");
+  send.dispatchEvent(new Event("click"));
+  check(actionPosts === posts + 1 && send.getAttribute("aria-disabled") !== "true",
+    "A valid same-round draft could not send after the failed check");
+  await file.processPost().deliver();
+  check(file.request.note === text && document.querySelector(".act-note-text")?.textContent === text,
+    "The successful Send lost part of the draft");
+  await lastBoard;
+  await file.readDetail().deliver();
+}
+
+async function failedCheckAfterRoundChange() {
+  await openPending(null);
+  const later = { ...detail(null).job, round: job.round + 1 };
+  boardAnswer = { jobs: [later] };
+  await pollBoard();
+  finishRefresh(Response.error());
+  await lastRefresh;
+  const posts = actionPosts;
+  const note = document.getElementById("act-note");
+  note.value = replacementNote.note;
+  note.dispatchEvent(new Event("input"));
+  checkInert(document.getElementById("act-send"), posts, "A failed check unlocked the previous round's Send");
+  const verified = loadJob(job.id, true);
+  finishRefresh(Response.json({ job: later, request: null }));
+  await verified;
+  check(!note.isConnected && document.getElementById("act-note"), "The verified new round kept the obsolete form");
+}
+
+async function fingerprintDuringSubmission() {
+  await establishBaseline("before-submit");
+  await openPending(null);
+  const file = decisionFile(null);
+  const confirm = window.confirm;
+  window.confirm = () => true;
+  try {
+    document.querySelector(".act-approve").dispatchEvent(new Event("click"));
+  } finally {
+    window.confirm = confirm;
+  }
+  const accepted = file.processPost();
+  const posts = actionPosts;
+  file.cancel();
+  file.write(replacementNote);
+  let started;
+  const boardStarted = new Promise(resolve => { started = resolve; });
+  const readBoard = deferBoardRead(started);
+  fingerprint = "after-replacement";
+  const poll = checkChanges();
+  await boardStarted;
+  const board = readBoard();
+  await accepted.deliver();
+  const obsolete = document.querySelector(".act-cancel");
+  checkInert(obsolete, posts, "The delayed Approve enabled its Cancel before the outstanding board and detail GETs");
+  await board.deliver();
+  await poll;
+  checkInert(obsolete, posts, "The board response unlocked the obsolete Cancel");
+  await file.readDetail().deliver();
+  checkInert(obsolete, posts, "The retired Approve posted against the verified Rework");
+  check(document.querySelector(".act-note-text")?.textContent === file.request.note, "The delayed Approve lost the replacement note");
+}
+
+async function unchangedCancelDuringRefresh() {
+  const cancel = await openPending(rework);
+  const refreshed = detail(rework);
+  refreshed.job.title = "Updated job title";
+  const loading = loadJob(job.id, true);
+  finishRefresh(Response.json(refreshed));
+  await loading;
+  check(document.querySelector("#job .story-title").textContent === refreshed.job.title, "The rest of the job did not refresh");
+  check(document.querySelector(".act-cancel") === cancel && cancel.isConnected && !cancel.disabled &&
+    cancel.getAttribute("aria-disabled") !== "true", "A matching refresh replaced the verified unfocused Cancel");
+}
+
+async function test() {
+  await submissionAndCancel();
+  await changedPendingRequest();
+  await sameActionBetweenPolls();
+  await refusedCancelAfterFocusLeaves();
+  await reopenedJobAfterCancel();
+  await cancelWhileOpening();
+  await newerDecisionWhileOpening();
+  await replacementAfterBoardDeletion();
+  await replacementWhileOpening();
+  await replacementWhileOpening(rework);
+  await replacementWhileOpening(approve, "board");
+  await replacementWhileOpening(approve, "recovered");
+  await stalledPendingDetail();
+  await reopenedAfterSend();
+  await reopenedAfterSend(rework);
+  await reopenedAfterSend(approve, rework);
+  await reopenedAfterRefusal();
+  await reopenedAfterRefusal(rework);
+  await cancelWhileOpening(approve, approve, true);
+  await cachedBoardAfterOpeningDetail();
+  await reworkAfterReopeningOnApprove();
+  await oldDetailAfterBoardInvalidation();
+  await oldBoardDeletionAfterReplacement();
+  await oldBoardDeletionAfterReplacement(true);
+  await detailCrossingMatchingCountsRead();
+  await duplicateAfterReopeningOnRework();
+  await retryOpeningOnUnchangedPoll();
+  await draftDuringDetail();
+  await uncertainCancel();
+  await uncertainCancel(true);
+  await firstFingerprintDuringOpen();
+  await firstFingerprintDuringOpen(false);
+  await firstFingerprintAfterEmptyDetail();
+  await retryAfterStageChange();
+  await draftWithEarlierDetail();
+  await draftWithEarlierDetail("repeat");
+  await draftWithEarlierDetail("replacement");
+  await fingerprintAfterCancel();
+  await draftAfterFailedCheck();
+  await draftAfterFailedCheck(true);
+  await failedCheckAfterRoundChange();
+  await fingerprintDuringSubmission();
+  await unchangedCancelDuringRefresh();
+}
+
+const result = document.getElementById("result");
+const transitionTimeoutMs = 5000;
+let deadline;
+const timeout = new Promise((_, reject) => {
+  deadline = setTimeout(() => reject(new Error("No response transition")), transitionTimeoutMs);
+});
+Promise.race([test(), timeout])
+  .then(() => { result.textContent = "PASS"; }, error => { result.textContent = "FAIL: " + error.message; })
+  .finally(() => clearTimeout(deadline));
+</script>
+</html>

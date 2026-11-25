@@ -401,10 +401,29 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     a changed `jobs` fingerprint refetches the history while it is shown; a changed `jobs`, `backlog` or `stories`
     fingerprint refetches the health view while it is shown; a changed `jobs` or `backlog` fingerprint refetches the
     status lines and the release blocks while Backlogs is shown), `act.js` (the "Your decision" section under the state section of a `needs-human` job page only: Approve (after a
-    confirm), Rework with a note box (`maxlength` 1000) and Send (off while blank); with a pending request the fixed
+    confirm), Rework keeps the full draft. It counts Unicode scalars as in `BacklogEditor.CleanNote`, counting one
+    space between words and stopping above 1,000. The field then becomes invalid and its live hint asks for a shorter note.
+    Send is disabled while the cleaned note is blank or over the limit or a request is in flight. The note is read-only
+    during submission. A failed send restores the editable draft. A successful send shows the confirmed request.
+    A successful Cancel restores the form with `Request cancelled.`. A `409 not_pending` restores it with the refusal.
+    When the same job and round reopen during a POST, the result is reconciled with the full decision from the
+    reopened view. A successful Send supersedes the request already known when it began, including a reread of
+    that same action, round, timestamp and note during submission. A competing detail observed
+    during the POST keeps its full note while a fresh GET verifies the request. A jobs fingerprint change during
+    submission or an inconclusive Cancel response holds Cancel until that verification.
+    A pending request shows the fixed
     `Waiting for the next /factory session for <project>: <Approve|Rework> sent <local time>` text, the note as text and
-    Cancel request; fixed texts per error code in `ActErrors`; `jobDecisionBusy` (a send in flight, or the note box has
-    text or focus) keeps a live refresh from rebuilding it), `counts.js` (#135: the two badges on the Backlogs tab icon, the `[h]` count (`user`) and the `[?]` count
+    a Cancel request button. `ActErrors` supplies fixed text for each error code. `jobDecisionBusy` holds a live refresh while sending,
+    while the note has text or focus, or when a detail refresh confirms the same request under a focused Cancel.
+    Every board read, including a counts read or an identical cached summary, is checked against the open decision.
+    A conflicting snapshot, the first live jobs fingerprint or a changed fingerprint triggers verification of an
+    open pending request. A newer fingerprint also supersedes a detail GET in flight on the empty form.
+    Full detail checks the round, action, note and timestamp. A match keeps the same Cancel
+    button. A same-round refresh retains a draft typed or focused while the GET was outstanding.
+    Job detail GETs have a 10-second deadline. A failed check leaves any displayed note in place and Cancel
+    under verification. A valid draft can still be sent unless the board shows the job has left its stage or round.
+    The next poll retries the open job even when the board has just moved it into needs-human and the decision
+    section has yet to render), `counts.js` (#135: the two badges on the Backlogs tab icon, the `[h]` count (`user`) and the `[?]` count
     (`approval`) summed over readable projects of one `/api/backlogs` answer (`fetchBacklogs`), older answers dropped by a request
     counter; each hidden at 0 or unknown (failed load), else the number (`aria-hidden`) plus a `span.visually-hidden`
     `, N task(s)` / `, N unapproved`; fixed texts in `CountTexts`; fetched at page load, after a token is saved, after every

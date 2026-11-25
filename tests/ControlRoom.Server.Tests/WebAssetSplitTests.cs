@@ -106,7 +106,8 @@ public sealed class WebAssetSplitTests
     public void UnchangedFiles_AreByteIdenticalToDevelop()
     {
         string[] changed = ["sw.js", "token.js", "push.js", "capture.js", "history.js", "index.html"];
-        foreach ((string path, string hash) in DevelopHashes())
+        // act.js gained rework note validation after the split. ActWebAppTests checks the served script.
+        foreach ((string path, string hash) in DevelopHashes().Where(file => file.Key != "act.js"))
         {
             if (changed.Contains(path))
             {
@@ -118,15 +119,40 @@ public sealed class WebAssetSplitTests
             byte[] bytes = File.ReadAllBytes(Path.Combine(folder, path));
             if (path == "board.js")
             {
-                // The Windows install hint is the only addition since the asset split.
+                // Undo the reviewed decision refresh hunks on a private copy, then compare to the original hash.
+                using TempFactoryRoot copy = new();
+                string board = Path.Combine(copy.Path, path);
+                File.WriteAllBytes(board, bytes);
+                TempFactoryRoot.Git(copy.Path, "init", "-q");
+                TempFactoryRoot.Git(copy.Path, "-c", "core.autocrlf=false", "apply", "--reverse",
+                    Path.Combine(DevelopFolder(), "board-refresh.patch"));
                 const string WindowsHint = """
                       if (command.startsWith(".\\launch-agent.ps1 ")) {
                         text.append(" Run this command in PowerShell from the extracted release folder.");
                       }
                     """;
-                string script = Encoding.UTF8.GetString(bytes);
+                string script = Encoding.UTF8.GetString(File.ReadAllBytes(board));
                 Assert.Contains(WindowsHint, script, StringComparison.Ordinal);
                 bytes = Encoding.UTF8.GetBytes(script.Replace(WindowsHint + "\n", "", StringComparison.Ordinal));
+            }
+            else if (path == "counts.js")
+            {
+                const string BoardObservation = "    if (typeof refreshOpenJob === \"function\") {\n"
+                    + "      refreshOpenJob(data.jobs);\n    }\n";
+                string script = Encoding.UTF8.GetString(bytes);
+                Assert.Contains(BoardObservation, script, StringComparison.Ordinal);
+                bytes = Encoding.UTF8.GetBytes(script.Replace(BoardObservation, "", StringComparison.Ordinal));
+            }
+            else if (path == "live.js")
+            {
+                const string Fingerprint = "    const previousJobs = liveLast?.jobs;\n";
+                const string PendingCheck = "    if (boardViewsVisible() && typeof recheckPendingCancel === \"function\") {\n"
+                    + "      await recheckPendingCancel(previousJobs !== next.jobs || recovered, { includeForm: previousJobs === undefined });\n    }\n";
+                string script = Encoding.UTF8.GetString(bytes);
+                Assert.Contains(Fingerprint, script, StringComparison.Ordinal);
+                Assert.Contains(PendingCheck, script, StringComparison.Ordinal);
+                bytes = Encoding.UTF8.GetBytes(script.Replace(Fingerprint, "", StringComparison.Ordinal)
+                    .Replace(PendingCheck, "", StringComparison.Ordinal));
             }
 
             if (LaterEdits.TryGetValue(path, out (string Now, string Develop)[]? edits))
