@@ -14,8 +14,9 @@ const PushAppTexts = {
   denied: "Notifications are blocked for Control Room. Allow them in Settings, then check again.",
 };
 
-// Service worker (sw.js). Caches only the app shell. Bump the version when the shell list changes.
-const CacheVersion = "v23";
+// Service worker (sw.js). Caches only the app shell. Bump the version whenever a shell file changes; ShellCacheLedger
+// checks it.
+const CacheVersion = "v24";
 const CacheName = "controlroom-shell-" + CacheVersion;
 
 const Shell = [

@@ -186,7 +186,7 @@ public sealed partial class ReleasesWebAppTests
         string js = await Fetch("/sw.js");
         string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v23\";", room, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v24\";", room, StringComparison.Ordinal);
         Assert.Contains("  \"/status.js\",\n  \"/releases.js\",\n  \"/live.js\",\n", room, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/releases", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/releases", room, StringComparison.Ordinal);
