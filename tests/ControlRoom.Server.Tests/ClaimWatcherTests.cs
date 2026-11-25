@@ -145,6 +145,27 @@ public sealed class ClaimWatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task ATagOverALargeClaimCommit_IsNotPeeledAndTheOtherClaimsStayFresh()
+    {
+        (_, string remote) = ClaimFixture.Project(root, "Alpha", Backlog);
+        string large = ClaimFixture.Push(
+            remote, "big", ClaimFixture.Message("3-a", "mini", "Alpha", "2026-03-01T08:00:00Z")
+            + new string('x', ClaimWatcher.MaxMessageBytes * 2) + "\n");
+        TempFactoryRoot.Git(remote, "tag", "-a", "-m", "small", "wrapped", large);
+        string tag = TempFactoryRoot.Git(remote, "rev-parse", "refs/tags/wrapped");
+        TempFactoryRoot.Git(remote, "update-ref", "refs/factory/claims/3", tag);
+        ClaimFixture.Push(remote, "5", ClaimFixture.Message("5-b", "mini", "Alpha", "2026-03-01T08:00:00Z"));
+
+        await watcher.Scan();
+
+        ClaimState state = watcher.State("Alpha");
+        Assert.Equal(
+            [new ItemClaim(3, null, null, null), new ItemClaim(5, "5-b", "mini", "2026-03-01T08:00:00Z")], state.Claims);
+        Assert.False(state.Stale);
+        Assert.Equal(time.Now, state.Checked);
+    }
+
+    [Fact]
     public async Task StartAsync_RunsTheTimerEveryMinuteAndStopWaitsForTheFirstScan()
     {
         ClaimFixture.Project(root, "Alpha", Backlog);

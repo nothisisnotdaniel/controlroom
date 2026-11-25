@@ -54,8 +54,9 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     project repo and in the factory root (both only when `git remote` lists `origin`, at most once per repo per
     minute) the read-only `ls-remote origin refs/factory/claims/*`, then (only when a ref is new or changed)
     `fetch --no-tags --quiet origin +refs/factory/claims/*:refs/factory/remote-claims/*` (it writes only
-    `refs/factory/remote-claims/*`; the repo's own `reference-transaction` hook may run), `cat-file -s <sha>` and
-    `log -1 --format=%B <sha>` (the sha only 40 or 64 lower-case hex from `ls-remote`). It never pushes, deletes or
+    `refs/factory/remote-claims/*`; the repo's own `reference-transaction` hook may run), `cat-file -t <sha>`,
+    `cat-file -s <sha>` and `log -1 --format=%B <sha>` (the sha only 40 or 64 lower-case hex from `ls-remote`; only a
+    `commit` is read, any other object type keeps the claim with unknown fields, so a tag is never peeled). It never pushes, deletes or
     writes a claim. A ref name counts only as `refs/factory/claims/<1-6 digits>`, at most 200 per repo; a message over
     4 KiB keeps the claim with unknown fields; `Job` only by `JobReader.IdPattern`, `Machine` cleaned (category C
     removed, at most 120 chars), `Claimed` only `YYYY-MM-DDTHH:MM:SSZ`. A failed read keeps the last claims marked
