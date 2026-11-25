@@ -678,6 +678,7 @@ public sealed class FactoryBacklogApiTests
             Root.Dispose();
             if (Directory.Exists(Own))
             {
+                TempFactoryRoot.ClearReadOnly(Own);
                 Directory.Delete(Own, recursive: true);
             }
         }

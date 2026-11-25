@@ -217,6 +217,25 @@ internal sealed class TempFactoryRoot : IDisposable
         return entries;
     }
 
+    /// <summary>On Windows, clears the read-only flag git sets on object files so the folder can be deleted.</summary>
+    public static void ClearReadOnly(string folder)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        // Git marks object files read-only. Leave links alone while preparing the fixture for deletion.
+        EnumerationOptions files = new() { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint };
+        foreach (FileInfo file in new DirectoryInfo(folder).EnumerateFiles("*", files))
+        {
+            if (file.IsReadOnly)
+            {
+                file.IsReadOnly = false;
+            }
+        }
+    }
+
     public void Dispose()
     {
         foreach (FileStream handle in exclusiveHandles)
@@ -226,15 +245,7 @@ internal sealed class TempFactoryRoot : IDisposable
 
         if (OperatingSystem.IsWindows())
         {
-            // Git marks object files read-only. Leave links alone while preparing the fixture for deletion.
-            EnumerationOptions files = new() { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint };
-            foreach (FileInfo file in new DirectoryInfo(Path).EnumerateFiles("*", files))
-            {
-                if (file.IsReadOnly)
-                {
-                    file.IsReadOnly = false;
-                }
-            }
+            ClearReadOnly(Path);
         }
         else
         {
