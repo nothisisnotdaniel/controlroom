@@ -208,7 +208,7 @@ public sealed partial class DoctorWebAppTests
         string js = await Fetch("/sw.js");
         string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v23\";", room, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v25\";", room, StringComparison.Ordinal);
         Assert.Contains("  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/releases.js\",\n  \"/live.js\",\n", room, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/doctor", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/doctor", room, StringComparison.Ordinal);

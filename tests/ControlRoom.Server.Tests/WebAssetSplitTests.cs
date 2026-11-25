@@ -81,6 +81,9 @@ public sealed class WebAssetSplitTests
         // #409: other machines' item claims.
         ["app.css"] =
         [
+            // #405: the unused backlog heading selector.
+            ("\n.group summary {\n  font-size: 0.85rem;\n",
+                "\n.group h3,\n.group summary {\n  font-size: 0.85rem;\n"),
             ("  /* Another machine's claim on a backlog item (factory#54). */\n  --claim-bg: #ccfbf1;\n  --claim-fg: #115e59;\n",
                 ""),
             ("    --claim-bg: #134e4a;\n    --claim-fg: #99f6e4;\n",
@@ -99,6 +102,20 @@ public sealed class WebAssetSplitTests
                 ""),
         ],
     };
+
+    // #411: the service worker's edits after the split, each as (text now, text on develop then).
+    private static readonly (string Now, string Develop)[] ServiceWorkerEdits =
+    [
+        ("// app's fixed text instead of old data. Shell files load network-first: the cache answers only when the network\n// fails, so an update reaches the app on its next load. A new worker takes over at once and drops every older\n// cache. Bump CacheVersion in room.js whenever a shell file changes.\n",
+            "// app's fixed text instead of old data. Bump the version when the shell list changes.\n"),
+        ("  event.waitUntil(caches.open(CacheName)\n    .then((cache) => cache.addAll(Shell.map((path) => new Request(path, { cache: \"no-cache\" }))))\n    .then(() => self.skipWaiting()));\n",
+            "  event.waitUntil(caches.open(CacheName).then((cache) => cache.addAll(Shell)));\n"),
+        ("      Promise.all(names.filter((name) => name !== CacheName).map((name) => caches.delete(name))))\n      .then(() => self.clients.claim()));\n",
+            "      Promise.all(names.filter((name) => name !== CacheName).map((name) => caches.delete(name)))));\n"),
+        ("async function networkFirst(event) {\n  // One entry per shell path: the key is the bare pathname, so a query string never adds an entry.\n  const key = new URL(event.request.url).pathname;\n  const cache = await caches.open(CacheName);\n  let response;\n  try {\n    response = await fetch(event.request, { cache: \"no-cache\" });\n  } catch {\n    // No network answer (offline or unreachable): the cached copy, else a network error.\n    const cached = await cache.match(key);\n    return cached || Response.error();\n  }\n  if (response.ok) {\n    try {\n      await cache.put(key, response.clone());\n    } catch {\n      // A full or unavailable cache keeps the old copy; the network answer is still returned.\n    }\n  }\n  return response;\n}\n",
+            "async function staleWhileRevalidate(event) {\n  // One entry per shell path: the key is the bare pathname, so a query string never adds an entry.\n  const key = new URL(event.request.url).pathname;\n  const cache = await caches.open(CacheName);\n  const cached = await cache.match(key);\n  const network = fetch(event.request).then(async (response) => {\n    if (response.ok) {\n      await cache.put(key, response.clone());\n    }\n    return response;\n  });\n  if (cached) {\n    event.waitUntil(network.catch(() => undefined));\n    return cached;\n  }\n  return network;\n}\n"),
+        ("  event.respondWith(networkFirst(event));\n", "  event.respondWith(staleWhileRevalidate(event));\n"),
+    ];
 
     private static readonly string[] KitGlobals =
         ["TokenKey", "CaptureProjectKey", "HistoryProjectKey", "CacheVersion", "CacheName", "Shell"];
@@ -219,9 +236,9 @@ public sealed class WebAssetSplitTests
         Assert.True(start >= 0 && end > start);
         // The shell list block moved, with "/room.js" added and the version raised.
         List<string> block = develop.GetRange(start, end - start + 1);
-        block[0] = "const CacheVersion = \"v23\";";
+        block[0] = "const CacheVersion = \"v25\";";
         block.Insert(block.IndexOf("  \"/token.js\",") + 1, "  \"/room.js\",");
-        int roomStart = room.IndexOf("const CacheVersion = \"v23\";");
+        int roomStart = room.IndexOf("const CacheVersion = \"v25\";");
         Assert.Equal(block, room.GetRange(roomStart, block.Count));
         develop.RemoveRange(start, end - start + 1);
 
@@ -243,7 +260,15 @@ public sealed class WebAssetSplitTests
         }
 
         develop.Insert(0, "importScripts(\"/room.js\");");
-        Assert.Equal(develop, Lines(Path.Combine(KitFolder(), "sw.js")));
+        // #411: network-first fetch, a no-cache install that takes over at once, and claiming clients on activate.
+        string script = string.Join('\n', develop);
+        foreach ((string now, string before) in ServiceWorkerEdits)
+        {
+            Assert.Contains(before, script, StringComparison.Ordinal);
+            script = script.Replace(before, now, StringComparison.Ordinal);
+        }
+
+        Assert.Equal(script.Split('\n').ToList(), Lines(Path.Combine(KitFolder(), "sw.js")));
     }
 
     [Fact]
