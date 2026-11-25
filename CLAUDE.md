@@ -50,6 +50,16 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     nothing develop lacks), `status`, `add` and `commit` in the worktree; it never pushes `backlog`. The project repo's own hooks run there as
     they do for a commit on develop (`worktree add`: post-checkout, `merge`: post-merge). The backlog reads
     (`BacklogSource`) run `branch --show-current` and that `rev-list` per project.
+  - Other machines' item claims (#409, `ClaimWatcher`): a hosted service, never a request, runs every 60 s in each
+    project repo and in the factory root (both only when `git remote` lists `origin`, at most once per repo per
+    minute) the read-only `ls-remote origin refs/factory/claims/*`, then (only when a ref is new or changed)
+    `fetch --no-tags --quiet origin +refs/factory/claims/*:refs/factory/remote-claims/*` (it writes only
+    `refs/factory/remote-claims/*`; the repo's own `reference-transaction` hook may run), `cat-file -s <sha>` and
+    `log -1 --format=%B <sha>` (the sha only 40 or 64 lower-case hex from `ls-remote`). It never pushes, deletes or
+    writes a claim. A ref name counts only as `refs/factory/claims/<1-6 digits>`, at most 200 per repo; a message over
+    4 KiB keeps the claim with unknown fields; `Job` only by `JobReader.IdPattern`, `Machine` cleaned (category C
+    removed, at most 120 chars), `Claimed` only `YYYY-MM-DDTHH:MM:SSZ`. A failed read keeps the last claims marked
+    stale (a fixed log text, no path); claims older than 10 min are dropped.
   - The factory's own backlog (#147, `FactoryBacklog`): the develop worktree is the config key `FACTORY_DEVELOP_DIR`
     (never a request), else `<parent of root>/<root name>-factory-develop`. In the factory root the server runs the
     read-only `git worktree list --porcelain -z` (the folder's real path must be listed on `refs/heads/develop`, else
@@ -150,7 +160,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     an `updated` payload is exactly `kind`, `version`, `previous`, `reason`, an `update_failed` payload exactly
     `kind`, `version` and the result's fixed code as `reason`, each sent once per updater run. Apart from these, git
     runs `push -q origin develop` after a backlog edit on develop (a project's checkout or the factory's develop
-    worktree, only when there is an `origin`); nothing else of git goes to the network.
+    worktree, only when there is an `origin`) and the `ClaimWatcher`'s read-only `ls-remote` and `fetch` of
+    `refs/factory/claims/*` from `origin` (above); nothing else of git goes to the network.
   - Scripts (`launch-agent.sh`, `updater.sh`) never read the token. The updater's only network calls are the
     latest-release redirect (`stable`) or the release list `GET` above (`develop`, `curl --proto =https --tlsv1.2
     -fsS --max-time 30 --max-filesize 1048576`, no `-L`), the release download (as `install --release`) and
@@ -246,7 +257,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `Use(options)` makes `Jobs` throw) and the shared units `AccessToken`, `TokenCommand`,
     `HostCheck`, `ServerEndpoint`, `FactoryRootLocator`, `ProjectFinder`, `SafeFileReader`, `SafeFileWriter`,
     `BacklogReader`, `BacklogParser`, `BacklogWaiting`, `BacklogPlan`, `BacklogsEndpoint`, `BacklogEditor`,
-    `ProjectGit`, `BacklogWorktree`, `BacklogSource`, `BacklogChangeEndpoint`, `StoryReader`, `StoryCategory`,
+    `ProjectGit`, `ClaimWatcher`, `BacklogWorktree`, `BacklogSource`, `BacklogChangeEndpoint`, `StoryReader`, `StoryCategory`,
     `StoryMarkdown`, `StoryEndpoint`, `InboxEndpoint`, `TasksEndpoint`, `HistoryEndpoint`, `SearchEndpoint`,
     `ChangeFingerprint`, `PushCrypto`, `PrivateFolder`, `PushStore`, `PushSender`, `PushWatcher`, `PushEndpoint`,
     `PushTestLimiter`, `UnixOwner`, `AppVersion`, `VersionCommand`, `VersionEndpoint`, `UpdateCheck`, `UpdateEndpoint`,
@@ -281,7 +292,10 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     the next item is after it), `BacklogsEndpoint` (`GET /api/backlogs`, with
     `waiting`, `line`, `category` (from each numbered line's story, read once through `StoryReader`, else `null`) and the file `version`, and per project `pending` (true when read from the worktree) and `reason` (only on the unreadable `factory` entry: `no_worktree`/`not_develop`); the `factory` entry comes last, read through `BacklogSource.ForFactory`, `next` (`{number, title, story, spike, belowStop}` or `null`), `stopLine` (0-based index or `null`),
     `stopped` (a blocked line has a missing dependency) and `blocked` (`[{number, title, story, after:[{project, number,
-    missing}]}]`, only unmet dependencies); `null`, `false`, `[]` when unreadable), `BacklogEditor` (`EditableText` lines that keep their bytes; approve, drop, done, move (top), place, title
+    missing}]}]`, only unmet dependencies); `null`, `false`, `[]` when unreadable; `claims` (`[{item, job, machine, claimed}]`, other machines'
+    claims from `ClaimWatcher`: only items with a numbered line, never a job with a local `factory/jobs/<id>` folder, lowest
+    first), `claimsChecked` (last good read or `null`) and `claimsStale`), `ClaimWatcher` (#409: the claim reads above, `State(project)`, `Scan()`),
+    `BacklogEditor` (`EditableText` lines that keep their bytes; approve, drop, done, move (top), place, title
     and add edits (`Add` takes the mark), `StopAdd`, `StopMove`, `StopRemove`, `StopLine` and `HasStopLineProblem`, `CleanNote` and `AppendNote`, `CleanCapture`, `CaptureTitle` and `RenderDraft`, slug, next number and story template like `job.py`), `ProjectGit` (fixed-argument git calls
     with timeouts and `GIT_TERMINAL_PROMPT=0`), `BacklogWorktree` (the `backlog` branch worktree at
     `<token folder>/worktrees/<project>`: `Ensure`, `Pending` (`backlog` has commits develop lacks and the folder
@@ -319,7 +333,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     metadata only: `jobs` over each `state.json` and `human.json` of `JobReader.ListFolders`, per project `backlog` over `backlog.md`
     and `stories` over `backlog/*.md`, each also over the worktree's copies when its folder exists; a symlink adds only a `link` marker, a missing path `missing`; `NoFollowStat`:
     `lstat`, `O_NOFOLLOW` folder listing and `fstatat` via P/Invoke, never a file opened or a target followed),
-    `ChangesEndpoint` (`GET /api/changes`: `{"jobs":…,"projects":{"<name>":{"backlog":…,"stories":…}}}`, `no-store`), `JobEndpoint` (`GET /api/job?id=`:
+    `ChangesEndpoint` (`GET /api/changes`: `{"jobs":…,"projects":{"<name>":{"backlog":…,"stories":…,"claims":…}}}`, `no-store`; `claims` hashes the project's claim state, the checked time only while stale), `JobEndpoint` (`GET /api/job?id=`:
     a job and its records from a fixed list, `agents` (the job's `Agents`), and `request`: `null`, the parsed `human.json` or `{"action":"unreadable"}`
     for a bad, symlinked or oversized file, read only through `SafeFileReader`), `JobAction` (the `human.json` schema:
     `Parse` (exact keys, at most 4 KiB), `Render`, no-follow `Read`), `JobActEndpoint` (`POST /api/job/act`), `PushCrypto` (RFC 8291 `aes128gcm`, RFC 8292 VAPID ES256 JWT, P-256
@@ -376,7 +390,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     position) in the Open list before the first row whose line is after it, else at the end, and Open shows with only
     the divider when it has no rows (`renderStopLine`, `placeStopLine`); a numbered
     row with a category shows `categoryChip` (`span.category-chip.category-<name>`, text only, class only from the fixed
-    `Categories` list) after the title), story (the same chip under the title, then a status chip (#125, `statusChip`: `span.status-chip.status-<key>` from the fixed `StoryStatuses` map, `[x]` Done, `[?]` Unapproved, `[ ]` Open, `[h]` Your task, same box style as the category chip, a colour pair per status in light and dark) placed by `showStoryStatus` from the mark that edit.js's `showStoryDecision` looks up with `findStoryEntry` (all four groups of `/api/backlogs`; `findStoryLine` is its not-done part), none when the line can't be found, carried over on a live refresh), then the backlog position (#126, `storyPosition`: `span.story-position` `Position N`, muted text, N the item's 1-based index in its `/api/backlogs` group, the same number the list shows) placed by `showStoryPosition` after the status chip from the same `findStoryEntry` lookup (`position`), none when the line can't be found, carried over on a live refresh)), `edit.js` (per-project edit mode; a `button.drag-handle` (`≡`, `Move #N`, arrow-key hint) at the start of every
+    `Categories` list) after the title, then `claimBadge` (#409: `span.claim-badge`, text only, `In progress on <machine> since <local time>`
+    (`another machine` without one, no time without a valid one) plus ` · checked <n> min ago` while stale; the claims are in the plan signature)), story (the same chip under the title, then a status chip (#125, `statusChip`: `span.status-chip.status-<key>` from the fixed `StoryStatuses` map, `[x]` Done, `[?]` Unapproved, `[ ]` Open, `[h]` Your task, same box style as the category chip, a colour pair per status in light and dark) placed by `showStoryStatus` from the mark that edit.js's `showStoryDecision` looks up with `findStoryEntry` (all four groups of `/api/backlogs`; `findStoryLine` is its not-done part), none when the line can't be found, carried over on a live refresh), then the backlog position (#126, `storyPosition`: `span.story-position` `Position N`, muted text, N the item's 1-based index in its `/api/backlogs` group, the same number the list shows) placed by `showStoryPosition` after the status chip from the same `findStoryEntry` lookup (`position`), none when the line can't be found, carried over on a live refresh)), `edit.js` (per-project edit mode; a `button.drag-handle` (`≡`, `Move #N`, arrow-key hint) at the start of every
     `[ ]` and `[?]` row, prepended by `appendEditRow`: pointer events only (captured on the handle, the only element with
     `touch-action: none`), a `.drop-indicator` among the rows of the row's own list, auto-scroll in the 48 px edges by
     `requestAnimationFrame`, one `place` per drop or ArrowUp/ArrowDown, Escape and `pointercancel` send nothing, focus back
@@ -399,7 +414,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     pending, and at once on becoming visible; refetches only the board, the changed backlog sections (kept while a form
     is open or focus is inside) and the open story (in place, never while Edit story or Add note is open); a failed check shows
     the fixed `Connection lost. Reconnecting…` notice under the header, or in the `board-status` line on the board;
-    script order `room.js`, `token.js`, `board.js`, `act.js`, `push.js`, `edit.js`, `counts.js`, `search.js`, `capture.js`, `history.js`, `doctor.js`, `status.js`, `releases.js`, `live.js`, `app.js`; a changed
+    script order `room.js`, `token.js`, `board.js`, `act.js`, `push.js`, `edit.js`, `counts.js`, `search.js`, `capture.js`, `history.js`, `doctor.js`, `status.js`, `releases.js`, `live.js`, `app.js`; a changed `claims`
+    fingerprint refetches that backlog section; a changed
     `backlog` fingerprint (or a recovered connection) refetches the Backlogs counts; a changed `jobs` fingerprint (or a recovered connection) sets `jobCountsStale` and refetches the Jobs tab counts on every view (`refreshStaleJobCounts`, retried after a failure; skipped when `pollBoard` succeeded in the same check); a changed `backlog` or `stories` fingerprint re-runs the current search;
     a changed `jobs` fingerprint refetches the history while it is shown; a changed `jobs`, `backlog` or `stories`
     fingerprint refetches the health view while it is shown; a changed `jobs` or `backlog` fingerprint refetches the

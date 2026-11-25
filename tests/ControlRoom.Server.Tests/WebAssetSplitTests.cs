@@ -57,6 +57,17 @@ public sealed class WebAssetSplitTests
                 "  section.appendChild(statusLine(name));\n  section.appendChild(releaseBlock(name));\n"),
             ("  return projects\n    .filter((project) => (project && project.readable === true) || reasonText(project) !== null)\n    .map((project) => asText(project.name));\n",
                 "  return projects.filter((project) => project && project.readable === true).map((project) => asText(project.name));\n"),
+            // #409: other machines' item claims.
+            ("  claimOn: \"In progress on \",\n  claimAnother: \"another machine\",\n  claimSince: \" since \",\n  claimChecked: \" · checked \",\n  claimMinAgo: \" min ago\",\n",
+                ""),
+            ("// Other machines' item claims per project (from /api/backlogs, set by renderProject): { items: Map(number -> claim),\n// stale, checked (ms or null) }. Only numbers and text values; never used as a path or HTML.\nconst projectClaims = new Map();\n\nfunction readClaims(project) {\n  const items = new Map();\n  for (const claim of asList(project && project.claims)) {\n    const item = asNumber(claim && claim.item);\n    if (item !== null && !items.has(item)) {\n      items.set(item, claim);\n    }\n  }\n  const checked = typeof (project && project.claimsChecked) === \"string\" ? Date.parse(project.claimsChecked) : NaN;\n  return { items: items, stale: project && project.claimsStale === true, checked: Number.isNaN(checked) ? null : checked };\n}\n\n// \"In progress on <machine> since <local time>\" (another machine when it is unknown, no since part without a valid\n// time), plus \" · checked <n> min ago\" while the claims are stale; built only with textContent.\nfunction claimBadge(projectName, number) {\n  const claims = projectClaims.get(projectName);\n  const claim = claims ? claims.items.get(number) : undefined;\n  if (!claim) {\n    return null;\n  }\n  const machine = asText(claim.machine).trim();\n  let text = Texts.claimOn + (machine !== \"\" ? machine : Texts.claimAnother);\n  const claimed = typeof claim.claimed === \"string\" ? new Date(claim.claimed) : null;\n  if (claimed !== null && !Number.isNaN(claimed.getTime())) {\n    text += Texts.claimSince + claimed.toLocaleString([], {\n      month: \"short\", day: \"numeric\", hour: \"2-digit\", minute: \"2-digit\",\n    });\n  }\n  if (claims.stale && claims.checked !== null) {\n    text += Texts.claimChecked + Math.max(0, Math.floor((Date.now() - claims.checked) / 60000)) + Texts.claimMinAgo;\n  }\n  const badge = document.createElement(\"span\");\n  badge.className = \"claim-badge\";\n  badge.textContent = text;\n  return badge;\n}\n\n",
+                ""),
+            ("  const claim = claimBadge(projectName, number);\n  if (claim !== null) {\n    head.appendChild(claim);\n  }\n",
+                ""),
+            ("  // Other machines' claims too; the checked time only while stale (the badge shows its age then).\n  const stale = project.claimsStale === true;\n  const claims = [asList(project.claims), stale, stale ? project.claimsChecked || null : null];\n  return JSON.stringify([project.next || null, project.stopped === true, asList(project.blocked), stop, claims]);\n",
+                "  return JSON.stringify([project.next || null, project.stopped === true, asList(project.blocked), stop]);\n"),
+            ("  projectClaims.set(name, readClaims(project));\n",
+                ""),
         ],
         ["edit.js"] =
         [
@@ -67,6 +78,26 @@ public sealed class WebAssetSplitTests
             "const JobIdPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternDevelop)],
         ["releases.js"] = [("const ReleaseJobPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternNow,
             "const ReleaseJobPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternDevelop)],
+        // #409: other machines' item claims.
+        ["app.css"] =
+        [
+            ("  /* Another machine's claim on a backlog item (factory#54). */\n  --claim-bg: #ccfbf1;\n  --claim-fg: #115e59;\n",
+                ""),
+            ("    --claim-bg: #134e4a;\n    --claim-fg: #99f6e4;\n",
+                ""),
+            ("\n/* Another machine's claim on a numbered row, after the category chip. Its text is long, so it wraps inside the row\n   on a narrow screen instead of pushing the row wider. */\n.claim-badge {\n  display: inline-block;\n  max-width: 100%;\n  font-size: 0.8rem;\n  font-weight: 600;\n  line-height: 1.4;\n  padding: 0 6px;\n  border-radius: 6px;\n  margin: 2px 0 0 6px;\n  vertical-align: 1px;\n  white-space: normal;\n  overflow-wrap: anywhere;\n  background: var(--claim-bg);\n  color: var(--claim-fg);\n}\n",
+                ""),
+        ],
+        // #409: other machines' item claims.
+        ["live.js"] =
+        [
+            ("// The response as { jobs, projects: Map(name -> { backlog, stories, claims }) }, or null when it has another shape.\n// claims (other machines' item claims) is \"\" when the server sends none.\n",
+                "// The response as { jobs, projects: Map(name -> { backlog, stories }) }, or null when it has another shape.\n"),
+            ("    if (!value || typeof value.backlog !== \"string\" || typeof value.stories !== \"string\"\n      || (value.claims !== undefined && typeof value.claims !== \"string\")) {\n      return null;\n    }\n    projects.set(name, { backlog: value.backlog, stories: value.stories, claims: value.claims || \"\" });\n",
+                "    if (!value || typeof value.backlog !== \"string\" || typeof value.stories !== \"string\") {\n      return null;\n    }\n    projects.set(name, { backlog: value.backlog, stories: value.stories });\n"),
+            ("    // Another machine's claims changed: the section is fetched again, like a changed backlog.\n    if (!backlogChanged && before.claims !== after.claims) {\n      staleBacklogs.add(name);\n    }\n",
+                ""),
+        ],
     };
 
     private static readonly string[] KitGlobals =
