@@ -217,7 +217,8 @@ public sealed partial class WebAppTests
     {
         string css = await Fetch("/app.css");
 
-        Assert.Contains(".group h3,\n.group summary {", css, StringComparison.Ordinal);
+        Assert.Contains(".group summary {", css, StringComparison.Ordinal);
+        Assert.DoesNotContain(".group h3", css, StringComparison.Ordinal);
         Assert.DoesNotContain(".stage > summary::before", css, StringComparison.Ordinal);
         Assert.DoesNotContain(".edit-add summary::before", css, StringComparison.Ordinal);
         Assert.DoesNotContain("\nsummary::before", css, StringComparison.Ordinal);
