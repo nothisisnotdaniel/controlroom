@@ -4,6 +4,8 @@
 const Texts = {
   unreachable: "Can't reach the server.",
   unreadable: "Can't read backlog.md. Reload to try again.",
+  noWorktree: "The factory's develop worktree is missing. Run any job.py backlog command once to create it.",
+  notDevelop: "The factory's develop folder is not its develop worktree. Move it away or set FACTORY_DEVELOP_DIR, then reload.",
   noTitle: "(no title)",
   noLines: "No backlog lines.",
   noProjects: "No projects found.",
@@ -55,8 +57,26 @@ const BacklogProjectKey = "controlroom-backlog-project";
 // (true is open): only project names and group keys, never the token or backlog text.
 const BacklogGroupsKey = "controlroom-backlog-groups";
 
-// Readable project names of the last backlogs answer, in response order.
+// Readable project names of the last backlogs answer, in response order (plus the factory when it has a reason, so
+// its fixed text can be chosen and read).
 let readableProjects = [];
+
+// The factory's own backlog (#147): its section has no status or release line.
+const FactoryName = "factory";
+
+// The fixed text for the factory entry's reason, or null for any other value; never server text.
+function reasonText(project) {
+  if (!project || asText(project.name) !== FactoryName) {
+    return null;
+  }
+  if (project.reason === "no_worktree") {
+    return Texts.noWorktree;
+  }
+  if (project.reason === "not_develop") {
+    return Texts.notDevelop;
+  }
+  return null;
+}
 
 // Set when the app itself opened the story view, so Back can go back in history.
 let openedFromList = false;
@@ -517,14 +537,21 @@ function renderProject(project) {
     section.appendChild(element("p", "backlog-pending", Texts.pending));
   }
   if (!project || project.readable !== true) {
+    const reason = reasonText(project);
+    if (reason !== null) {
+      section.appendChild(element("p", "error", reason));
+      return section;
+    }
     section.appendChild(element("p", "error", Texts.unreadable));
     return section;
   }
   if (version !== "") {
     head.appendChild(editToggle(name, section));
   }
-  section.appendChild(statusLine(name));
-  section.appendChild(releaseBlock(name));
+  if (name !== FactoryName) {
+    section.appendChild(statusLine(name));
+    section.appendChild(releaseBlock(name));
+  }
   section.appendChild(renderPlan(name, project));
   let shown = 0;
   const stopLine = asNumber(project.stopLine);
@@ -578,7 +605,9 @@ function storeBacklogProject(name) {
 }
 
 function readableNames(projects) {
-  return projects.filter((project) => project && project.readable === true).map((project) => asText(project.name));
+  return projects
+    .filter((project) => (project && project.readable === true) || reasonText(project) !== null)
+    .map((project) => asText(project.name));
 }
 
 // The stored project when it is readable, else the first readable one (not stored); null when none is readable.

@@ -29,8 +29,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
 - **Safety rules:**
   - The server never runs a shell command, `claude` or any program built from request input. Git is called
     with a fixed argument list (`ProcessStartInfo.ArgumentList`), never through a shell. Besides the project repos,
-    git runs read-only in the factory root itself: only `git status --porcelain --untracked-files=all -- factory/jobs`
-    for `GET /api/doctor` (`ProjectGit.Run`, `GIT_OPTIONAL_LOCKS=0`). In a project repo `GET /api/status` runs only the
+    git runs in the factory repo only for two things: the read-only `git status --porcelain --untracked-files=all --
+    factory/jobs` in the factory root for `GET /api/doctor` (`ProjectGit.Run`, `GIT_OPTIONAL_LOCKS=0`), and the factory
+    backlog rule below (#147: in the root the read-only `worktree list` and the `backlog` worktree setup calls of
+    `BacklogWorktree`; commits and the `develop` push only in the develop worktree or a `backlog` worktree, never in
+    the root checkout). In a project repo `GET /api/status` runs only the
     read-only `git rev-list --count refs/heads/main..refs/heads/develop` (`ProjectGit.AheadOfMain`); it never runs `gh`
     or calls the network. `GET /api/releases` runs only the read-only `git for-each-ref
     --format=%(refname:strip=2)%09%(creatordate:unix) refs/tags/` (`ProjectGit.Tags`), `git rev-list --count <range>`
@@ -44,9 +47,21 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     nothing develop lacks), `status`, `add` and `commit` in the worktree; it never pushes `backlog`. The project repo's own hooks run there as
     they do for a commit on develop (`worktree add`: post-checkout, `merge`: post-merge). The backlog reads
     (`BacklogSource`) run `branch --show-current` and that `rev-list` per project.
+  - The factory's own backlog (#147, `FactoryBacklog`): the develop worktree is the config key `FACTORY_DEVELOP_DIR`
+    (never a request), else `<parent of root>/<root name>-factory-develop`. In the factory root the server runs the
+    read-only `git worktree list --porcelain -z` (the folder's real path must be listed on `refs/heads/develop`, else
+    `not_develop`; a missing folder is `no_worktree`; nothing is ever created for it). With no factory job in
+    `spike|spec|build|review|approve|needs-human`, edits run `status`, `add`, `commit` and `push -q origin develop` (only
+    with an `origin`; a failed push only warns) in the develop worktree. While one runs they go to the root repo's
+    local `backlog` branch: a worktree that already has it checked out (never the root checkout; checked: real folder, `branch --show-current`,
+    the `rev-list` and `merge -q --ff-only refs/heads/develop` as above), else `BacklogWorktree.Ensure` with the root as
+    repo (`worktrees/factory`); never pushed. Every factory git path is `factory/backlog.md` or `factory/backlog/…`, and
+    git runs in the worktree's top folder (`GIT_CEILING_DIRECTORIES`). The root checkout and `main` are never written.
   - Paths come only from the discovered project list and the jobs folder, never from a request as a path;
     names from a request are matched against that list.
-  - Writes are limited to a project's `backlog.md` and its `backlog/NNN-slug.md` story files: only through
+  - Writes are limited to a project's `backlog.md` and its `backlog/NNN-slug.md` story files (and, by the factory
+    backlog rule above, the factory's `factory/backlog.md` and `factory/backlog/` in its develop or `backlog` worktree,
+    with the same checks): only through
     `POST /api/backlog/change`, one change at a time, only with a clean `backlog.md` and `backlog/`, checked against
     the version (SHA-256) the client saw (refused as changed otherwise), written atomically without following symlinks
     (`SafeFileWriter`), then committed with only the changed files. With the checkout on `develop` they go into the
@@ -85,7 +100,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     the same category, or `category` on any other action, is `invalid`; only the story file is committed, as
     `backlog: category #N`). The one other file the server writes in the factory root is a
     job's request file `factory/jobs/<id>/human.json`, only through `POST /api/job/act` (see below). Nothing else in
-    the factory root is written.
+    the factory root is written (factory backlog edits go only into the develop or `backlog` worktree, see above).
   - `POST /api/job/act` (body `{"id","action","round","note"?}`, at most 8 KiB, exact fields; `action` `approve`,
     `rework` (with `note`, cleaned like a backlog note) or `cancel`) asks the next `/factory` session for the project to
     approve or rework a `needs-human` job; the server itself runs nothing (no git, no `claude`). Under one lock
@@ -130,7 +145,9 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     only). A payload holds only `kind`, `project`, `job`, `stage`, `version`, a fixed `reason` and `count`, never
     record or backlog text; an `update` payload is exactly `kind`, `version` and `reason`, sent once per version;
     an `updated` payload is exactly `kind`, `version`, `previous`, `reason`, an `update_failed` payload exactly
-    `kind`, `version` and the result's fixed code as `reason`, each sent once per updater run.
+    `kind`, `version` and the result's fixed code as `reason`, each sent once per updater run. Apart from these, git
+    runs `push -q origin develop` after a backlog edit on develop (a project's checkout or the factory's develop
+    worktree, only when there is an `origin`); nothing else of git goes to the network.
   - Scripts (`launch-agent.sh`, `updater.sh`) never read the token. The updater's only network calls are the
     latest-release redirect (`stable`) or the release list `GET` above (`develop`, `curl --proto =https --tlsv1.2
     -fsS --max-time 30 --max-filesize 1048576`, no `-L`), the release download (as `install --release`) and
@@ -222,7 +239,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `StoryMarkdown`, `StoryEndpoint`, `InboxEndpoint`, `TasksEndpoint`, `HistoryEndpoint`, `SearchEndpoint`,
     `ChangeFingerprint`, `PushCrypto`, `PrivateFolder`, `PushStore`, `PushSender`, `PushWatcher`, `PushEndpoint`,
     `PushTestLimiter`, `UnixOwner`, `AppVersion`, `VersionCommand`, `VersionEndpoint`, `UpdateCheck`, `UpdateEndpoint`,
-    `UpdateSettingsStore`, `UpdateResult`, `HealthEndpoint`, `DoctorCheck` and `DoctorEndpoint`, reading jobs only
+    `UpdateSettingsStore`, `UpdateResult`, `HealthEndpoint`, `DoctorCheck`, `DoctorEndpoint` and `FactoryBacklog` (the factory's develop worktree, `FactorySource`, `JobRunning`), reading jobs only
     through `IJobFormat`; its `wwwroot/` holds `app.css`, `sw.js`, `token.js`, `push.js`, `edit.js`, `counts.js`,
     `search.js`, `capture.js`, `history.js`, `doctor.js` and `live.js`, and `scripts/` the neutral `launch-agent.sh`
     and `updater.sh`. `src/ControlRoom.Server/` keeps `Program.cs`, a thin `ServerApp`, `ControlRoomApp`,
@@ -251,7 +268,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `factory`), `BacklogPlan` (the rule of `job.py next`: numbered `[ ]` lines in file order, blocked while a
     dependency is unmet, the first one not blocked is next, spikes too; the stop line is ignored, `belowStop` says
     the next item is after it), `BacklogsEndpoint` (`GET /api/backlogs`, with
-    `waiting`, `line`, `category` (from each numbered line's story, read once through `StoryReader`, else `null`) and the file `version`, and per project `pending` (true when read from the worktree), `next` (`{number, title, story, spike, belowStop}` or `null`), `stopLine` (0-based index or `null`),
+    `waiting`, `line`, `category` (from each numbered line's story, read once through `StoryReader`, else `null`) and the file `version`, and per project `pending` (true when read from the worktree) and `reason` (only on the unreadable `factory` entry: `no_worktree`/`not_develop`); the `factory` entry comes last, read through `BacklogSource.ForFactory`, `next` (`{number, title, story, spike, belowStop}` or `null`), `stopLine` (0-based index or `null`),
     `stopped` (a blocked line has a missing dependency) and `blocked` (`[{number, title, story, after:[{project, number,
     missing}]}]`, only unmet dependencies); `null`, `false`, `[]` when unreadable), `BacklogEditor` (`EditableText` lines that keep their bytes; approve, drop, done, move (top), place, title
     and add edits (`Add` takes the mark), `StopAdd`, `StopMove`, `StopRemove`, `StopLine` and `HasStopLineProblem`, `CleanNote` and `AppendNote`, `CleanCapture`, `CaptureTitle` and `RenderDraft`, slug, next number and story template like `job.py`), `ProjectGit` (fixed-argument git calls
@@ -335,7 +352,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `span.tab-label`; the Jobs link holds the two count badges `span.nav-count.nav-count-running#running-count` and `span.nav-count.nav-count-blocked#blocked-count` (#138); the Backlogs link holds the two count badges `span.nav-count.nav-count-tasks#tasks-count` and `span.nav-count.nav-count-approval#approval-count`), `app.css` (the bar is fixed to the bottom on
     every width, one row of five, the tasks badge on the icon's left and the approval badge on its right, each its own `--count-tasks-*`/`--count-approval-*` colour pair in light and dark; on Jobs the running badge (teal, `--count-running-*`) on the left and the blocked badge (red, `--count-blocked-*`) on the right, the four backgrounds distinct, each pair at least 4.5:1, `--tab-bar-height` plus the home indicator inset reserved as body bottom padding,
     the edit notice above it), `token.js` (stored token under
-    `controlroom-token`, `authFetch` for every `/api/` call, the token view, which hides the header and the tab bar), `app.js` (routing (`showView` shows the tab bar on every view but the token view and sets `aria-current` on one tab, `job` on Jobs and `story` on Backlogs; `#search` routes to Backlogs, replaced by `#backlogs` with `history.replaceState`, scrolled to the top with the search field focused; every Backlogs show calls `showSearch`; `show`, the picker and a new section never move `#backlog-search`, the first child of `#backlogs`), backlogs (each readable project's `div.plan` between the head and the groups: `Next:` item
+    `controlroom-token`, `authFetch` for every `/api/` call, the token view, which hides the header and the tab bar), `app.js` (the `factory` section (#147): `reasonText` gives the fixed `noWorktree`/`notDevelop` text, the picker lists it then too, no status or release line; routing (`showView` shows the tab bar on every view but the token view and sets `aria-current` on one tab, `job` on Jobs and `story` on Backlogs; `#search` routes to Backlogs, replaced by `#backlogs` with `history.replaceState`, scrolled to the top with the search field focused; every Backlogs show calls `showSearch`; `show`, the picker and a new section never move `#backlog-search`, the first child of `#backlogs`), backlogs (each readable project's `div.plan` between the head and the groups: `Next:` item
     with a `Spike` badge and `span.next-stop` `Auto stops before #N` when `next.belowStop`, `Nothing ready to run.` or the fixed stopped text, and a `Waiting (k)` group with `Waits for`
     links, a missing one as text plus `No such item`; the plan's signature (with `stopLine`) in `data-plan`, and a live refresh also
     replaces a section whose signature changed; a `Project` select (`div.backlog-picker`, `select#backlog-project`, readable
@@ -495,7 +512,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     prints a fixed epoch from a test file, every other call goes to `/bin/date`); `ScriptFixtures.UpdaterPlist` is the expected updater plist for both; `ScriptFixtures` holds the fake `codesign` and a `PATH` folder without it;
     `ReleaseWorkflowTests` reads `release.yml` as text and runs `.github/scripts/signing-cert.sh`;
     `SigningKeychainScriptTests` runs `signing-keychain.sh` with a fake `security` first on `PATH`); `TempFactoryRoot` (`InitGit`, `AddBareRemote`
-    and `Git` for a real local repo), `TempTokenFolder` and `ServerFactory` (own temp token file; clients send `Host: 127.0.0.1:8100`; optional tailnet name;
+    and `Git` for a real local repo), `TempTokenFolder` and `ServerFactory` (own temp token file; `FactoryDevelopDir` (set before the host starts; default `<root>-factory-develop`, so no test sees a real one); clients send `Host: 127.0.0.1:8100`; optional tailnet name;
     `CreateTokenClient()` for API calls; `Push` fake push service, `Update` fake GitHub (`FakeUpdateHandler`), `CurrentVersion` (default `dev`),
     `Time` fixed clock whose timers never fire (it records their due time and period; `Zone` sets its
     `LocalTimeZone`, default UTC), `Logs`) are the shared fixtures; `PushFakes` holds `FakeTime`, `FakePushHandler`, `FakeUpdateHandler`, `PushReceiver` (test-side

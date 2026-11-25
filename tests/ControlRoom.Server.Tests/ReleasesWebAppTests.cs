@@ -149,7 +149,7 @@ public sealed partial class ReleasesWebAppTests
         string app = await Fetch("/app.js");
 
         Assert.Contains(
-            "  section.appendChild(statusLine(name));\n  section.appendChild(releaseBlock(name));\n"
+            "  if (name !== FactoryName) {\n    section.appendChild(statusLine(name));\n    section.appendChild(releaseBlock(name));\n  }\n"
             + "  section.appendChild(renderPlan(name, project));",
             app, StringComparison.Ordinal);
         Assert.Contains("  showStatus();\n  showReleases();\n  showSearch();\n", app, StringComparison.Ordinal);
