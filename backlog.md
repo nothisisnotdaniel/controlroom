@@ -170,3 +170,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#160](backlog/160-refuse-a-symlinked-factory-folder-in.md) Refuse a symlinked factory folder in the develop worktree
 - [?] [#161](backlog/161-clear-not-develop-error-text-for.md) Clear not_develop error text for factory backlog edits
 - [x] [#164](backlog/164-make-app-updates-reach-the-app.md) Make app updates reach the app: bump the shell cache and load app files network-first → 411-app-updates-reach-app.065933528bd9428d84472746bdfff0d7
+- [ ] [#165](backlog/165-bound-the-claim-fetch-shallow-fetch.md) Bound the claim fetch: shallow fetch and cap ls-remote output before parsing
+- [ ] [#166](backlog/166-keep-the-claim-checked-time-current.md) Keep the claim 'checked' time current and show it after a first failed check
+- [ ] [#167](backlog/167-give-the-claim-badge-a-screen.md) Give the claim badge a screen-reader label
+- [ ] [#168](backlog/168-update-the-factory-s-claim-marks.md) Update the factory's claim marks live
