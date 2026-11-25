@@ -168,4 +168,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#158](backlog/158-readable-status-output-from-launch-agent.md) Readable status output from launch-agent.ps1
 - [?] [#160](backlog/160-refuse-a-symlinked-factory-folder-in.md) Refuse a symlinked factory folder in the develop worktree
 - [?] [#161](backlog/161-clear-not-develop-error-text-for.md) Clear not_develop error text for factory backlog edits
-- [?] [#163](backlog/163-show-when-the-last-check-for.md) Show when the last check for update was done
+- [?] [#163](backlog/163-show-when-the-last-check-for.md) Show when the updater last checked for updates
