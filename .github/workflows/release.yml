@@ -1,26 +1,34 @@
-# Builds ControlRoom for Windows x64 and macOS on Apple silicon from one release commit.
+# Builds ControlRoom for Windows x64 and macOS on Apple silicon from one release commit, in four jobs:
+# - version checks the event and works out the release version and commit.
+# - windows and macos both need only version, so the Windows and macOS builds run in parallel after version.
+#   windows tests, packages and exercises the win-x64 ZIP; macos tests, publishes, signs, smoke-checks and packs
+#   the osx-arm64 tarball and RoomKit.<version>.nupkg. Each build job reports the SHA-256 of the files it uploads
+#   as job outputs (zip_sha256, tarball_sha256, roomkit_sha256), and uploads them as one artifact.
+# - release needs version, windows and macos. It downloads both artifacts and checks the downloaded files' hashes
+#   against the hashes the build jobs reported (exactly the three expected files, nothing else), then sums,
+#   attests and publishes them. Only this job has write permissions, and it builds nothing itself. The hash check
+#   catches a file swapped or changed between jobs; it cannot catch a compromised build job, which reports its own hash.
 # - A push to develop makes a prerelease vX.Y.(Z+1)-develop.<run number>, one patch above the highest
 #   release tag (.github/scripts/develop-version.sh), on the pushed commit. A push that changes only
 #   backlog.md or backlog/ is skipped (paths-ignore), so it makes no prerelease.
 # - A merged pull request from develop into main, titled "release vX.Y.Z", makes a release: vX.Y.Z (and
 #   its tag) on the merge commit (.github/scripts/release-version.sh). Closed-unmerged PRs, PRs from other
-#   branches and fork PRs are skipped by the job's if:, and the first step checks the same again.
+#   branches and fork PRs are skipped by the version job's if:, and its first step checks the same again.
 # - After a proper release vX.Y.Z, every -develop prerelease at or below X.Y.Z is deleted with its tag
 #   (.github/scripts/old-prereleases.sh). A failed prune only warns (continue-on-error); the release counts.
 # - The release holds controlroom-<version>-osx-arm64.tar.gz (one top folder controlroom-<version>-osx-arm64/
-#   with the self-contained publish output, wwwroot/ included) and SHA256SUMS, plus a build-provenance
-#   attestation for the tarball (check it with: gh attestation verify <tarball> --repo nothisisnotdaniel/controlroom).
+#   with the self-contained publish output, wwwroot/ included), controlroom-<version>-win-x64.zip,
+#   RoomKit.<version>.nupkg and SHA256SUMS, plus a build-provenance attestation for the three files (check one
+#   with: gh attestation verify <tarball> --repo nothisisnotdaniel/controlroom).
 #   scripts/launch-agent.sh install --release [vX.Y.Z] installs it.
-# - The Windows job packages and exercises the win-x64 ZIP. Both builds use the validated version and commit.
-#   The release job includes the tested ZIP in the checksums, attestation and GitHub release.
-# - The release also holds RoomKit.<version>.nupkg, the shared server core (docs/roomkit.md), packed with the same
-#   version, listed in SHA256SUMS and attested with the tarball. Apps restore it from a local folder feed filled
-#   with gh release download; no package registry, permission or secret is needed.
-# - Once signing-cert.sha1 is committed, every build is signed with that self-signed certificate (steps Sign and
-#   Verify signature; README "Signing"), and install --release and the updater refuse any build that is not. The
-#   temporary signing keychain goes on the user keychain search list for the run (.github/scripts/signing-keychain.sh).
-# Refs, PR fields and the run number reach the shell only through environment variables (GITHUB_REF,
-# GITHUB_SHA, GITHUB_RUN_NUMBER and the job's env:), never through ${{ }} inside a run: script.
+# - RoomKit.<version>.nupkg is the shared server core (docs/roomkit.md), packed with the same version. Apps restore
+#   it from a local folder feed filled with gh release download; no package registry, permission or secret is needed.
+# - Once signing-cert.sha1 is committed, every macOS build is signed with that self-signed certificate (steps Sign
+#   and Verify signature in the macos job; README "Signing"), and install --release and the updater refuse any build
+#   that is not. The temporary signing keychain goes on the user keychain search list for the run
+#   (.github/scripts/signing-keychain.sh). The signing secrets reach only the Sign step.
+# Refs, PR fields, job outputs and the run number reach the shell only through environment variables (GITHUB_REF,
+# GITHUB_SHA, GITHUB_RUN_NUMBER and the env: blocks), never through ${{ }} inside a run: script.
 # Actions are pinned to full commit SHAs (the tag each one had is in the trailing comment), so a moved tag
 # cannot run new code with the contents: write token.
 name: Release
@@ -155,6 +163,8 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: read
+    outputs:
+      zip_sha256: ${{ steps.hash.outputs.zip_sha256 }}
     env:
       RELEASE_VERSION: ${{ needs.version.outputs.release_version }}
     steps:
@@ -175,6 +185,15 @@ jobs:
       - name: Build and smoke check the Windows ZIP
         run: ./.github/scripts/windows-release.ps1
 
+      # The release job checks the downloaded ZIP against this hash, which travels as a job output, apart
+      # from the artifact store.
+      - name: Hash the verified ZIP
+        id: hash
+        shell: bash
+        run: |
+          ZIP_SHA256="$(sha256sum "dist/controlroom-$RELEASE_VERSION-win-x64.zip" | cut -d ' ' -f 1)"
+          echo "zip_sha256=$ZIP_SHA256" >> "$GITHUB_OUTPUT"
+
       - name: Save the verified ZIP
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -183,16 +202,16 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
-  release:
-    needs: [version, windows]
+  macos:
+    needs: version
     runs-on: macos-15
     permissions:
-      contents: write
-      id-token: write
-      attestations: write
+      contents: read
+    outputs:
+      tarball_sha256: ${{ steps.hash.outputs.tarball_sha256 }}
+      roomkit_sha256: ${{ steps.hash.outputs.roomkit_sha256 }}
     env:
       RELEASE_VERSION: ${{ needs.version.outputs.release_version }}
-      RELEASE_TARGET: ${{ needs.version.outputs.release_target }}
     steps:
       - name: Check out the release commit on macOS
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -358,11 +377,109 @@ jobs:
       - name: Pack RoomKit
         run: dotnet pack src/RoomKit -c Release -p:Version="$RELEASE_VERSION" -o dist
 
-      - name: Collect the verified ZIP
+      # The release job checks the downloaded files against these hashes, which travel as job outputs, apart
+      # from the artifact store.
+      - name: Hash the macOS files
+        id: hash
+        run: |
+          set -o pipefail
+          TARBALL_SHA256="$(shasum -a 256 "dist/controlroom-$RELEASE_VERSION-osx-arm64.tar.gz" | cut -d ' ' -f 1)"
+          ROOMKIT_SHA256="$(shasum -a 256 "dist/RoomKit.$RELEASE_VERSION.nupkg" | cut -d ' ' -f 1)"
+          echo "tarball_sha256=$TARBALL_SHA256" >> "$GITHUB_OUTPUT"
+          echo "roomkit_sha256=$ROOMKIT_SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Save the verified macOS files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: macos-release
+          path: |
+            dist/controlroom-${{ env.RELEASE_VERSION }}-osx-arm64.tar.gz
+            dist/RoomKit.${{ env.RELEASE_VERSION }}.nupkg
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    needs: [version, windows, macos]
+    # Builds nothing: it checks, sums, attests and publishes the files the build jobs made.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      RELEASE_VERSION: ${{ needs.version.outputs.release_version }}
+      RELEASE_TARGET: ${{ needs.version.outputs.release_target }}
+    steps:
+      - name: Check out the release commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.version.outputs.release_target }}
+          persist-credentials: false
+
+      - name: Collect the build artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: windows-release
+          pattern: '*-release'
+          merge-multiple: true
           path: dist
+
+      # Exactly the three built files, each byte-identical to what its build job hashed before the upload. The
+      # hashes come from the build jobs' outputs, a separate channel from the artifact store, and reach the shell
+      # only through env:; each must be 64 lower-case hex characters before it is compared.
+      - name: Check the downloaded files
+        env:
+          ZIP_SHA256: ${{ needs.windows.outputs.zip_sha256 }}
+          TARBALL_SHA256: ${{ needs.macos.outputs.tarball_sha256 }}
+          ROOMKIT_SHA256: ${{ needs.macos.outputs.roomkit_sha256 }}
+        run: |
+          TARBALL="controlroom-$RELEASE_VERSION-osx-arm64.tar.gz"
+          ROOMKIT="RoomKit.$RELEASE_VERSION.nupkg"
+          ZIP="controlroom-$RELEASE_VERSION-win-x64.zip"
+          for name in "$TARBALL" "$ROOMKIT" "$ZIP"; do
+            if [ ! -f "dist/$name" ] || [ -L "dist/$name" ]; then
+              echo "The downloaded artifacts have no file $name" >&2
+              exit 1
+            fi
+          done
+          for entry in dist/* dist/.[!.]* dist/..?*; do
+            if [ ! -e "$entry" ] && [ ! -L "$entry" ]; then
+              continue
+            fi
+            case "${entry#dist/}" in
+              "$TARBALL" | "$ROOMKIT" | "$ZIP") ;;
+              *)
+                echo "The downloaded artifacts hold an unexpected file: ${entry#dist/}" >&2
+                exit 1
+                ;;
+            esac
+          done
+          check_hash() {
+            NAME="$1"
+            EXPECTED="$2"
+            case "$EXPECTED" in
+              '' | *[!0-9a-f]*)
+                echo "The reported hash of $NAME is not 64 lower-case hex characters" >&2
+                exit 1
+                ;;
+            esac
+            if [ "${#EXPECTED}" -ne 64 ]; then
+              echo "The reported hash of $NAME is not 64 lower-case hex characters" >&2
+              exit 1
+            fi
+            # No pipe, so a failed shasum fails the step itself.
+            if ! ACTUAL="$(shasum -a 256 "dist/$NAME")"; then
+              echo "Could not hash dist/$NAME" >&2
+              exit 1
+            fi
+            ACTUAL="${ACTUAL%% *}"
+            if [ "$ACTUAL" != "$EXPECTED" ]; then
+              echo "dist/$NAME does not match the hash its build job reported" >&2
+              exit 1
+            fi
+          }
+          check_hash "$TARBALL" "$TARBALL_SHA256"
+          check_hash "$ROOMKIT" "$ROOMKIT_SHA256"
+          check_hash "$ZIP" "$ZIP_SHA256"
 
       - name: Checksums
         run: |
