@@ -114,7 +114,7 @@ public sealed partial class StatusWebAppTests
         string app = await Fetch("/app.js");
 
         Assert.Contains(
-            "  section.appendChild(statusLine(name));\n  section.appendChild(releaseBlock(name));\n  section.appendChild(renderPlan(name, project));",
+            "  if (name !== FactoryName) {\n    section.appendChild(statusLine(name));\n    section.appendChild(releaseBlock(name));\n  }\n  section.appendChild(renderPlan(name, project));",
             app, StringComparison.Ordinal);
         int unreadable = app.IndexOf("section.appendChild(element(\"p\", \"error\", Texts.unreadable));", StringComparison.Ordinal);
         int line = app.IndexOf("section.appendChild(statusLine(name));", StringComparison.Ordinal);

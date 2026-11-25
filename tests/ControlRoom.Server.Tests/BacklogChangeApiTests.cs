@@ -115,7 +115,6 @@ public sealed partial class BacklogChangeApiTests
         return
         [
             "{\"project\":\"Nope\",\"version\":\"V\",\"action\":\"approve\",\"line\":5}",
-            "{\"project\":\"factory\",\"version\":\"V\",\"action\":\"approve\",\"line\":5}",
             "{\"project\":\"alpha\",\"version\":\"V\",\"action\":\"approve\",\"line\":5}",
             "{\"project\":\"Alpha\",\"version\":\"V\",\"action\":\"delete\",\"line\":5}",
             "{\"project\":\"Alpha\",\"version\":\"V\",\"action\":\"approve\",\"line\":\"5\"}",

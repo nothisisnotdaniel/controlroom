@@ -35,6 +35,31 @@ public sealed class WebAssetSplitTests
         ["sw.js"] = ["const CacheName = \"controlroom-shell-\" + CacheVersion;", "  updated: \"ControlRoom updated\","],
     };
 
+    // Edits made after the split, each as (text now, text on develop then): the factory backlog section (402).
+    private static readonly Dictionary<string, (string Now, string Develop)[]> LaterEdits = new(StringComparer.Ordinal)
+    {
+        ["app.js"] =
+        [
+            ("  noWorktree: \"The factory's develop worktree is missing. Run any job.py backlog command once to create it.\",\n  notDevelop: \"The factory's develop folder is not its develop worktree. Move it away or set FACTORY_DEVELOP_DIR, then reload.\",\n",
+                ""),
+            ("// Readable project names of the last backlogs answer, in response order (plus the factory when it has a reason, so\n// its fixed text can be chosen and read).\n",
+                "// Readable project names of the last backlogs answer, in response order.\n"),
+            ("// The factory's own backlog (#147): its section has no status or release line.\nconst FactoryName = \"factory\";\n\n// The fixed text for the factory entry's reason, or null for any other value; never server text.\nfunction reasonText(project) {\n  if (!project || asText(project.name) !== FactoryName) {\n    return null;\n  }\n  if (project.reason === \"no_worktree\") {\n    return Texts.noWorktree;\n  }\n  if (project.reason === \"not_develop\") {\n    return Texts.notDevelop;\n  }\n  return null;\n}\n\n",
+                ""),
+            ("    const reason = reasonText(project);\n    if (reason !== null) {\n      section.appendChild(element(\"p\", \"error\", reason));\n      return section;\n    }\n",
+                ""),
+            ("  if (name !== FactoryName) {\n    section.appendChild(statusLine(name));\n    section.appendChild(releaseBlock(name));\n  }\n",
+                "  section.appendChild(statusLine(name));\n  section.appendChild(releaseBlock(name));\n"),
+            ("  return projects\n    .filter((project) => (project && project.readable === true) || reasonText(project) !== null)\n    .map((project) => asText(project.name));\n",
+                "  return projects.filter((project) => project && project.readable === true).map((project) => asText(project.name));\n"),
+        ],
+        ["edit.js"] =
+        [
+            ("  no_worktree: \"The factory's develop worktree is missing. Nothing was changed.\",\n",
+                ""),
+        ],
+    };
+
     private static readonly string[] KitGlobals =
         ["TokenKey", "CaptureProjectKey", "HistoryProjectKey", "CacheVersion", "CacheName", "Shell"];
 
@@ -102,6 +127,18 @@ public sealed class WebAssetSplitTests
                 string script = Encoding.UTF8.GetString(bytes);
                 Assert.Contains(WindowsHint, script, StringComparison.Ordinal);
                 bytes = Encoding.UTF8.GetBytes(script.Replace(WindowsHint + "\n", "", StringComparison.Ordinal));
+            }
+
+            if (LaterEdits.TryGetValue(path, out (string Now, string Develop)[]? edits))
+            {
+                string script = Encoding.UTF8.GetString(bytes);
+                foreach ((string now, string develop) in edits)
+                {
+                    Assert.Contains(now, script, StringComparison.Ordinal);
+                    script = script.Replace(now, develop, StringComparison.Ordinal);
+                }
+
+                bytes = Encoding.UTF8.GetBytes(script);
             }
 
             Assert.True(hash == Sha256(bytes), path + " changed");
