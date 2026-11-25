@@ -216,8 +216,10 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   `-develop`) and for every push to `develop` that changes more than `backlog.md` and `backlog/**` (a prerelease
   `X.Y.(Z+1)-develop.<run number>` from `.github/scripts/develop-version.sh` on `GITHUB_SHA`, checked against
   `refs/heads/develop` and `HEAD`); the version and commit reach later steps as `RELEASE_VERSION` and
-  `RELEASE_TARGET`, never `VERSION`, so MSBuild can't read them as `$(Version)`. On a `macos-15` (arm64)
-  runner it re-checks the PR, runs `dotnet test -c Release`, publishes `-r osx-arm64 --self-contained
+  `RELEASE_TARGET`, never `VERSION`, so MSBuild can't read them as `$(Version)`. Four jobs: `version` (on
+  `macos-15`, arm64) re-checks the PR and works out the version; the Windows and macOS builds run in parallel after
+  `version` (jobs `windows` and `macos`, each `needs: version`); the final `release` job (`ubuntu-latest`, `needs:
+  [version, windows, macos]`) builds nothing. The `macos` job (`macos-15`) runs `dotnet test -c Release`, publishes `-r osx-arm64 --self-contained
   -p:Version=X.Y.Z`, signs and verifies it when `signing-cert.sha1` is committed (steps `Sign`, `Verify signature`,
   `Remove signing keychain` with `if: always()`; README "Signing"; `.github/scripts/signing-cert.sh` reads the file,
   `.github/scripts/signing-keychain.sh` puts the temp keychain on the user search list after `unlock-keychain` (`add`),
@@ -225,20 +227,29 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   `Remove signing keychain` (`remove`, only a `::warning::` on failure, then `delete-keychain`),
   `.github/signing/entitlements.plist` holds the three hardened-runtime entitlements; the secrets reach only `Sign`
   through its `env:`; missing file is a `::warning::` and an ad-hoc build), smoke-checks `ControlRoom.Server version`, packs `controlroom-X.Y.Z-osx-arm64.tar.gz` (one top
-  folder, with a byte copy of `scripts/updater.sh` (`0755`) as `<top>/updater.sh`), writes `SHA256SUMS`, attests build provenance and runs `gh release create vX.Y.Z` on the merge commit or pushed commit
+  folder, with a byte copy of `scripts/updater.sh` (`0755`) as `<top>/updater.sh`), packs RoomKit, writes the
+  SHA-256 of both files as job outputs `tarball_sha256` and `roomkit_sha256` (step `Hash the macOS files`) and
+  uploads them as artifact `macos-release`; `windows` does the same for its ZIP (`zip_sha256`, `Hash the verified
+  ZIP`, artifact `windows-release`). The `release` job downloads both artifacts into `dist/` (`Collect the build
+  artifacts`) and, in `Check the downloaded files`, checks the downloaded files' hashes against the hashes the build
+  jobs reported (exactly the three expected files, each hash 64 lower-case hex characters, reaching the shell only
+  through `env:`), then sums, attests and publishes them: it writes `SHA256SUMS`, attests build provenance and runs `gh release create vX.Y.Z` on the merge commit or pushed commit
   (`--title "ControlRoom X.Y.Z" --generate-notes`, plus `--prerelease` for a prerelease version). After a stable
   release, `Prune old prereleases` (`continue-on-error`) deletes every `-develop` prerelease and tag at or below
-  that version (`.github/scripts/old-prereleases.sh`). Top-level `permissions: {}`; the job has only `contents: write`,
-  `id-token: write`, `attestations: write`; every action pinned to a commit SHA; PR and ref fields only through `env:`.
+  that version (`.github/scripts/old-prereleases.sh`). Top-level `permissions: {}`; `version`, `windows` and `macos`
+  have only `contents: read`, `release` only `contents: write`, `id-token: write`, `attestations: write`; the signing
+  secrets reach only `Sign` in `macos`; every action pinned to a commit SHA; PR and ref fields only through `env:`.
   Check a tarball with `gh attestation verify <tarball> --repo nothisisnotdaniel/controlroom`. The repo slug is fixed
   in `launch-agent.sh`; renaming the repo breaks `--release`. After the tarball `Pack` step, `Pack RoomKit` runs
-  `dotnet pack src/RoomKit -c Release -p:Version="$RELEASE_VERSION" -o dist`; `RoomKit.X.Y.Z.nupkg` is in
+  `dotnet pack src/RoomKit -c Release -p:Version="$RELEASE_VERSION" -o dist` (in `macos`); `RoomKit.X.Y.Z.nupkg` is in
   `SHA256SUMS`, the attestation subjects and the `gh release create` files (stable and prerelease). Other apps restore
   it from a local folder feed filled with `gh release download` (`docs/roomkit.md`); no GitHub Packages, no
   `packages: write`, no new secret.
-- **Windows releases:** CI tests the same release commit on `windows-latest` and macOS. The Windows ZIP contains
+- **Windows releases:** CI tests the same release commit on `windows-latest` and macOS; the `windows` job runs in
+  parallel with `macos`. The Windows ZIP contains
   the self-contained single-file `controlroom.exe`, both PowerShell scripts and `wwwroot`. CI runs the extracted
-  executable and checks its version, health and served asset bytes before the common checksums and attestation.
+  executable and checks its version, health and served asset bytes, then reports the ZIP's SHA-256 (`zip_sha256`),
+  which the `release` job checks before the common checksums and attestation.
   The Windows installer registers two limited, interactive tasks for the current SID. The updater verifies the ZIP,
   checks the configured interval and job stages, and swaps the whole server directory. It checks the task PID,
   listener and health version before writing the marker and result. See the Windows section in `README.md`.
