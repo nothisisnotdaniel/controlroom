@@ -133,6 +133,30 @@ public sealed class WindowsReleaseTests : IDisposable
         Assert.True(body.IndexOf("'first-check'", StringComparison.Ordinal) < body.IndexOf("'last-check'", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData("scripts")]
+    [InlineData("src/RoomKit/scripts")]
+    public void Updater_OpensFilesWithoutBackupSemanticsFirst(string folder)
+    {
+        string updater = File.ReadAllText(Path.Combine([RepoCopy.RepoFolder(), .. folder.Split('/'), "updater.ps1"]))
+            .Replace("\r\n", "\n", StringComparison.Ordinal);
+        int start = updater.IndexOf("private static SafeFileHandle Open(string path, bool directory, FileShare share) {",
+            StringComparison.Ordinal);
+        Assert.True(start >= 0);
+        int end = updater.IndexOf("private static SafeFileHandle Checked(", start, StringComparison.Ordinal);
+        Assert.True(end > start);
+        string body = updater[start..end];
+        int file = body.IndexOf("if (!directory) {", StringComparison.Ordinal);
+        int plain = body.IndexOf("CreateFile(path, 0x80000000, share, IntPtr.Zero, 3, 0x00200000, IntPtr.Zero)",
+            StringComparison.Ordinal);
+        int fallback = body.IndexOf("if (fileError != 5) throw new Win32Exception(fileError);", StringComparison.Ordinal);
+        int backup = body.IndexOf("CreateFile(path, 0x80000000, share, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero)",
+            StringComparison.Ordinal);
+        Assert.True(file >= 0 && file < plain && plain < fallback && fallback < backup);
+        Assert.Contains("if (fileError == 2 || fileError == 3) return null;", body, StringComparison.Ordinal);
+        Assert.Equal(1, body.Split("0x02200000").Length - 1);
+    }
+
     [Fact]
     public void Readme_VerifiesTheDownloadBeforeRunningTheExeAndBothTasks()
     {
