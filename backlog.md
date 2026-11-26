@@ -176,3 +176,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#166](backlog/166-keep-the-claim-checked-time-current.md) Keep the claim 'checked' time current and show it after a first failed check
 - [ ] [#167](backlog/167-give-the-claim-badge-a-screen.md) Give the claim badge a screen-reader label
 - [ ] [#168](backlog/168-update-the-factory-s-claim-marks.md) Update the factory's claim marks live
+- [ ] [#171](backlog/171-one-project-filter-on-the-backlog.md) One project filter on the Backlog page, with factory
