@@ -184,3 +184,6 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#176](backlog/176-show-each-backlog-item-s-factory.md) Show each backlog item's factory estimate (after: factory#62)
 - [?] [#177](backlog/177-pin-the-roomkit-package-content-with.md) Pin the RoomKit package content with a lock file and locked-mode restore
 - [ ] [#178](backlog/178-redo-pr-4-on-develop-keep.md) Redo PR #4 on develop: keep overlong rework notes editable, on RoomKit 0.2.0 (after: RoomKit#6)
+- [ ] [#179](backlog/179-move-history-and-health-behind-a.md) Move History and Health behind a … menu in the tab bar
+- [ ] [#180](backlog/180-keep-a-scrollable-list-of-sent.md) Keep a scrollable list of sent notifications in a Notifications tab (after: #179)
+- [ ] [#181](backlog/181-show-the-number-of-blocked-jobs.md) Show the number of blocked jobs as the app badge on the iPhone (after: RoomKit#6)
