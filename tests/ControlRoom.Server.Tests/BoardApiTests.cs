@@ -242,4 +242,24 @@ public sealed class BoardApiTests
         Assert.Equal(JsonValueKind.Null, jobs["6-done"].ValueKind);
         Assert.DoesNotContain("Again", json.RootElement.GetRawText(), StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task Board_ListsUuidSuffixedJobsNextToLegacyOnesAndSkipsLookAlikes()
+    {
+        using TempFactoryRoot root = new();
+        string suffixed = "405-auto-pause." + JobSamples.Uuid;
+        root.AddJob("398-legacy", JobSamples.State("Alpha", "done", 1));
+        root.AddJob(suffixed, JobSamples.State("Alpha", "build", 1));
+        root.AddJob("406-upper." + JobSamples.Uuid.ToUpperInvariant(), JobSamples.State("Alpha", "build", 1));
+        root.AddJob("407-short." + JobSamples.Uuid[..31], JobSamples.State("Alpha", "build", 1));
+        root.AddJob("408-a.b." + JobSamples.Uuid, JobSamples.State("Alpha", "build", 1));
+        using ServerFactory factory = new(root.Path);
+        using HttpClient client = factory.CreateTokenClient();
+
+        using JsonDocument json = JsonDocument.Parse(await client.GetStringAsync("/api/board"));
+
+        Assert.Equal(
+            ["398-legacy", suffixed],
+            json.RootElement.GetProperty("jobs").EnumerateArray().Select(job => job.GetProperty("id").GetString()));
+    }
 }

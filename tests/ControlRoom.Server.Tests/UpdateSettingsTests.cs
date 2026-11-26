@@ -423,13 +423,7 @@ public sealed class UpdateSettingsTests
 
     private static void WriteSettings(ServerFactory factory, string content)
     {
-        string path = SettingsPath(factory);
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, content);
-        if (!OperatingSystem.IsWindows())
-        {
-            File.SetUnixFileMode(path, AccessToken.FileMode);
-        }
+        TempTokenFolder.WritePrivateText(SettingsPath(factory), content);
     }
 
     /// <summary>Called only after the Windows guard in the bad-store test.</summary>

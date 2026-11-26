@@ -1,13 +1,16 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
 
 namespace ControlRoom.Server.Tests;
 
-/// <summary><c>.github/workflows/release.yml</c>, README and CLAUDE.md, read as text: the trigger, the job's
-/// <c>if:</c>, both permission blocks, the SHA pins, PR fields only through <c>env:</c>, and the release steps in
-/// order.</summary>
+/// <summary><c>.github/workflows/release.yml</c>, README and CLAUDE.md, read as text: the trigger, the version
+/// job's <c>if:</c>, the six jobs (<c>version</c>, then the tests in two parts per OS (<c>windows-tests</c>,
+/// <c>macos-tests</c>), then <c>windows</c> and <c>macos</c> in parallel, then <c>release</c>), every permission block, the SHA pins, PR fields and hashes only through <c>env:</c>, and the
+/// steps of each job in order.</summary>
 public sealed partial class ReleaseWorkflowTests
 {
     private const string Slug = "nothisisnotdaniel/controlroom";
@@ -47,18 +50,22 @@ public sealed partial class ReleaseWorkflowTests
     }
 
     [Fact]
-    public void Permissions_GrantNothingAtTheTopAndExactlyThreeOnTheJob()
+    public void Permissions_GrantOnlyTheReleaseJobWriteAccess()
     {
         string yaml = Workflow();
 
         Assert.Equal("permissions: {}\n", TopLevelBlock(yaml, "permissions: {}"));
-        Assert.Equal(2, Regex.Matches(yaml, "permissions:").Count);
-        int job = yaml.IndexOf("\n    permissions:\n", StringComparison.Ordinal);
-        Assert.True(job >= 0);
-        string block = yaml[(job + "\n    permissions:\n".Length)..];
-        string[] grants = block.Split('\n').TakeWhile(line => line.StartsWith("      ", StringComparison.Ordinal))
-            .Select(line => line.Trim()).ToArray();
-        Assert.Equal(["contents: write", "id-token: write", "attestations: write"], grants);
+        Assert.Equal(7, Regex.Matches(yaml, "permissions:").Count);
+        foreach (string job in Jobs)
+        {
+            string[] lines = yaml.Split('\n').Where(line => !string.IsNullOrWhiteSpace(line) && !line.TrimStart().StartsWith('#'))
+                .SkipWhile(line => line != "  " + job + ":").Skip(1)
+                .TakeWhile(line => line.StartsWith("    ", StringComparison.Ordinal)).ToArray();
+            Assert.Single(lines, line => line == "    permissions:");
+            string[] grants = [.. lines.SkipWhile(line => line != "    permissions:").Skip(1)
+                .TakeWhile(line => line.StartsWith("      ", StringComparison.Ordinal)).Select(line => line.Trim())];
+            Assert.Equal(job == "release" ? ["contents: write", "id-token: write", "attestations: write"] : new[] { "contents: read" }, grants);
+        }
     }
 
     [Fact]
@@ -67,7 +74,7 @@ public sealed partial class ReleaseWorkflowTests
         string yaml = Workflow();
 
         string[] uses = [.. yaml.Split('\n').Where(line => line.Contains("uses:", StringComparison.Ordinal))];
-        Assert.Equal(3, uses.Length);
+        Assert.Equal(14, uses.Length);
         Assert.All(uses, line => Assert.Matches(PinnedUse(), line));
         Assert.Contains("uses: actions/checkout@", yaml, StringComparison.Ordinal);
         Assert.Contains("uses: actions/attest-build-provenance@", yaml, StringComparison.Ordinal);
@@ -122,9 +129,10 @@ public sealed partial class ReleaseWorkflowTests
             "RELEASE_TARGET=\"$GITHUB_SHA\"",
             "RELEASE_VERSION=\"$(git tag --list 'v*' | sh .github/scripts/release-version.sh \"$PR_TITLE\")\"",
             "RELEASE_TARGET=\"$MERGE_SHA\"",
-            "echo \"RELEASE_VERSION=$RELEASE_VERSION\" >> \"$GITHUB_ENV\"",
-            "echo \"RELEASE_TARGET=$RELEASE_TARGET\" >> \"$GITHUB_ENV\"",
-            "run: dotnet test -c Release\n",
+            "echo \"RELEASE_VERSION=$RELEASE_VERSION\" >> \"$GITHUB_OUTPUT\"",
+            "echo \"RELEASE_TARGET=$RELEASE_TARGET\" >> \"$GITHUB_OUTPUT\"",
+            "dotnet test -c Release --filter \"$TEST_FILTER\"\n",
+            "dotnet test -c Release --filter \"$TEST_FILTER\"\n",
             "dotnet publish src/ControlRoom.Server -c Release -r osx-arm64 --self-contained -p:Version=\"$RELEASE_VERSION\"",
             "ACTUAL=\"$(\"$RUNNER_TEMP/publish/ControlRoom.Server\" version)\"",
             "if [ \"$ACTUAL\" != \"ControlRoom $RELEASE_VERSION\" ]; then",
@@ -134,7 +142,7 @@ public sealed partial class ReleaseWorkflowTests
             "tar -czf \"dist/$NAME.tar.gz\" -C \"$RUNNER_TEMP/pack\" \"$NAME\"",
             "shasum -a 256 \"controlroom-$RELEASE_VERSION-osx-arm64.tar.gz\" > SHA256SUMS",
             "uses: actions/attest-build-provenance@",
-            "subject-path: dist/controlroom-${{ env.RELEASE_VERSION }}-osx-arm64.tar.gz",
+            "subject-path: |\n            dist/controlroom-${{ env.RELEASE_VERSION }}-osx-arm64.tar.gz",
             "case \"$RELEASE_VERSION\" in\n            *-*) PRERELEASE=\"--prerelease\" ;;",
             "gh release create \"v$RELEASE_VERSION\" \"dist/controlroom-$RELEASE_VERSION-osx-arm64.tar.gz\" dist/SHA256SUMS ",
             "--target \"$RELEASE_TARGET\" $PRERELEASE",
@@ -173,16 +181,56 @@ public sealed partial class ReleaseWorkflowTests
         string sums = Step(yaml, "Checksums");
         Assert.Contains("shasum -a 256 \"RoomKit.$RELEASE_VERSION.nupkg\" >> SHA256SUMS\n", sums, StringComparison.Ordinal);
         Assert.Contains(
-            "subject-path: dist/controlroom-${{ env.RELEASE_VERSION }}-osx-arm64.tar.gz,dist/RoomKit.${{ env.RELEASE_VERSION }}.nupkg\n",
+            "subject-path: |\n            dist/controlroom-${{ env.RELEASE_VERSION }}-osx-arm64.tar.gz\n            dist/RoomKit.${{ env.RELEASE_VERSION }}.nupkg\n            dist/controlroom-${{ env.RELEASE_VERSION }}-win-x64.zip\n",
             yaml, StringComparison.Ordinal);
         // One gh release create for stable releases and prereleases alike (only $PRERELEASE differs).
         Assert.Single(Regex.Matches(yaml, "gh release create "));
         Assert.Contains(
-            "dist/SHA256SUMS \"dist/RoomKit.$RELEASE_VERSION.nupkg\" --title ", yaml, StringComparison.Ordinal);
+            "dist/SHA256SUMS \"dist/RoomKit.$RELEASE_VERSION.nupkg\" \"dist/controlroom-$RELEASE_VERSION-win-x64.zip\" --title ", yaml, StringComparison.Ordinal);
         Assert.DoesNotContain("packages:", yaml, StringComparison.Ordinal);
         Assert.DoesNotContain("nuget push", yaml, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(2, Regex.Matches(yaml, "secrets\\.").Count);
-        Assert.Equal(3, Regex.Matches(yaml, "\n +uses: ").Count);
+        Assert.Equal(14, Regex.Matches(yaml, "\n +uses: ").Count);
+    }
+
+    [Fact]
+    public void BothReleasePaths_PublishTheTestedBuildsFromTheVersionCommit()
+    {
+        string yaml = Workflow();
+        AssertInOrder(yaml, [
+            "  version:\n", "release_target: ${{ steps.version.outputs.RELEASE_TARGET }}",
+            "  windows-tests:\n", "    needs: version\n    runs-on: windows-latest\n",
+            "ref: ${{ needs.version.outputs.release_target }}", "dotnet test -c Release --filter \"$TEST_FILTER\"",
+            "  macos-tests:\n", "    needs: version\n    runs-on: macos-15\n",
+            "ref: ${{ needs.version.outputs.release_target }}", "dotnet test -c Release --filter \"$TEST_FILTER\"",
+            "  windows:\n    needs: [version, windows-tests]\n    runs-on: windows-latest\n",
+            "ref: ${{ needs.version.outputs.release_target }}",
+            "run: ./.github/scripts/windows-release.ps1", "uses: actions/upload-artifact@",
+            "name: windows-release", "  macos:\n    needs: [version, macos-tests]\n    runs-on: macos-15\n",
+            "ref: ${{ needs.version.outputs.release_target }}", "run: dotnet publish ",
+            "uses: actions/upload-artifact@", "name: macos-release",
+            "  release:\n    needs: [version, windows, macos]\n",
+            "ref: ${{ needs.version.outputs.release_target }}",
+            "uses: actions/download-artifact@", "pattern: '*-release'", "- name: Check the downloaded files",
+            "- name: Checksums", "- name: Attest build provenance", "- name: Create GitHub release",
+        ]);
+        string release = JobBlock(yaml, "release");
+        string sums = Step(release, "Checksums");
+        foreach (string name in new[] { "controlroom-$RELEASE_VERSION-win-x64.zip",
+                     "controlroom-$RELEASE_VERSION-osx-arm64.tar.gz", "RoomKit.$RELEASE_VERSION.nupkg" })
+        {
+            Assert.Single(Regex.Matches(sums, Regex.Escape(name)));
+            Assert.Single(Regex.Matches(Step(release, "Create GitHub release"), Regex.Escape(name)));
+            Assert.Single(Regex.Matches(Step(release, "Attest build provenance"),
+                Regex.Escape(name.Replace("$RELEASE_VERSION", "${{ env.RELEASE_VERSION }}", StringComparison.Ordinal))));
+        }
+
+        string smoke = File.ReadAllText(Path.Combine(RepoFolder(), ".github", "scripts", "windows-release.ps1"));
+        AssertInOrder(smoke, ["-r win-x64 --self-contained", "'controlroom.exe','launch-agent.ps1','updater.ps1','wwwroot'",
+            "Copy-Item -LiteralPath", "CreateFromDirectory($package, $zip)", "ExtractToDirectory",
+            "& $exe version", "'Factory Root'", "'--FactoryRoot',$root", "GetStringAsync('health')",
+            "$health.version -cne $release", "@('/', 'index.html'), @('/app.css', 'app.css')",
+            "StatusCode -ne 200", ".Equals($bytes, $expected)", "$server.Kill()"]);
     }
 
     [Fact]
@@ -202,7 +250,7 @@ public sealed partial class ReleaseWorkflowTests
     }
 
     [Fact]
-    public void GithubEnv_HoldsOnlyReleaseNamesThatNoMsBuildPropertyReads()
+    public void VersionOutputs_HoldOnlyReleaseNamesThatNoMsBuildPropertyReads()
     {
         string yaml = Workflow();
         string[] msBuildProperties =
@@ -211,15 +259,20 @@ public sealed partial class ReleaseWorkflowTests
             "InformationalVersion", "Configuration", "Target",
         ];
 
-        string[] envLines = [.. yaml.Split('\n').Where(line => line.Contains(">> \"$GITHUB_ENV\"", StringComparison.Ordinal))];
-        string[] written = [.. envLines.Select(line => GithubEnvWrite().Match(line)).Where(match => match.Success)
+        string[] lines = [.. yaml.Split('\n').Where(line => !line.TrimStart().StartsWith('#'))];
+        Assert.DoesNotContain(lines, line => line.Contains("GITHUB_ENV", StringComparison.OrdinalIgnoreCase));
+        string[] envLines = [.. lines.Where(line => line.Contains("GITHUB_OUTPUT", StringComparison.OrdinalIgnoreCase))];
+        string[] written = [.. envLines.Select(line => GithubOutputWrite().Match(line)).Where(match => match.Success)
             .Select(match => match.Groups["name"].Value)];
         Assert.Equal(envLines.Length, written.Length);
-        Assert.Equal(["RELEASE_VERSION", "RELEASE_TARGET"], written);
+        Assert.Equal(["RELEASE_VERSION", "RELEASE_TARGET", "zip_sha256", "tarball_sha256", "roomkit_sha256"], written);
 
         List<string> keys = EnvBlockKeys(yaml);
         Assert.Contains("PR_TITLE", keys);
         Assert.Contains("GH_TOKEN", keys);
+        Assert.Contains("ZIP_SHA256", keys);
+        Assert.Contains("TARBALL_SHA256", keys);
+        Assert.Contains("ROOMKIT_SHA256", keys);
         Assert.All(written.Concat(keys), name => Assert.DoesNotContain(name, msBuildProperties, StringComparer.OrdinalIgnoreCase));
         Assert.Empty(BareVersionOrTarget().Matches(yaml));
 
@@ -227,8 +280,8 @@ public sealed partial class ReleaseWorkflowTests
         int test = yaml.IndexOf("\n      - name: Test\n", StringComparison.Ordinal);
         int publish = yaml.IndexOf("\n      - name: Publish\n", StringComparison.Ordinal);
         Assert.True(version >= 0 && test > version && publish > test, "Test must come after Version and before Publish");
-        string testStep = yaml[(test + "\n      - name: Test\n".Length)..publish];
-        Assert.Equal("        run: dotnet test -c Release\n", testStep.TrimEnd('\n') + "\n");
+        Assert.Equal(TestStepBody, Step(JobBlock(yaml, "macos-tests"), "Test").TrimEnd('\n') + "\n");
+        Assert.Contains("TEST_PART", keys);
     }
 
     [Fact]
@@ -278,8 +331,8 @@ public sealed partial class ReleaseWorkflowTests
             + "          SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}\n        run: |\n",
             sign, StringComparison.Ordinal);
         Assert.All(RunBlocks(yaml), run => Assert.DoesNotContain("secrets.", run, StringComparison.Ordinal));
-        Assert.DoesNotContain("secrets.", Step(yaml, "Test"), StringComparison.Ordinal);
-        Assert.DoesNotContain("env:", Step(yaml, "Test"), StringComparison.Ordinal);
+        Assert.DoesNotContain("secrets.", Step(JobBlock(yaml, "macos-tests"), "Test"), StringComparison.Ordinal);
+        Assert.DoesNotContain("env:", Step(JobBlock(yaml, "macos-tests"), "Test"), StringComparison.Ordinal);
         Assert.DoesNotContain("secrets", TopLevelBlock(yaml, "jobs:").Split("    steps:")[0], StringComparison.Ordinal);
         Assert.DoesNotContain("set -x", yaml, StringComparison.Ordinal);
         Assert.DoesNotContain("echo \"$SIGNING_CERT", yaml, StringComparison.Ordinal);
@@ -557,6 +610,565 @@ public sealed partial class ReleaseWorkflowTests
         }
     }
 
+    [Fact]
+    public void Jobs_RunTheWindowsAndMacosBuildsInParallelAfterVersionAndReleaseAfterBoth()
+    {
+        string yaml = Workflow();
+
+        Assert.Equal(Jobs, JobNames(yaml));
+        Assert.Empty(Regex.Matches(JobBlock(yaml, "version"), "\n    needs:"));
+        Assert.Equal(["needs: version"], NeedsLines(JobBlock(yaml, "windows-tests")));
+        Assert.Equal(["needs: version"], NeedsLines(JobBlock(yaml, "macos-tests")));
+        Assert.Equal(["needs: [version, windows-tests]"], NeedsLines(JobBlock(yaml, "windows")));
+        Assert.Equal(["needs: [version, macos-tests]"], NeedsLines(JobBlock(yaml, "macos")));
+        Assert.Equal(["needs: [version, windows, macos]"], NeedsLines(JobBlock(yaml, "release")));
+        // windows and macos are needed by release only, each test job only by its own OS's build, and only release
+        // reads the build jobs' outputs.
+        Assert.Equal(["release"], Jobs.Where(job => NeededJobs(yaml, job).Contains("windows")));
+        Assert.Equal(["release"], Jobs.Where(job => NeededJobs(yaml, job).Contains("macos")));
+        Assert.Equal(["windows"], Jobs.Where(job => NeededJobs(yaml, job).Contains("windows-tests")));
+        Assert.Equal(["macos"], Jobs.Where(job => NeededJobs(yaml, job).Contains("macos-tests")));
+        Assert.All(Jobs.Where(job => job != "release"), job =>
+        {
+            Assert.DoesNotContain("needs.windows.", JobBlock(yaml, job), StringComparison.Ordinal);
+            Assert.DoesNotContain("needs.macos.", JobBlock(yaml, job), StringComparison.Ordinal);
+        });
+        Assert.All(Jobs, job =>
+        {
+            Assert.DoesNotContain("needs.windows-tests.", JobBlock(yaml, job), StringComparison.Ordinal);
+            Assert.DoesNotContain("needs.macos-tests.", JobBlock(yaml, job), StringComparison.Ordinal);
+        });
+
+        // The only job-level if: is the version job's.
+        Assert.Single(JobBlock(yaml, "version").Split('\n'), line => line.StartsWith("    if:", StringComparison.Ordinal));
+        Assert.All(Jobs.Where(job => job != "version"), job =>
+            Assert.DoesNotContain(JobBlock(yaml, job).Split('\n'), line => line.StartsWith("    if:", StringComparison.Ordinal)));
+        Assert.Contains("\n    runs-on: ubuntu-latest\n", JobBlock(yaml, "release"), StringComparison.Ordinal);
+        Assert.Contains("\n    runs-on: macos-15\n", JobBlock(yaml, "macos"), StringComparison.Ordinal);
+        Assert.Contains("\n    runs-on: macos-15\n", JobBlock(yaml, "macos-tests"), StringComparison.Ordinal);
+        Assert.Contains("\n    runs-on: windows-latest\n", JobBlock(yaml, "windows-tests"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TestJobs_RunEachOsInTwoFilteredPartsAndNoBuildJobRunsTests()
+    {
+        string yaml = Workflow();
+
+        foreach ((string job, string step) in new[] { ("windows-tests", "Windows tests"), ("macos-tests", "Test") })
+        {
+            string block = JobBlock(yaml, job);
+            Assert.Contains(
+                "    strategy:\n      fail-fast: false\n      matrix:\n        part: [1, 2]\n    env:\n"
+                + "      TEST_PART: ${{ matrix.part }}\n    steps:\n", block, StringComparison.Ordinal);
+            Assert.Single(Regex.Matches(block, "matrix:"));
+            Assert.Single(Regex.Matches(block, "\n        part: "));
+            Assert.Equal(job == "windows-tests" ? "        shell: bash\n" + TestStepBody : TestStepBody, Step(block, step).TrimEnd('\n') + "\n");
+            string run = Assert.Single(RunBlocks(block));
+            Assert.Contains("dotnet test -c Release --filter \"$TEST_FILTER\"", run, StringComparison.Ordinal);
+            Assert.DoesNotContain("-p:Version", run, StringComparison.Ordinal);
+            Assert.Single(Regex.Matches(run, "dotnet "));
+        }
+
+        // The build jobs, version and release run no tests.
+        foreach (string job in Jobs.Where(job => job is not "windows-tests" and not "macos-tests"))
+        {
+            Assert.All(RunBlocks(JobBlock(yaml, job)), run =>
+                Assert.DoesNotContain("dotnet test", run, StringComparison.Ordinal));
+            Assert.DoesNotContain("matrix", JobBlock(yaml, job), StringComparison.Ordinal);
+        }
+
+        string code = string.Join("\n", yaml.Split('\n').Where(line => !line.TrimStart().StartsWith('#')));
+        Assert.Equal(2, Regex.Matches(code, "dotnet test").Count);
+        Assert.Equal(2, Regex.Matches(yaml, "test-filter\\.sh \\.github/test-part-1\\.txt \"\\$TEST_PART\"").Count);
+    }
+
+    [Fact]
+    public void TestJobs_ReadOnlyTheRepoAndPassMatrixAndNeedsValuesOnlyThroughEnv()
+    {
+        string yaml = Workflow();
+
+        foreach (string job in new[] { "windows-tests", "macos-tests" })
+        {
+            string block = JobBlock(yaml, job);
+            Assert.Contains("\n    permissions:\n      contents: read\n    strategy:\n", block, StringComparison.Ordinal);
+            Assert.DoesNotContain("secrets", block, StringComparison.Ordinal);
+            Assert.DoesNotContain("github.token", block, StringComparison.Ordinal);
+            Assert.DoesNotContain("GH_TOKEN", block, StringComparison.Ordinal);
+            Assert.DoesNotContain("outputs:", block, StringComparison.Ordinal);
+            Assert.All(RunBlocks(block), run => Assert.DoesNotContain("${{", run, StringComparison.Ordinal));
+            Assert.Equal(
+                "        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0\n"
+                + "        with:\n"
+                + "          ref: ${{ needs.version.outputs.release_target }}\n"
+                + "          persist-credentials: false\n"
+                + "\n",
+                Step(block, job == "windows-tests" ? "Check out the release commit" : "Check out the release commit on macOS"));
+            Assert.Equal(
+                "        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1\n"
+                + "        with:\n"
+                + "          dotnet-version: \"10.0.x\"\n"
+                + "\n",
+                Step(block, job == "windows-tests" ? "Set up .NET on Windows" : "Set up .NET"));
+            // Every ${{ }} of the job: the matrix part in the job's env:, the release commit in the checkout's with:.
+            Assert.Equal(
+                ["${{ matrix.part }}", "${{ needs.version.outputs.release_target }}"],
+                Regex.Matches(block, @"\$\{\{[^}]*\}\}").Select(match => match.Value));
+            Assert.Contains("\n    env:\n      TEST_PART: ${{ matrix.part }}\n", block, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void MacosJob_TakesOverTheBuildStepsByteForByteAndReleaseBuildsNothing()
+    {
+        string yaml = Workflow();
+        string macos = JobBlock(yaml, "macos");
+        string[] moved =
+        [
+            "Publish", "Sign", "Verify signature", "Remove signing keychain", "Smoke check the published server",
+            "Pack", "Pack RoomKit", "Hash the macOS files", "Save the verified macOS files",
+        ];
+
+        string[] macosNames = StepNames(macos);
+        Assert.Equal(
+            ["Check out the release commit on macOS", "Set up .NET", .. moved],
+            macosNames);
+        foreach (string job in Jobs.Where(job => job != "macos"))
+        {
+            string[] names = StepNames(JobBlock(yaml, job));
+            Assert.All(job == "macos-tests" ? moved : macosNames, name => Assert.DoesNotContain(name, names));
+        }
+
+        // The Test step left macos for macos-tests, after the same checkout and .NET setup.
+        string tests = JobBlock(yaml, "macos-tests");
+        Assert.Equal(["Check out the release commit on macOS", "Set up .NET", "Test"], StepNames(tests));
+        Assert.Equal(TestStepBody, Step(tests, "Test").TrimEnd('\n') + "\n");
+        Assert.Equal(
+            ["Check out the release commit", "Set up .NET on Windows", "Windows tests"],
+            StepNames(JobBlock(yaml, "windows-tests")));
+
+        // Each moved step's body as it was in the old release job (taken from release.yml before #169).
+        foreach ((string name, string body) in MovedStepBodies)
+        {
+            Assert.Equal(body, Step(macos, name));
+        }
+
+        foreach ((string name, string body) in MovedStepBodies.Where(step => step.Name.StartsWith("Check out", StringComparison.Ordinal)
+                     || step.Name.StartsWith("Set up", StringComparison.Ordinal)))
+        {
+            Assert.Equal(body, Step(tests, name));
+        }
+
+        // The two long signing steps, by the SHA-256 of their bodies before #169; their lines are checked one by
+        // one in the Sign_* and VerifySignature_* tests.
+        Assert.Equal("6b2e842d7e0e6389d41eba6cfa887cec6e5449da9678b944e0b9fc08151d455d", Sha256(Step(macos, "Sign")));
+        Assert.Equal("2fac1b196861cc5b0a4f42d99e49038ca9438e0231b443cc73ae4ad91f5b5050", Sha256(Step(macos, "Verify signature")));
+
+        string release = JobBlock(yaml, "release");
+        foreach (string run in RunBlocks(release))
+        {
+            string code = string.Join("\n", run.Split('\n').Where(line => !line.TrimStart().StartsWith('#')));
+            Assert.DoesNotContain("dotnet", code, StringComparison.Ordinal);
+            Assert.DoesNotContain("codesign", code, StringComparison.Ordinal);
+            Assert.DoesNotContain("security", code, StringComparison.Ordinal);
+        }
+
+        Assert.DoesNotContain("setup-dotnet", release, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Secrets_StayInTheSignStepOfTheMacosJob()
+    {
+        string yaml = Workflow();
+        string macos = JobBlock(yaml, "macos");
+
+        Assert.Equal(2, Regex.Matches(yaml, Regex.Escape("${{ secrets.")).Count);
+        Assert.Equal(2, Regex.Matches(Step(macos, "Sign"), Regex.Escape("${{ secrets.")).Count);
+        Assert.All(Jobs.Where(job => job != "macos"), job =>
+            Assert.DoesNotContain("secrets.", JobBlock(yaml, job), StringComparison.Ordinal));
+        Assert.StartsWith("        if: always()\n", Step(macos, "Remove signing keychain"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EachJob_UsesOnlyItsOwnPinnedActions()
+    {
+        string yaml = Workflow();
+        Dictionary<string, string[]> expected = new()
+        {
+            ["version"] = ["actions/checkout"],
+            ["windows-tests"] = ["actions/checkout", "actions/setup-dotnet"],
+            ["macos-tests"] = ["actions/checkout", "actions/setup-dotnet"],
+            ["windows"] = ["actions/checkout", "actions/setup-dotnet", "actions/upload-artifact"],
+            ["macos"] = ["actions/checkout", "actions/setup-dotnet", "actions/upload-artifact"],
+            ["release"] = ["actions/checkout", "actions/download-artifact", "actions/attest-build-provenance"],
+        };
+
+        foreach (string job in Jobs)
+        {
+            string[] uses = [.. JobBlock(yaml, job).Split('\n').Where(line => line.Contains("uses:", StringComparison.Ordinal))];
+            Assert.All(uses, line => Assert.Matches(PinnedUse(), line));
+            Assert.Equal(expected[job], uses.Select(line => line.Trim().Replace("- ", "", StringComparison.Ordinal)
+                .Split('@')[0]["uses: ".Length..]));
+        }
+    }
+
+    [Fact]
+    public void BuildJobs_HashTheExactUploadedFilesAndReportTheHashesAsOutputs()
+    {
+        string yaml = Workflow();
+        string macos = JobBlock(yaml, "macos");
+        string windows = JobBlock(yaml, "windows");
+
+        Assert.Contains(
+            "    outputs:\n      tarball_sha256: ${{ steps.hash.outputs.tarball_sha256 }}\n"
+            + "      roomkit_sha256: ${{ steps.hash.outputs.roomkit_sha256 }}\n", macos, StringComparison.Ordinal);
+        string[] names = StepNames(macos);
+        Assert.Equal(["Pack RoomKit", "Hash the macOS files", "Save the verified macOS files"], names[^3..]);
+        Assert.Equal(
+            "        id: hash\n"
+            + "        run: |\n"
+            + "          set -o pipefail\n"
+            + "          TARBALL_SHA256=\"$(shasum -a 256 \"dist/controlroom-$RELEASE_VERSION-osx-arm64.tar.gz\" | cut -d ' ' -f 1)\"\n"
+            + "          ROOMKIT_SHA256=\"$(shasum -a 256 \"dist/RoomKit.$RELEASE_VERSION.nupkg\" | cut -d ' ' -f 1)\"\n"
+            + "          echo \"tarball_sha256=$TARBALL_SHA256\" >> \"$GITHUB_OUTPUT\"\n"
+            + "          echo \"roomkit_sha256=$ROOMKIT_SHA256\" >> \"$GITHUB_OUTPUT\"\n"
+            + "\n",
+            Step(macos, "Hash the macOS files"));
+        Assert.Equal(
+            "        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2\n"
+            + "        with:\n"
+            + "          name: macos-release\n"
+            + "          path: |\n"
+            + "            dist/controlroom-${{ env.RELEASE_VERSION }}-osx-arm64.tar.gz\n"
+            + "            dist/RoomKit.${{ env.RELEASE_VERSION }}.nupkg\n"
+            + "          if-no-files-found: error\n"
+            + "          compression-level: 0\n",
+            Step(macos, "Save the verified macOS files"));
+
+        Assert.Contains("    outputs:\n      zip_sha256: ${{ steps.hash.outputs.zip_sha256 }}\n", windows, StringComparison.Ordinal);
+        Assert.Equal(
+            ["Check out the release commit", "Set up .NET on Windows", "Build and smoke check the Windows ZIP",
+                "Hash the verified ZIP", "Save the verified ZIP"],
+            StepNames(windows));
+        Assert.Equal(
+            "        id: hash\n"
+            + "        shell: bash\n"
+            + "        run: |\n"
+            + "          ZIP_SHA256=\"$(sha256sum \"dist/controlroom-$RELEASE_VERSION-win-x64.zip\" | cut -d ' ' -f 1)\"\n"
+            + "          echo \"zip_sha256=$ZIP_SHA256\" >> \"$GITHUB_OUTPUT\"\n"
+            + "\n",
+            Step(windows, "Hash the verified ZIP"));
+        Assert.Contains("          path: dist/controlroom-${{ env.RELEASE_VERSION }}-win-x64.zip\n",
+            Step(windows, "Save the verified ZIP"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ReleaseJob_DownloadsChecksThenSumsAttestsPublishesAndPrunesLast()
+    {
+        string release = JobBlock(Workflow(), "release");
+
+        Assert.Equal(
+            ["Check out the release commit", "Collect the build artifacts", "Check the downloaded files", "Checksums",
+                "Attest build provenance", "Create GitHub release", "Prune old prereleases"],
+            StepNames(release));
+        Assert.Equal(
+            "        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0\n"
+            + "        with:\n"
+            + "          ref: ${{ needs.version.outputs.release_target }}\n"
+            + "          persist-credentials: false\n"
+            + "\n",
+            Step(release, "Check out the release commit"));
+        Assert.Equal(
+            "        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0\n"
+            + "        with:\n"
+            + "          pattern: '*-release'\n"
+            + "          merge-multiple: true\n"
+            + "          path: dist\n"
+            + "\n",
+            Step(release, "Collect the build artifacts"));
+        string check = Step(release, "Check the downloaded files");
+        Assert.StartsWith(
+            "        env:\n"
+            + "          ZIP_SHA256: ${{ needs.windows.outputs.zip_sha256 }}\n"
+            + "          TARBALL_SHA256: ${{ needs.macos.outputs.tarball_sha256 }}\n"
+            + "          ROOMKIT_SHA256: ${{ needs.macos.outputs.roomkit_sha256 }}\n"
+            + "        run: |\n",
+            check, StringComparison.Ordinal);
+        Assert.DoesNotContain("${{", Assert.Single(RunBlocks(check)), StringComparison.Ordinal);
+        Assert.StartsWith("        continue-on-error: true\n", Step(release, "Prune old prereleases"), StringComparison.Ordinal);
+        Assert.Contains("sh .github/scripts/old-prereleases.sh \"$RELEASE_VERSION\" |", release, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("match", 0)]
+    [InlineData("changed byte", 1)]
+    [InlineData("missing file", 1)]
+    [InlineData("extra file", 1)]
+    [InlineData("extra hidden file", 1)]
+    [InlineData("upper-case hash", 1)]
+    [InlineData("short hash", 1)]
+    [InlineData("empty hash", 1)]
+    public async Task CheckTheDownloadedFiles_PassesOnlyForExactlyTheReportedFiles(string change, int exit)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        string script = Assert.Single(RunBlocks(Step(JobBlock(Workflow(), "release"), "Check the downloaded files")));
+        string folder = Path.Combine(Path.GetTempPath(), "controlroom-check-" + Guid.NewGuid().ToString("N"));
+        string dist = Path.Combine(folder, "dist");
+        Directory.CreateDirectory(dist);
+        try
+        {
+            string scriptFile = Path.Combine(folder, "check.sh");
+            File.WriteAllText(scriptFile, script + "\n");
+            Dictionary<string, (string File, string Content)> files = new()
+            {
+                ["TARBALL_SHA256"] = ("controlroom-1.2.3-develop.4-osx-arm64.tar.gz", "tarball bytes"),
+                ["ROOMKIT_SHA256"] = ("RoomKit.1.2.3-develop.4.nupkg", "roomkit bytes"),
+                ["ZIP_SHA256"] = ("controlroom-1.2.3-develop.4-win-x64.zip", "zip bytes"),
+            };
+            Dictionary<string, string> hashes = files.ToDictionary(pair => pair.Key, pair => Sha256(pair.Value.Content));
+            foreach ((string file, string content) in files.Values)
+            {
+                File.WriteAllText(Path.Combine(dist, file), content);
+            }
+
+            switch (change)
+            {
+                case "changed byte":
+                    File.WriteAllText(Path.Combine(dist, files["ROOMKIT_SHA256"].File), "roomkit bytez");
+                    break;
+                case "missing file":
+                    File.Delete(Path.Combine(dist, files["ZIP_SHA256"].File));
+                    break;
+                case "extra file":
+                    File.WriteAllText(Path.Combine(dist, "controlroom-1.2.3-develop.4-osx-x64.tar.gz"), "extra");
+                    break;
+                case "extra hidden file":
+                    File.WriteAllText(Path.Combine(dist, ".extra"), "extra");
+                    break;
+                case "upper-case hash":
+                    hashes["TARBALL_SHA256"] = hashes["TARBALL_SHA256"].ToUpperInvariant();
+                    break;
+                case "short hash":
+                    hashes["ZIP_SHA256"] = hashes["ZIP_SHA256"][..63];
+                    break;
+                case "empty hash":
+                    hashes["ROOMKIT_SHA256"] = "";
+                    break;
+            }
+
+            ProcessStartInfo start = new("/bin/sh")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                WorkingDirectory = folder,
+            };
+            start.ArgumentList.Add(scriptFile);
+            start.Environment["RELEASE_VERSION"] = "1.2.3-develop.4";
+            foreach ((string name, string hash) in hashes)
+            {
+                start.Environment[name] = hash;
+            }
+
+            using Process process = Process.Start(start)!;
+            Task<string> stdout = process.StandardOutput.ReadToEndAsync();
+            Task<string> stderr = process.StandardError.ReadToEndAsync();
+            Assert.True(process.WaitForExit(TimeSpan.FromSeconds(30)), "the check script did not exit within 30 s");
+            process.WaitForExit();
+
+            Assert.Equal(exit, process.ExitCode);
+            Assert.Equal("", await stdout);
+            string errors = await stderr;
+            if (exit == 0)
+            {
+                Assert.Equal("", errors);
+            }
+            else
+            {
+                Assert.NotEqual("", errors);
+            }
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void HeaderReadmeAndClaudeMd_DescribeTheParallelBuildsAndTheHashCheck()
+    {
+        string repo = RepoFolder();
+        string header = string.Join(" ", Workflow().Split('\n').TakeWhile(line => line.StartsWith('#'))
+            .Select(line => line.TrimStart('#').Trim()));
+        string[] texts =
+        [
+            Regex.Replace(header, @"\s+", " "),
+            Regex.Replace(File.ReadAllText(Path.Combine(repo, "README.md")), @"\s+", " "),
+            Regex.Replace(File.ReadAllText(Path.Combine(repo, "CLAUDE.md")), @"\s+", " "),
+        ];
+
+        Assert.All(texts, text =>
+        {
+            Assert.Contains("Windows and macOS builds run in parallel after", text, StringComparison.Ordinal);
+            Assert.Contains("checks the downloaded files' hashes against the hashes the build jobs reported", text,
+                StringComparison.Ordinal);
+            Assert.Contains("then sums, attests and publishes them", text, StringComparison.Ordinal);
+        });
+    }
+
+    [Fact]
+    public void HeaderReadmeAndClaudeMd_DescribeTheTwoTestPartsPerOsAndTheGuard()
+    {
+        string repo = RepoFolder();
+        string header = string.Join(" ", Workflow().Split('\n').TakeWhile(line => line.StartsWith('#'))
+            .Select(line => line.TrimStart('#').Trim()));
+        string[] texts =
+        [
+            Regex.Replace(header, @"\s+", " "),
+            Regex.Replace(File.ReadAllText(Path.Combine(repo, "README.md")), @"\s+", " "),
+            Regex.Replace(File.ReadAllText(Path.Combine(repo, "CLAUDE.md")), @"\s+", " "),
+        ];
+
+        Assert.Contains("in six jobs:", texts[0], StringComparison.Ordinal);
+        Assert.Contains("Six jobs:", texts[2], StringComparison.Ordinal);
+        Assert.DoesNotContain("four jobs", texts[0], StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Four jobs", texts[2], StringComparison.Ordinal);
+        Assert.All(texts, text =>
+        {
+            Assert.Contains("the tests run in two parts per OS before the builds", text, StringComparison.Ordinal);
+            Assert.Contains(".github/test-part-1.txt", text, StringComparison.Ordinal);
+            Assert.Contains("TestPartsGuardTests", text, StringComparison.Ordinal);
+        });
+        Assert.True(File.Exists(Path.Combine(repo, ".github", "test-part-1.txt")));
+        Assert.True(File.Exists(Path.Combine(repo, "tests", "ControlRoom.Server.Tests", "TestPartsGuardTests.cs")));
+        Assert.Contains("TestPartsGuardTests.cs",
+            File.ReadAllText(Path.Combine(repo, "tests", "RoomKit.Tests", "RoomKit.Tests.csproj")), StringComparison.Ordinal);
+    }
+
+    private static readonly string[] Jobs = ["version", "windows-tests", "macos-tests", "windows", "macos", "release"];
+
+    /// <summary>The run step of both test jobs (the Windows one also has <c>shell: bash</c>).</summary>
+    private const string TestStepBody =
+        "        run: |\n"
+        + "          if ! TEST_FILTER=\"$(sh .github/scripts/test-filter.sh .github/test-part-1.txt \"$TEST_PART\")\"; then\n"
+        + "            echo \"No test filter for part $TEST_PART from .github/test-part-1.txt\" >&2\n"
+        + "            exit 1\n"
+        + "          fi\n"
+        + "          dotnet test -c Release --filter \"$TEST_FILTER\"\n";
+
+    /// <summary>Each step that moved from the old release job into macos, with its body before #169.</summary>
+    private static readonly (string Name, string Body)[] MovedStepBodies =
+    [
+        ("Check out the release commit on macOS",
+            "        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0\n"
+            + "        with:\n"
+            + "          ref: ${{ needs.version.outputs.release_target }}\n"
+            + "          persist-credentials: false\n"
+            + "\n"),
+        ("Set up .NET",
+            "        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1\n"
+            + "        with:\n"
+            + "          dotnet-version: \"10.0.x\"\n"
+            + "\n"),
+        ("Publish",
+            "        run: dotnet publish src/ControlRoom.Server -c Release -r osx-arm64 --self-contained -p:Version=\"$RELEASE_VERSION\" -o \"$RUNNER_TEMP/publish\"\n"
+            + "\n"),
+        ("Remove signing keychain",
+            "        if: always()\n"
+            + "        run: |\n"
+            + "          rm -f \"$RUNNER_TEMP/signing.p12\"\n"
+            + "          if [ -e \"$RUNNER_TEMP/signing.keychain-db\" ]; then\n"
+            + "            sh .github/scripts/signing-keychain.sh remove \"$RUNNER_TEMP/signing.keychain-db\" || echo \"::warning::Could not take the signing keychain off the keychain search list\"\n"
+            + "            security delete-keychain \"$RUNNER_TEMP/signing.keychain-db\"\n"
+            + "          fi\n"
+            + "\n"),
+        ("Smoke check the published server",
+            "        run: |\n"
+            + "          ACTUAL=\"$(\"$RUNNER_TEMP/publish/ControlRoom.Server\" version)\"\n"
+            + "          if [ \"$ACTUAL\" != \"ControlRoom $RELEASE_VERSION\" ]; then\n"
+            + "            echo \"ControlRoom.Server version printed '$ACTUAL', expected 'ControlRoom $RELEASE_VERSION'\" >&2\n"
+            + "            exit 1\n"
+            + "          fi\n"
+            + "\n"),
+        ("Pack",
+            "        env:\n"
+            + "          # No ._ AppleDouble entries for extended attributes: the tarball holds only the publish output.\n"
+            + "          COPYFILE_DISABLE: \"1\"\n"
+            + "        run: |\n"
+            + "          NAME=\"controlroom-$RELEASE_VERSION-osx-arm64\"\n"
+            + "          mkdir -p \"$RUNNER_TEMP/pack\" dist\n"
+            + "          mv \"$RUNNER_TEMP/publish\" \"$RUNNER_TEMP/pack/$NAME\"\n"
+            + "          if [ ! -f \"$RUNNER_TEMP/pack/$NAME/wwwroot/index.html\" ]; then\n"
+            + "            echo \"The publish output has no wwwroot/index.html\" >&2\n"
+            + "            exit 1\n"
+            + "          fi\n"
+            + "          # The updater installs this copy of itself with the release it swaps in.\n"
+            + "          cp scripts/updater.sh \"$RUNNER_TEMP/pack/$NAME/updater.sh\"\n"
+            + "          chmod 0755 \"$RUNNER_TEMP/pack/$NAME/updater.sh\"\n"
+            + "          tar -czf \"dist/$NAME.tar.gz\" -C \"$RUNNER_TEMP/pack\" \"$NAME\"\n"
+            + "\n"),
+        ("Pack RoomKit",
+            "        run: dotnet pack src/RoomKit -c Release -p:Version=\"$RELEASE_VERSION\" -o dist\n"
+            + "\n"),
+    ];
+
+    /// <summary>The lines of job <paramref name="job"/>, from its <c>  job:</c> line up to the next job (comment and
+    /// blank lines included), each ending in a newline.</summary>
+    private static string JobBlock(string yaml, string job)
+    {
+        string[] lines = JobsLines(yaml);
+        int start = Array.IndexOf(lines, "  " + job + ":");
+        Assert.True(start >= 0, "missing job " + job);
+        IEnumerable<string> block = lines.Skip(start + 1).TakeWhile(line => !JobLine().IsMatch(line));
+        return "\n" + string.Join("\n", [lines[start], .. block]).TrimEnd('\n') + "\n";
+    }
+
+    private static string[] JobNames(string yaml)
+    {
+        return [.. JobsLines(yaml).Select(line => JobLine().Match(line))
+            .Where(match => match.Success).Select(match => match.Groups["name"].Value)];
+    }
+
+    /// <summary>The lines after the top-level <c>jobs:</c> line, up to the next top-level key (blank lines kept).</summary>
+    private static string[] JobsLines(string yaml)
+    {
+        string[] lines = yaml.Split('\n');
+        int start = Array.IndexOf(lines, "jobs:");
+        Assert.True(start >= 0, "missing top-level jobs:");
+        return [.. lines.Skip(start + 1).TakeWhile(line => line.Length == 0 || line.StartsWith(' '))];
+    }
+
+    /// <summary>The jobs in job <paramref name="job"/>'s <c>needs:</c> (one name or a <c>[a, b]</c> list).</summary>
+    private static string[] NeededJobs(string yaml, string job)
+    {
+        string[] lines = NeedsLines(JobBlock(yaml, job));
+        if (lines.Length == 0)
+        {
+            return [];
+        }
+
+        string value = Assert.Single(lines)["needs:".Length..].Trim().TrimStart('[').TrimEnd(']');
+        return [.. value.Split(',').Select(name => name.Trim())];
+    }
+
+    private static string[] NeedsLines(string job)
+    {
+        return [.. job.Split('\n').Where(line => line.StartsWith("    needs:", StringComparison.Ordinal)).Select(line => line.Trim())];
+    }
+
+    private static string[] StepNames(string text)
+    {
+        return [.. StepName().Matches(text).Select(match => match.Groups["name"].Value)];
+    }
+
+    private static string Sha256(string text)
+    {
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
+    }
+
     private static void AssertInOrder(string text, string[] parts)
     {
         int last = -1;
@@ -676,8 +1288,11 @@ public sealed partial class ReleaseWorkflowTests
         return keys;
     }
 
-    [GeneratedRegex(@"^\s*echo ""(?<name>[A-Za-z_][A-Za-z0-9_]*)=[^""]*"" >> ""\$GITHUB_ENV""$")]
-    private static partial Regex GithubEnvWrite();
+    [GeneratedRegex(@"^\s*echo ""(?<name>[A-Za-z_][A-Za-z0-9_]*)=[^""]*"" >> ""\$GITHUB_OUTPUT""$")]
+    private static partial Regex GithubOutputWrite();
+
+    [GeneratedRegex(@"^  (?<name>[a-z][a-z0-9_-]*):$")]
+    private static partial Regex JobLine();
 
     [GeneratedRegex(@"^      - name: (?<name>.+)$", RegexOptions.Multiline)]
     private static partial Regex StepName();

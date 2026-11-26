@@ -41,6 +41,11 @@ internal sealed class ServerFactory : WebApplicationFactory<Program>
         if (tokenFile is null)
         {
             ownTokenFolder = Path.Combine(Path.GetTempPath(), "controlroom-token-" + Guid.NewGuid().ToString("N"));
+            if (OperatingSystem.IsWindows())
+            {
+                WindowsPrivateFiles.CreateDirectory(new DirectoryInfo(ownTokenFolder));
+            }
+
             tokenFile = Path.Combine(ownTokenFolder, "token", AccessToken.FileName);
         }
 
@@ -62,6 +67,10 @@ internal sealed class ServerFactory : WebApplicationFactory<Program>
 
     /// <summary>The server's clock.</summary>
     public FakeTime Time { get; } = new();
+
+    /// <summary>The factory's develop worktree folder (<c>FACTORY_DEVELOP_DIR</c>); set before the host starts. By
+    /// default a missing folder next to the temp root, so no test ever reads the real one.</summary>
+    public string? FactoryDevelopDir { get; set; }
 
     /// <summary>The token file the hosted server uses.</summary>
     public string TokenFile { get; }
@@ -86,6 +95,8 @@ internal sealed class ServerFactory : WebApplicationFactory<Program>
     {
         builder.UseSetting("FactoryRoot", factoryRoot);
         builder.UseSetting(AccessToken.ConfigKey, TokenFile);
+        builder.UseSetting(
+            FactoryBacklog.ConfigKey, FactoryDevelopDir ?? factoryRoot.TrimEnd('/', '\\') + "-factory-develop");
         if (tailnetHost is not null)
         {
             builder.UseSetting(HostCheck.ConfigKey, tailnetHost);

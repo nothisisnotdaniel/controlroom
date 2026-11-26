@@ -92,10 +92,11 @@ public sealed class TokenCommandTests
         using TempTokenFolder tokens = new();
         using TempFactoryRoot root = new();
         string target = Path.Combine(tokens.Path, "target");
-        File.WriteAllText(target, new string('A', 43) + "\n");
+        TempTokenFolder.WritePrivateText(target, new string('A', 43) + "\n");
         MakeBadFile(root, tokens.TokenFile, target, kind);
-        string expected = AccessToken.InvalidText + Environment.NewLine;
-        Assert.Contains("token --new", AccessToken.InvalidText, StringComparison.Ordinal);
+        string expected = AccessToken.InvalidText(tokens.TokenFile) + Environment.NewLine;
+        Assert.Contains("token --new --TokenFile ", expected, StringComparison.Ordinal);
+        Assert.Contains(tokens.TokenFile, expected, StringComparison.Ordinal);
 
         StringWriter serverError = new();
         WebApplication? app = ServerApp.Create(
@@ -161,7 +162,7 @@ public sealed class TokenCommandTests
 
         Assert.NotNull(app);
         string token = AccessToken.Read(tokens.TokenFile).Token!;
-        Assert.Equal(AccessToken.CreatedText + Environment.NewLine, error.ToString());
+        Assert.Equal(AccessToken.CreatedText(tokens.TokenFile) + Environment.NewLine, error.ToString());
         Assert.DoesNotContain(token, error.ToString(), StringComparison.Ordinal);
         Assert.Equal(before, root.Snapshot());
         Assert.False(tokens.TokenFile.StartsWith(root.Path, StringComparison.Ordinal));
@@ -189,27 +190,25 @@ public sealed class TokenCommandTests
 
     private static void MakeBadFile(TempFactoryRoot root, string path, string target, string kind)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        TempTokenFolder.CreatePrivateDirectory(Path.GetDirectoryName(path)!);
         switch (kind)
         {
             case "symlink":
-                if (!OperatingSystem.IsWindows())
-                {
-                    File.SetUnixFileMode(target, AccessToken.FileMode);
-                }
-
                 File.CreateSymbolicLink(path, target);
                 break;
             case "junk":
-                File.WriteAllText(path, "not a token\n");
-                SetPrivate(path);
+                TempTokenFolder.WritePrivateText(path, "not a token\n");
                 break;
             case "fifo":
                 TempFactoryRoot.MakeFifo(path);
-                SetPrivate(path);
+                if (!OperatingSystem.IsWindows())
+                {
+                    File.SetUnixFileMode(path, AccessToken.FileMode);
+                }
+
                 break;
             case "mode-0644":
-                File.WriteAllText(path, new string('B', 43) + "\n");
+                TempTokenFolder.WritePrivateText(path, new string('B', 43) + "\n");
                 if (!OperatingSystem.IsWindows())
                 {
                     File.SetUnixFileMode(path,
@@ -218,18 +217,9 @@ public sealed class TokenCommandTests
 
                 break;
             default:
-                File.WriteAllText(path, new string('B', 43) + "\n");
-                SetPrivate(path);
+                TempTokenFolder.WritePrivateText(path, new string('B', 43) + "\n");
                 root.Lock(path);
                 break;
-        }
-    }
-
-    private static void SetPrivate(string path)
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            File.SetUnixFileMode(path, AccessToken.FileMode);
         }
     }
 }

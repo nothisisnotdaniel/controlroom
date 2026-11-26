@@ -1,3 +1,3 @@
 using ControlRoom.Server;
 
-return RoomKitApp.Run(args, ControlRoomApp.Options, ControlRoomApp.Jobs, ControlRoomApp.Map);
+return RoomKitApp.Run(args, ControlRoomApp.Options, ControlRoomApp.Map, new FactoryModule(ControlRoomApp.Jobs));

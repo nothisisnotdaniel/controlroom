@@ -77,7 +77,7 @@ const Reviewers = ["security", "ux", "ui", "code"];
 
 const BoardRoute = "#jobs";
 const JobRoute = "#job/";
-const JobIdPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}$/;
+const JobIdPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}(\.[0-9a-f]{32})?$/;
 const ProjectKey = "controlroom.project";
 const PollInterval = 5000;
 // Reviews start with "VERDICT: PASS" or "VERDICT: CHANGES"; decisions start with a bare APPROVE or ESCALATE.
@@ -664,6 +664,9 @@ async function loadUpdate() {
 function renderUpdate(section, latest, current, command, url) {
   const text = element("p", "update-text",
     BoardTexts.updateAvailable + latest + BoardTexts.updateThis + current + BoardTexts.updateEnd);
+  if (command.startsWith(".\\launch-agent.ps1 ")) {
+    text.append(" Run this command in PowerShell from the extracted release folder.");
+  }
   const code = element("code", "update-command", command);
   const copy = element("button", "edit-button", BoardTexts.copy);
   copy.type = "button";

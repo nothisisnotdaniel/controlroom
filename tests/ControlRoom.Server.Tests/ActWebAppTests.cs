@@ -144,7 +144,7 @@ public sealed class ActWebAppTests
         string room = await Fetch("/room.js");
 
         Assert.Contains("  \"/board.js\",\n  \"/act.js\",\n", room, StringComparison.Ordinal);
-        Assert.Contains("const CacheVersion = \"v22\";", room, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v25\";", room, StringComparison.Ordinal);
     }
 
     [Fact]

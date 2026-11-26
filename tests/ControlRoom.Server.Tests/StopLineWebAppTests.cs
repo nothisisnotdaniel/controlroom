@@ -193,7 +193,7 @@ public sealed class StopLineWebAppTests
             StringComparison.Ordinal);
         Assert.True(link >= 0 && stop > link);
         Assert.Contains("const stop = asNumber(project.stopLine);", signature, StringComparison.Ordinal);
-        Assert.Contains("asList(project.blocked), stop]);", signature, StringComparison.Ordinal);
+        Assert.Contains("asList(project.blocked), stop, claims]);", signature, StringComparison.Ordinal);
     }
 
     [Fact]

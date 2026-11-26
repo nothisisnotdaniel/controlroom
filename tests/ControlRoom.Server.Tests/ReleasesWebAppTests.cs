@@ -97,7 +97,7 @@ public sealed partial class ReleasesWebAppTests
         Assert.Contains("element(\"code\", \"release-sha\", row.sha)", log, StringComparison.Ordinal);
         Assert.Contains("link.href = \"#job/\" + row.job;", log, StringComparison.Ordinal);
         Assert.Contains("element(\"span\", \"release-subject\", row.subject)", log, StringComparison.Ordinal);
-        Assert.Contains("const ReleaseJobPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}$/;", js, StringComparison.Ordinal);
+        Assert.Contains("const ReleaseJobPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}(\\.[0-9a-f]{32})?$/;", js, StringComparison.Ordinal);
         Assert.Contains("const ReleaseShaPattern = /^[0-9a-f]{7}$/;", js, StringComparison.Ordinal);
     }
 
@@ -149,7 +149,7 @@ public sealed partial class ReleasesWebAppTests
         string app = await Fetch("/app.js");
 
         Assert.Contains(
-            "  section.appendChild(statusLine(name));\n  section.appendChild(releaseBlock(name));\n"
+            "  if (name !== FactoryName) {\n    section.appendChild(statusLine(name));\n    section.appendChild(releaseBlock(name));\n  }\n"
             + "  section.appendChild(renderPlan(name, project));",
             app, StringComparison.Ordinal);
         Assert.Contains("  showStatus();\n  showReleases();\n  showSearch();\n", app, StringComparison.Ordinal);
@@ -186,7 +186,7 @@ public sealed partial class ReleasesWebAppTests
         string js = await Fetch("/sw.js");
         string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v22\";", room, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v25\";", room, StringComparison.Ordinal);
         Assert.Contains("  \"/status.js\",\n  \"/releases.js\",\n  \"/live.js\",\n", room, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/releases", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/releases", room, StringComparison.Ordinal);

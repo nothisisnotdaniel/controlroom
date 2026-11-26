@@ -114,7 +114,7 @@ public sealed partial class StatusWebAppTests
         string app = await Fetch("/app.js");
 
         Assert.Contains(
-            "  section.appendChild(statusLine(name));\n  section.appendChild(releaseBlock(name));\n  section.appendChild(renderPlan(name, project));",
+            "  if (name !== FactoryName) {\n    section.appendChild(statusLine(name));\n    section.appendChild(releaseBlock(name));\n  }\n  section.appendChild(renderPlan(name, project));",
             app, StringComparison.Ordinal);
         int unreadable = app.IndexOf("section.appendChild(element(\"p\", \"error\", Texts.unreadable));", StringComparison.Ordinal);
         int line = app.IndexOf("section.appendChild(statusLine(name));", StringComparison.Ordinal);
@@ -155,7 +155,7 @@ public sealed partial class StatusWebAppTests
         string js = await Fetch("/sw.js");
         string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v22\";", room, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v25\";", room, StringComparison.Ordinal);
         Assert.Contains("  \"/doctor.js\",\n  \"/status.js\",\n  \"/releases.js\",\n  \"/live.js\",\n", room, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/status", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/status", room, StringComparison.Ordinal);

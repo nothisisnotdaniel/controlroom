@@ -227,7 +227,8 @@ public sealed partial class UpdateCheckTests : IDisposable
         Assert.Equal(available, develop.Available);
         if (available)
         {
-            Assert.Equal("scripts/launch-agent.sh install --release " + tag, develop.Command);
+            string prefix = OperatingSystem.IsWindows() ? @".\launch-agent.ps1 install -Release " : "scripts/launch-agent.sh install --release ";
+            Assert.Equal(prefix + tag, develop.Command);
         }
 
         Assert.False(UpdateEndpoint.Describe(state.Latest, current, null, UpdateChannel.Stable).Available);

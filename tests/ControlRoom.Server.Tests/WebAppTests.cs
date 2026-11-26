@@ -217,7 +217,8 @@ public sealed partial class WebAppTests
     {
         string css = await Fetch("/app.css");
 
-        Assert.Contains(".group h3,\n.group summary {", css, StringComparison.Ordinal);
+        Assert.Contains(".group summary {", css, StringComparison.Ordinal);
+        Assert.DoesNotContain(".group h3", css, StringComparison.Ordinal);
         Assert.DoesNotContain(".stage > summary::before", css, StringComparison.Ordinal);
         Assert.DoesNotContain(".edit-add summary::before", css, StringComparison.Ordinal);
         Assert.DoesNotContain("\nsummary::before", css, StringComparison.Ordinal);
@@ -357,7 +358,7 @@ public sealed partial class WebAppTests
         Assert.Contains("const BoardRoute = \"#jobs\";", js, StringComparison.Ordinal);
         Assert.Contains("const JobRoute = \"#job/\";", js, StringComparison.Ordinal);
         Assert.Contains("return JobRoute + encodeURIComponent(id);", js, StringComparison.Ordinal);
-        Assert.Contains("const JobIdPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}$/;", js, StringComparison.Ordinal);
+        Assert.Contains("const JobIdPattern = /^[0-9]{1,6}-[a-z0-9-]{1,80}(\\.[0-9a-f]{32})?$/;", js, StringComparison.Ordinal);
         Assert.Contains("\"/api/job?id=\" + encodeURIComponent(id)", js, StringComparison.Ordinal);
         Assert.Contains("if (openedFromBoard) {", js, StringComparison.Ordinal);
         Assert.Contains("history.back();", js, StringComparison.Ordinal);

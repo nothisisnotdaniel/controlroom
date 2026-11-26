@@ -178,6 +178,15 @@ public sealed class InboxApiTests
             { "# S\n\n## Notes\n\nProposed by job ../../etc\n", null },
             { "# S\n\n## Notes\n\nProposed by job 12-<b>x</b>\n", null },
             { "# S\n\n### Notes\n\nProposed by job 12-deep\n", null },
+            { Notes("405-auto-pause." + JobSamples.Uuid), "405-auto-pause." + JobSamples.Uuid },
+            { "# S\n\n## Notes\n\nProposed by job 405-a." + JobSamples.Uuid + ".\n", "405-a." + JobSamples.Uuid },
+            { "# S\n\n## Notes\n\nProposed by job 1-" + new string('a', 78) + "." + JobSamples.Uuid + "\n",
+                "1-" + new string('a', 78) + "." + JobSamples.Uuid },
+            { "# S\n\n## Notes\n\nProposed by job 1-" + new string('a', 79) + "." + JobSamples.Uuid + "\n", null },
+            { "# S\n\n## Notes\n\nProposed by job 405-a." + JobSamples.Uuid.ToUpperInvariant() + "\n", null },
+            { "# S\n\n## Notes\n\nProposed by job 405-a." + JobSamples.Uuid[..31] + "\n", null },
+            { "# S\n\n## Notes\n\nProposed by job 405-a." + JobSamples.Uuid + "0\n", null },
+            { "# S\n\n## Notes\n\nProposed by job 405-a.." + JobSamples.Uuid + "\n", null },
         };
     }
 

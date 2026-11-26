@@ -4,6 +4,8 @@
 const Texts = {
   unreachable: "Can't reach the server.",
   unreadable: "Can't read backlog.md. Reload to try again.",
+  noWorktree: "The factory's develop worktree is missing. Run any job.py backlog command once to create it.",
+  notDevelop: "The factory's develop folder is not its develop worktree. Move it away or set FACTORY_DEVELOP_DIR, then reload.",
   noTitle: "(no title)",
   noLines: "No backlog lines.",
   noProjects: "No projects found.",
@@ -24,6 +26,11 @@ const Texts = {
   storyPosition: "Position ",
   stopLine: "Auto stops here",
   stopsBefore: "Auto stops before #",
+  claimOn: "In progress on ",
+  claimAnother: "another machine",
+  claimSince: " since ",
+  claimChecked: " · checked ",
+  claimMinAgo: " min ago",
 };
 
 const Groups = [
@@ -55,8 +62,26 @@ const BacklogProjectKey = "controlroom-backlog-project";
 // (true is open): only project names and group keys, never the token or backlog text.
 const BacklogGroupsKey = "controlroom-backlog-groups";
 
-// Readable project names of the last backlogs answer, in response order.
+// Readable project names of the last backlogs answer, in response order (plus the factory when it has a reason, so
+// its fixed text can be chosen and read).
 let readableProjects = [];
+
+// The factory's own backlog (#147): its section has no status or release line.
+const FactoryName = "factory";
+
+// The fixed text for the factory entry's reason, or null for any other value; never server text.
+function reasonText(project) {
+  if (!project || asText(project.name) !== FactoryName) {
+    return null;
+  }
+  if (project.reason === "no_worktree") {
+    return Texts.noWorktree;
+  }
+  if (project.reason === "not_develop") {
+    return Texts.notDevelop;
+  }
+  return null;
+}
 
 // Set when the app itself opened the story view, so Back can go back in history.
 let openedFromList = false;
@@ -154,6 +179,47 @@ function categoryChip(value) {
   chip.className = "category-chip category-" + value;
   chip.textContent = value;
   return chip;
+}
+
+// Other machines' item claims per project (from /api/backlogs, set by renderProject): { items: Map(number -> claim),
+// stale, checked (ms or null) }. Only numbers and text values; never used as a path or HTML.
+const projectClaims = new Map();
+
+function readClaims(project) {
+  const items = new Map();
+  for (const claim of asList(project && project.claims)) {
+    const item = asNumber(claim && claim.item);
+    if (item !== null && !items.has(item)) {
+      items.set(item, claim);
+    }
+  }
+  const checked = typeof (project && project.claimsChecked) === "string" ? Date.parse(project.claimsChecked) : NaN;
+  return { items: items, stale: project && project.claimsStale === true, checked: Number.isNaN(checked) ? null : checked };
+}
+
+// "In progress on <machine> since <local time>" (another machine when it is unknown, no since part without a valid
+// time), plus " · checked <n> min ago" while the claims are stale; built only with textContent.
+function claimBadge(projectName, number) {
+  const claims = projectClaims.get(projectName);
+  const claim = claims ? claims.items.get(number) : undefined;
+  if (!claim) {
+    return null;
+  }
+  const machine = asText(claim.machine).trim();
+  let text = Texts.claimOn + (machine !== "" ? machine : Texts.claimAnother);
+  const claimed = typeof claim.claimed === "string" ? new Date(claim.claimed) : null;
+  if (claimed !== null && !Number.isNaN(claimed.getTime())) {
+    text += Texts.claimSince + claimed.toLocaleString([], {
+      month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+  }
+  if (claims.stale && claims.checked !== null) {
+    text += Texts.claimChecked + Math.max(0, Math.floor((Date.now() - claims.checked) / 60000)) + Texts.claimMinAgo;
+  }
+  const badge = document.createElement("span");
+  badge.className = "claim-badge";
+  badge.textContent = text;
+  return badge;
 }
 
 // A story's status as a chip (span.status-chip.status-<key>, a visually-hidden "Status: " and the label as text),
@@ -258,6 +324,10 @@ function renderNumberedLine(projectName, version, entry, number, position) {
   const chip = categoryChip(entry.category);
   if (chip !== null) {
     head.appendChild(chip);
+  }
+  const claim = claimBadge(projectName, number);
+  if (claim !== null) {
+    head.appendChild(claim);
   }
   if (entry.waiting === true) {
     head.appendChild(element("span", "badge badge-waiting", Texts.waiting));
@@ -499,7 +569,10 @@ function planSignature(project) {
     return "";
   }
   const stop = asNumber(project.stopLine);
-  return JSON.stringify([project.next || null, project.stopped === true, asList(project.blocked), stop]);
+  // Other machines' claims too; the checked time only while stale (the badge shows its age then).
+  const stale = project.claimsStale === true;
+  const claims = [asList(project.claims), stale, stale ? project.claimsChecked || null : null];
+  return JSON.stringify([project.next || null, project.stopped === true, asList(project.blocked), stop, claims]);
 }
 
 function renderProject(project) {
@@ -507,6 +580,7 @@ function renderProject(project) {
   const name = asText(project && project.name);
   section.dataset.project = name;
   section.dataset.plan = planSignature(project);
+  projectClaims.set(name, readClaims(project));
   section.hidden = backlogSectionHidden(name);
   const version = asText(project && project.version);
   const head = element("div", "project-head");
@@ -517,14 +591,21 @@ function renderProject(project) {
     section.appendChild(element("p", "backlog-pending", Texts.pending));
   }
   if (!project || project.readable !== true) {
+    const reason = reasonText(project);
+    if (reason !== null) {
+      section.appendChild(element("p", "error", reason));
+      return section;
+    }
     section.appendChild(element("p", "error", Texts.unreadable));
     return section;
   }
   if (version !== "") {
     head.appendChild(editToggle(name, section));
   }
-  section.appendChild(statusLine(name));
-  section.appendChild(releaseBlock(name));
+  if (name !== FactoryName) {
+    section.appendChild(statusLine(name));
+    section.appendChild(releaseBlock(name));
+  }
   section.appendChild(renderPlan(name, project));
   let shown = 0;
   const stopLine = asNumber(project.stopLine);
@@ -578,7 +659,9 @@ function storeBacklogProject(name) {
 }
 
 function readableNames(projects) {
-  return projects.filter((project) => project && project.readable === true).map((project) => asText(project.name));
+  return projects
+    .filter((project) => (project && project.readable === true) || reasonText(project) !== null)
+    .map((project) => asText(project.name));
 }
 
 // The stored project when it is readable, else the first readable one (not stored); null when none is readable.

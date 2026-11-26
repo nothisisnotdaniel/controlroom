@@ -20,12 +20,12 @@ public sealed class BacklogsApiTests
         using JsonDocument json = JsonDocument.Parse(body);
         JsonElement[] projects = json.RootElement.GetProperty("projects").EnumerateArray().ToArray();
         Assert.Equal(
-            ["emptyOne", "LinkedBacklog", "Missing", "Normal", "Oversized"],
+            ["emptyOne", "LinkedBacklog", "Missing", "Normal", "Oversized", "factory"],
             projects.Select(project => project.GetProperty("name").GetString()));
 
         JsonElement normal = projects[3];
         Assert.Equal(
-            ["name", "readable", "open", "approval", "user", "done", "version", "next", "stopped", "blocked", "pending", "stopLine"],
+            ["name", "readable", "open", "approval", "user", "done", "version", "next", "stopped", "blocked", "pending", "stopLine", "claims", "claimsChecked", "claimsStale"],
             normal.EnumerateObject().Select(property => property.Name));
         Assert.True(normal.GetProperty("readable").GetBoolean());
         Assert.False(normal.GetProperty("pending").GetBoolean());
@@ -126,7 +126,7 @@ public sealed class BacklogsApiTests
     }
 
     [Fact]
-    public async Task Backlogs_EmptyRootGivesNoProjectsAndNoStore()
+    public async Task Backlogs_EmptyRootGivesOnlyTheUnreadableFactoryAndNoStore()
     {
         using TempFactoryRoot root = new();
         using ServerFactory factory = new(root.Path);
@@ -135,7 +135,11 @@ public sealed class BacklogsApiTests
         using HttpResponseMessage response = await client.GetAsync("/api/backlogs");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("{\"projects\":[]}", await response.Content.ReadAsStringAsync());
+        using JsonDocument json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        JsonElement only = Assert.Single(json.RootElement.GetProperty("projects").EnumerateArray());
+        Assert.Equal("factory", only.GetProperty("name").GetString());
+        Assert.False(only.GetProperty("readable").GetBoolean());
+        Assert.Equal("no_worktree", only.GetProperty("reason").GetString());
         Assert.True(response.Headers.CacheControl?.NoStore);
     }
 

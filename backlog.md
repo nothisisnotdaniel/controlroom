@@ -29,6 +29,17 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#136](backlog/136-start-end-and-time-per-agent.md) Start, end and time per agent on job cards (after: factory#22) → 372-job-card-times
 - [x] [#138](backlog/138-number-of-active-and-blocked-jobs.md) Active and blocked job counts on the Jobs tab → 373-jobs-tab-badges
 - [x] [#142](backlog/142-update-interval-setting-30-minutes-by.md) Update interval setting, 30 minutes by default → 376-update-interval
+- [x] [#147](backlog/147-show-and-edit-the-factory-backlog.md) Show and edit the factory backlog (after: factory#30) → 402-factory-backlog-section.29a7794e83c64b5d9aa705e1f7718d5a
+- [x] [#153](backlog/153-modular-roomkit-core-with-an-opt.md) Modular RoomKit core with an opt-in factory module (after: #147) → 406-modular-roomkit-core.fa6ca09ced3b40b19a4cc3f8c274dd09
+- [x] [#162](backlog/162-show-jobs-with-uuid-suffixed-ids.md) Show jobs with UUID-suffixed ids → 407-uuid-suffixed-job-ids.16840cbb91d14911a09e5b5c07650d3f
+- [x] [#159](backlog/159-show-which-work-items-a-collaborator.md) Show which work items a collaborator is working on (after: factory#54) → 409-show-collaborator-claims.0bf57dd3bb0b404788a7f8ed9b328e18
+- [x] [#152](backlog/152-windows-executables-for-controlroom.md) Windows executables for ControlRoom → 400-windows-executables-for-controlroom.866b39353c1e4a4a8ef568accfd791ec
+- [x] [#117](backlog/117-drop-the-dead-group-h3-selector.md) Drop the dead .group h3 selector → 405-drop-dead-selector.8c29b6108636429981971087bb44206e
+- [x] [#169](backlog/169-run-the-windows-and-macos-release.md) Run the Windows and macOS release builds in parallel → 413-parallel-release-builds.355c0f49ec1d42848e08033fd1b76b50
+- [x] [#170](backlog/170-make-the-test-suite-faster-find.md) Make the test suite faster: find and fix the slowest tests → 414-faster-test-suite.708c8fa312a9409c800831c9af4d1857
+- [x] [#174](backlog/174-fix-the-flaky-windows-interval-release.md) Fix the flaky Windows interval release test → 416-fix-interval-release-test.d2a2970baae84d35bd2275907c0d614d
+- [x] [#175](backlog/175-fix-the-windows-updater-locked-last.md) Fix the Windows updater locked last-check case → 417-fix-locked-last-check.76ee7d442f6542c1b9e3c1777329e25a
+- [ ] [#163](backlog/163-show-when-the-last-check-for.md) Show when the updater last checked for updates
 - [ ] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone (after: #139)
 - [ ] [#139](backlog/139-phone-start-spike.md) Phone start spike
 - [x] [#13](backlog/013-releases-overview.md) Releases overview → 375-releases-overview
@@ -122,16 +133,14 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#109](backlog/109-drag-and-drop-to-reorder-backlog.md) Drag and drop to reorder backlog items → 345-backlog-drag-drop
 - [x] [#110](backlog/110-category-chip-on-backlog-items-and.md) Category chip on backlog items and stories (after: factory#20) → 346-category-chips
 - [?] [#111](backlog/111-decide-what-the-updater-does-when.md) Decide what the updater does when rmdir of its lock fails
-- [?] [#112](backlog/112-decide-what-the-updater-does-when.md) Decide what the updater does when kill in cleanup fails
+- [ ] [#112](backlog/112-decide-what-the-updater-does-when.md) Decide what the updater does when kill in cleanup fails
 - [x] [#113](backlog/113-place-the-auto-stop-line-from.md) Place the auto stop line from the backlog view (after: factory#21; #109) → 348-stop-line-ui
 - [x] [#114](backlog/114-browser-check-of-the-backlogs-project.md) Browser check of the Backlogs project picker at phone width
 - [?] [#115](backlog/115-scroll-to-the-top-when-the.md) Scroll to the top when the Backlogs project changes
-- [?] [#116](backlog/116-correct-the-project-picker-when-the.md) Correct the project picker when the chosen project disappears while focused
-- [ ] [#117](backlog/117-drop-the-dead-group-h3-selector.md) Drop the dead .group h3 selector
+- [ ] [#116](backlog/116-correct-the-project-picker-when-the.md) Correct the project picker when the chosen project disappears while focused
 - [x] [#118](backlog/118-browser-check-of-collapsible-backlog-groups.md) Browser check of collapsible backlog groups at phone width
 - [?] [#119](backlog/119-one-position-per-item-in-open.md) One position per item in Open and Waiting
 - [?] [#120](backlog/120-refuse-a-target-field-on-backlog.md) Refuse a target field on backlog changes other than place
-- [?] [#121](backlog/121-announce-the-new-position-after-a.md) Announce the new position after a drag for screen readers
 - [x] [#122](backlog/122-try-drag-and-drop-by-hand.md) Try drag and drop by hand on iPhone and Mac
 - [x] [#123](backlog/123-browser-check-of-category-chips-at.md) Browser check of category chips at phone width and in dark mode
 - [x] [#124](backlog/124-check-the-stop-line-divider-on.md) Check the stop line divider on the iPhone in dark mode
@@ -150,10 +159,26 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#140](backlog/140-cap-the-tag-list-in-the.md) Cap the tag list in the releases overview
 - [?] [#141](backlog/141-loading-text-for-the-releases-block.md) Loading text for the releases block
 - [x] [#143](backlog/143-check-the-releases-block-on-the.md) Check the releases block on the iPhone
-- [?] [#144](backlog/144-settings-file-cap-fits-every-valid.md) Settings file cap fits every valid interval
-- [?] [#145](backlog/145-story-reads-on-linux-with-glibc.md) Story reads on Linux with glibc older than 2.33
+- [ ] [#144](backlog/144-settings-file-cap-fits-every-valid.md) Settings file cap fits every valid interval
+- [ ] [#145](backlog/145-story-reads-on-linux-with-glibc.md) Story reads on Linux with glibc older than 2.33
 - [x] [#146](backlog/146-shared-roomkit-core-for-controlroom-and.md) Shared RoomKit core for ControlRoom and PlayRoom → 386-roomkit-shared-core
-- [?] [#147](backlog/147-show-and-edit-the-factory-backlog.md) Show and edit the factory backlog (after: factory#30)
-- [?] [#148](backlog/148-test-that-a-file-in-both.md) Test that a file in both wwwroot folders fails the build
-- [?] [#149](backlog/149-strict-mode-for-sw-js.md) Strict mode for sw.js
-- [?] [#150](backlog/150-check-job-ids-and-folders-from.md) Check job ids and folders from IJobFormat
+- [ ] [#148](backlog/148-test-that-a-file-in-both.md) Test that a file in both wwwroot folders fails the build
+- [ ] [#149](backlog/149-strict-mode-for-sw-js.md) Strict mode for sw.js
+- [ ] [#150](backlog/150-check-job-ids-and-folders-from.md) Check job ids and folders from IJobFormat
+- [ ] [#151](backlog/151-extract-roomkit-to-its-own-repository.md) Extract RoomKit to its own repository
+- [ ] [#154](backlog/154-windows-update-hint-includes-the-execution.md) Windows update hint includes the execution-policy step
+- [ ] [#155](backlog/155-claude-md-covers-the-powershell-scripts.md) CLAUDE.md covers the PowerShell scripts' network calls
+- [ ] [#156](backlog/156-drop-the-one-off-controlroom-400.md) Drop the one-off ControlRoom 400 test workflow
+- [ ] [#157](backlog/157-windows-updater-errors-say-what-to.md) Windows updater errors say what to do next
+- [ ] [#158](backlog/158-readable-status-output-from-launch-agent.md) Readable status output from launch-agent.ps1
+- [?] [#160](backlog/160-refuse-a-symlinked-factory-folder-in.md) Refuse a symlinked factory folder in the develop worktree
+- [?] [#161](backlog/161-clear-not-develop-error-text-for.md) Clear not_develop error text for factory backlog edits
+- [x] [#164](backlog/164-make-app-updates-reach-the-app.md) Make app updates reach the app: bump the shell cache and load app files network-first → 411-app-updates-reach-app.065933528bd9428d84472746bdfff0d7
+- [ ] [#165](backlog/165-bound-the-claim-fetch-shallow-fetch.md) Bound the claim fetch: shallow fetch and cap ls-remote output before parsing
+- [ ] [#166](backlog/166-keep-the-claim-checked-time-current.md) Keep the claim 'checked' time current and show it after a first failed check
+- [ ] [#167](backlog/167-give-the-claim-badge-a-screen.md) Give the claim badge a screen-reader label
+- [ ] [#168](backlog/168-update-the-factory-s-claim-marks.md) Update the factory's claim marks live
+- [ ] [#171](backlog/171-one-project-filter-on-the-backlog.md) One project filter on the Backlog page, with factory
+- [x] [#172](backlog/172-split-the-release-tests-across-parallel.md) Split the release tests across parallel runners → 415-parallel-release-tests.2a7150e6f23a4394b4a23946f6f34dc1
+- [ ] [#173](backlog/173-spike-find-the-slowest-tests-on.md) Spike: find the slowest tests on CI
+- [ ] [#176](backlog/176-show-each-backlog-item-s-factory.md) Show each backlog item's factory estimate (after: factory#62)

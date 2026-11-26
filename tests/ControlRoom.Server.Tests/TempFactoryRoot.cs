@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
+using System.Text;
 
 namespace ControlRoom.Server.Tests;
 
@@ -24,6 +25,7 @@ internal sealed class TempFactoryRoot : IDisposable
         + "* [ ] Star: ignored\n";
 
     private readonly List<string> lockedFiles = [];
+    private readonly List<FileStream> exclusiveHandles = [];
 
     public TempFactoryRoot()
     {
@@ -64,23 +66,30 @@ internal sealed class TempFactoryRoot : IDisposable
     public static void InitGit(string folder, string branch)
     {
         Git(folder, "init", "-q", "-b", branch);
-        Git(folder, "config", "user.name", "Test User");
-        Git(folder, "config", "user.email", "test@example.invalid");
-        Git(folder, "config", "commit.gpgsign", "false");
-        Git(folder, "config", "core.hooksPath", ".git/hooks");
+        // The same settings five `git config` calls would write, appended in one go: each git process costs time.
+        File.AppendAllText(
+            System.IO.Path.Combine(folder, ".git", "config"),
+            "[user]\n\tname = Test User\n\temail = test@example.invalid\n"
+            + "[commit]\n\tgpgsign = false\n"
+            + "[core]\n\tautocrlf = false\n\thooksPath = .git/hooks\n");
         Git(folder, "add", "-A");
         Git(folder, "commit", "-q", "-m", "init");
     }
 
-    /// <summary>Creates a bare repo under the root's <c>.remotes</c> dot-folder (not a project), adds it as
-    /// <c>origin</c> and pushes the current branch to it; returns its path.</summary>
+    /// <summary>Seeds a local bare origin under the fixture's <c>.remotes</c> folder.</summary>
     public string AddBareRemote(string folder)
     {
         string remote = System.IO.Path.Combine(Path, ".remotes", new DirectoryInfo(folder).Name + ".git");
         Directory.CreateDirectory(remote);
         Git(remote, "init", "-q", "--bare");
+        // Seed the initial ref locally, so only the API operation under test needs a Git transport.
+        string bundle = remote + ".bundle";
+        string branch = Git(folder, "symbolic-ref", "HEAD");
+        Git(folder, "bundle", "create", bundle, branch);
+        Git(remote, "bundle", "unbundle", bundle);
+        Git(remote, "update-ref", branch, Git(folder, "rev-parse", "HEAD"));
+        File.Delete(bundle);
         Git(folder, "remote", "add", "origin", remote);
-        Git(folder, "push", "-q", "origin", "HEAD");
         return remote;
     }
 
@@ -88,9 +97,18 @@ internal sealed class TempFactoryRoot : IDisposable
     /// when git fails.</summary>
     public static string Git(string folder, params string[] arguments)
     {
+        return GitWithInput(folder, null, arguments);
+    }
+
+    /// <summary>Like <see cref="Git"/>, and writes <paramref name="input"/> (when given) to git's standard input,
+    /// for example a <c>git fast-import</c> stream that makes many commits in one process.</summary>
+    public static string GitWithInput(string folder, string? input, params string[] arguments)
+    {
         ProcessStartInfo start = new("git")
         {
             WorkingDirectory = folder,
+            RedirectStandardInput = input is not null,
+            StandardInputEncoding = input is null ? null : new UTF8Encoding(false),
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -103,7 +121,14 @@ internal sealed class TempFactoryRoot : IDisposable
         start.Environment["GIT_TERMINAL_PROMPT"] = "0";
         using Process process = Process.Start(start)!;
         Task<string> error = process.StandardError.ReadToEndAsync();
-        string output = process.StandardOutput.ReadToEnd();
+        Task<string> outputRead = process.StandardOutput.ReadToEndAsync();
+        if (input is not null)
+        {
+            process.StandardInput.Write(input);
+            process.StandardInput.Close();
+        }
+
+        string output = outputRead.Result;
         process.WaitForExit();
         Assert.True(process.ExitCode == 0, "git " + string.Join(" ", arguments) + ": " + error.Result);
         return output.Trim();
@@ -162,15 +187,18 @@ internal sealed class TempFactoryRoot : IDisposable
         return root;
     }
 
-    /// <summary>Makes a file unreadable (Unix only); undone on dispose.</summary>
+    /// <summary>Makes a file unreadable until fixture teardown.</summary>
     public void Lock(string file)
     {
         if (OperatingSystem.IsWindows())
         {
-            return;
+            exclusiveHandles.Add(File.Open(file, FileMode.Open, FileAccess.Read, FileShare.None));
+        }
+        else
+        {
+            File.SetUnixFileMode(file, UnixFileMode.None);
         }
 
-        File.SetUnixFileMode(file, UnixFileMode.None);
         lockedFiles.Add(file);
     }
 
@@ -207,16 +235,42 @@ internal sealed class TempFactoryRoot : IDisposable
         return entries;
     }
 
+    /// <summary>On Windows, clears the read-only flag git sets on object files so the folder can be deleted.</summary>
+    public static void ClearReadOnly(string folder)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        // Git marks object files read-only. Leave links alone while preparing the fixture for deletion.
+        EnumerationOptions files = new() { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint };
+        foreach (FileInfo file in new DirectoryInfo(folder).EnumerateFiles("*", files))
+        {
+            if (file.IsReadOnly)
+            {
+                file.IsReadOnly = false;
+            }
+        }
+    }
+
     public void Dispose()
     {
-        foreach (string file in lockedFiles)
+        foreach (FileStream handle in exclusiveHandles)
         {
-            if (OperatingSystem.IsWindows())
-            {
-                break;
-            }
+            handle.Dispose();
+        }
 
-            File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        if (OperatingSystem.IsWindows())
+        {
+            ClearReadOnly(Path);
+        }
+        else
+        {
+            foreach (string file in lockedFiles)
+            {
+                File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
         }
 
         Directory.Delete(Path, recursive: true);

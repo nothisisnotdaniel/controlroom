@@ -14,6 +14,7 @@ internal static class ServerApp
     /// every endpoint Kestrel listens on, <c>null</c> in production.</summary>
     internal static WebApplication? Create(string[] args, TextWriter error, Action<ListenOptions>? onListen)
     {
-        return RoomKitApp.Create(args, error, ControlRoomApp.Options, ControlRoomApp.Jobs, ControlRoomApp.Map, onListen);
+        return RoomKitApp.Create(
+            args, error, ControlRoomApp.Options, ControlRoomApp.Map, onListen, new FactoryModule(ControlRoomApp.Jobs));
     }
 }

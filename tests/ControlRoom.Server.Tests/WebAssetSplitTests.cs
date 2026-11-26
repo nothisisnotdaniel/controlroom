@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Hosting;
 
 namespace ControlRoom.Server.Tests;
@@ -33,6 +34,88 @@ public sealed class WebAssetSplitTests
         ],
         ["sw.js"] = ["const CacheName = \"controlroom-shell-\" + CacheVersion;", "  updated: \"ControlRoom updated\","],
     };
+
+    // Edits made after the split, each as (text now, text on develop then): the factory backlog section (402).
+    // #407: job ids may end in "." plus 32 lower-case hex characters.
+    private const string JobPatternNow = "{1,80}(\\.[0-9a-f]{32})?$/;";
+
+    private const string JobPatternDevelop = "{1,80}$/;";
+
+    private static readonly Dictionary<string, (string Now, string Develop)[]> LaterEdits = new(StringComparer.Ordinal)
+    {
+        ["app.js"] =
+        [
+            ("  noWorktree: \"The factory's develop worktree is missing. Run any job.py backlog command once to create it.\",\n  notDevelop: \"The factory's develop folder is not its develop worktree. Move it away or set FACTORY_DEVELOP_DIR, then reload.\",\n",
+                ""),
+            ("// Readable project names of the last backlogs answer, in response order (plus the factory when it has a reason, so\n// its fixed text can be chosen and read).\n",
+                "// Readable project names of the last backlogs answer, in response order.\n"),
+            ("// The factory's own backlog (#147): its section has no status or release line.\nconst FactoryName = \"factory\";\n\n// The fixed text for the factory entry's reason, or null for any other value; never server text.\nfunction reasonText(project) {\n  if (!project || asText(project.name) !== FactoryName) {\n    return null;\n  }\n  if (project.reason === \"no_worktree\") {\n    return Texts.noWorktree;\n  }\n  if (project.reason === \"not_develop\") {\n    return Texts.notDevelop;\n  }\n  return null;\n}\n\n",
+                ""),
+            ("    const reason = reasonText(project);\n    if (reason !== null) {\n      section.appendChild(element(\"p\", \"error\", reason));\n      return section;\n    }\n",
+                ""),
+            ("  if (name !== FactoryName) {\n    section.appendChild(statusLine(name));\n    section.appendChild(releaseBlock(name));\n  }\n",
+                "  section.appendChild(statusLine(name));\n  section.appendChild(releaseBlock(name));\n"),
+            ("  return projects\n    .filter((project) => (project && project.readable === true) || reasonText(project) !== null)\n    .map((project) => asText(project.name));\n",
+                "  return projects.filter((project) => project && project.readable === true).map((project) => asText(project.name));\n"),
+            // #409: other machines' item claims.
+            ("  claimOn: \"In progress on \",\n  claimAnother: \"another machine\",\n  claimSince: \" since \",\n  claimChecked: \" · checked \",\n  claimMinAgo: \" min ago\",\n",
+                ""),
+            ("// Other machines' item claims per project (from /api/backlogs, set by renderProject): { items: Map(number -> claim),\n// stale, checked (ms or null) }. Only numbers and text values; never used as a path or HTML.\nconst projectClaims = new Map();\n\nfunction readClaims(project) {\n  const items = new Map();\n  for (const claim of asList(project && project.claims)) {\n    const item = asNumber(claim && claim.item);\n    if (item !== null && !items.has(item)) {\n      items.set(item, claim);\n    }\n  }\n  const checked = typeof (project && project.claimsChecked) === \"string\" ? Date.parse(project.claimsChecked) : NaN;\n  return { items: items, stale: project && project.claimsStale === true, checked: Number.isNaN(checked) ? null : checked };\n}\n\n// \"In progress on <machine> since <local time>\" (another machine when it is unknown, no since part without a valid\n// time), plus \" · checked <n> min ago\" while the claims are stale; built only with textContent.\nfunction claimBadge(projectName, number) {\n  const claims = projectClaims.get(projectName);\n  const claim = claims ? claims.items.get(number) : undefined;\n  if (!claim) {\n    return null;\n  }\n  const machine = asText(claim.machine).trim();\n  let text = Texts.claimOn + (machine !== \"\" ? machine : Texts.claimAnother);\n  const claimed = typeof claim.claimed === \"string\" ? new Date(claim.claimed) : null;\n  if (claimed !== null && !Number.isNaN(claimed.getTime())) {\n    text += Texts.claimSince + claimed.toLocaleString([], {\n      month: \"short\", day: \"numeric\", hour: \"2-digit\", minute: \"2-digit\",\n    });\n  }\n  if (claims.stale && claims.checked !== null) {\n    text += Texts.claimChecked + Math.max(0, Math.floor((Date.now() - claims.checked) / 60000)) + Texts.claimMinAgo;\n  }\n  const badge = document.createElement(\"span\");\n  badge.className = \"claim-badge\";\n  badge.textContent = text;\n  return badge;\n}\n\n",
+                ""),
+            ("  const claim = claimBadge(projectName, number);\n  if (claim !== null) {\n    head.appendChild(claim);\n  }\n",
+                ""),
+            ("  // Other machines' claims too; the checked time only while stale (the badge shows its age then).\n  const stale = project.claimsStale === true;\n  const claims = [asList(project.claims), stale, stale ? project.claimsChecked || null : null];\n  return JSON.stringify([project.next || null, project.stopped === true, asList(project.blocked), stop, claims]);\n",
+                "  return JSON.stringify([project.next || null, project.stopped === true, asList(project.blocked), stop]);\n"),
+            ("  projectClaims.set(name, readClaims(project));\n",
+                ""),
+        ],
+        ["edit.js"] =
+        [
+            ("  no_worktree: \"The factory's develop worktree is missing. Nothing was changed.\",\n",
+                ""),
+        ],
+        ["board.js"] = [("const JobIdPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternNow,
+            "const JobIdPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternDevelop)],
+        ["releases.js"] = [("const ReleaseJobPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternNow,
+            "const ReleaseJobPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternDevelop)],
+        // #409: other machines' item claims.
+        ["app.css"] =
+        [
+            // #405: the unused backlog heading selector.
+            ("\n.group summary {\n  font-size: 0.85rem;\n",
+                "\n.group h3,\n.group summary {\n  font-size: 0.85rem;\n"),
+            ("  /* Another machine's claim on a backlog item (factory#54). */\n  --claim-bg: #ccfbf1;\n  --claim-fg: #115e59;\n",
+                ""),
+            ("    --claim-bg: #134e4a;\n    --claim-fg: #99f6e4;\n",
+                ""),
+            ("\n/* Another machine's claim on a numbered row, after the category chip. Its text is long, so it wraps inside the row\n   on a narrow screen instead of pushing the row wider. */\n.claim-badge {\n  display: inline-block;\n  max-width: 100%;\n  font-size: 0.8rem;\n  font-weight: 600;\n  line-height: 1.4;\n  padding: 0 6px;\n  border-radius: 6px;\n  margin: 2px 0 0 6px;\n  vertical-align: 1px;\n  white-space: normal;\n  overflow-wrap: anywhere;\n  background: var(--claim-bg);\n  color: var(--claim-fg);\n}\n",
+                ""),
+        ],
+        // #409: other machines' item claims.
+        ["live.js"] =
+        [
+            ("// The response as { jobs, projects: Map(name -> { backlog, stories, claims }) }, or null when it has another shape.\n// claims (other machines' item claims) is \"\" when the server sends none.\n",
+                "// The response as { jobs, projects: Map(name -> { backlog, stories }) }, or null when it has another shape.\n"),
+            ("    if (!value || typeof value.backlog !== \"string\" || typeof value.stories !== \"string\"\n      || (value.claims !== undefined && typeof value.claims !== \"string\")) {\n      return null;\n    }\n    projects.set(name, { backlog: value.backlog, stories: value.stories, claims: value.claims || \"\" });\n",
+                "    if (!value || typeof value.backlog !== \"string\" || typeof value.stories !== \"string\") {\n      return null;\n    }\n    projects.set(name, { backlog: value.backlog, stories: value.stories });\n"),
+            ("    // Another machine's claims changed: the section is fetched again, like a changed backlog.\n    if (!backlogChanged && before.claims !== after.claims) {\n      staleBacklogs.add(name);\n    }\n",
+                ""),
+        ],
+    };
+
+    // #411: the service worker's edits after the split, each as (text now, text on develop then).
+    private static readonly (string Now, string Develop)[] ServiceWorkerEdits =
+    [
+        ("// app's fixed text instead of old data. Shell files load network-first: the cache answers only when the network\n// fails, so an update reaches the app on its next load. A new worker takes over at once and drops every older\n// cache. Bump CacheVersion in room.js whenever a shell file changes.\n",
+            "// app's fixed text instead of old data. Bump the version when the shell list changes.\n"),
+        ("  event.waitUntil(caches.open(CacheName)\n    .then((cache) => cache.addAll(Shell.map((path) => new Request(path, { cache: \"no-cache\" }))))\n    .then(() => self.skipWaiting()));\n",
+            "  event.waitUntil(caches.open(CacheName).then((cache) => cache.addAll(Shell)));\n"),
+        ("      Promise.all(names.filter((name) => name !== CacheName).map((name) => caches.delete(name))))\n      .then(() => self.clients.claim()));\n",
+            "      Promise.all(names.filter((name) => name !== CacheName).map((name) => caches.delete(name)))));\n"),
+        ("async function networkFirst(event) {\n  // One entry per shell path: the key is the bare pathname, so a query string never adds an entry.\n  const key = new URL(event.request.url).pathname;\n  const cache = await caches.open(CacheName);\n  let response;\n  try {\n    response = await fetch(event.request, { cache: \"no-cache\" });\n  } catch {\n    // No network answer (offline or unreachable): the cached copy, else a network error.\n    const cached = await cache.match(key);\n    return cached || Response.error();\n  }\n  if (response.ok) {\n    try {\n      await cache.put(key, response.clone());\n    } catch {\n      // A full or unavailable cache keeps the old copy; the network answer is still returned.\n    }\n  }\n  return response;\n}\n",
+            "async function staleWhileRevalidate(event) {\n  // One entry per shell path: the key is the bare pathname, so a query string never adds an entry.\n  const key = new URL(event.request.url).pathname;\n  const cache = await caches.open(CacheName);\n  const cached = await cache.match(key);\n  const network = fetch(event.request).then(async (response) => {\n    if (response.ok) {\n      await cache.put(key, response.clone());\n    }\n    return response;\n  });\n  if (cached) {\n    event.waitUntil(network.catch(() => undefined));\n    return cached;\n  }\n  return network;\n}\n"),
+        ("  event.respondWith(networkFirst(event));\n", "  event.respondWith(staleWhileRevalidate(event));\n"),
+    ];
 
     private static readonly string[] KitGlobals =
         ["TokenKey", "CaptureProjectKey", "HistoryProjectKey", "CacheVersion", "CacheName", "Shell"];
@@ -89,7 +172,33 @@ public sealed class WebAssetSplitTests
             }
 
             string folder = AppFiles.Contains(path) ? AppFolder() : KitFolder();
-            Assert.True(hash == Sha256(File.ReadAllBytes(Path.Combine(folder, path))), path + " changed");
+            byte[] bytes = File.ReadAllBytes(Path.Combine(folder, path));
+            if (path == "board.js")
+            {
+                // The Windows install hint is the only addition since the asset split.
+                const string WindowsHint = """
+                      if (command.startsWith(".\\launch-agent.ps1 ")) {
+                        text.append(" Run this command in PowerShell from the extracted release folder.");
+                      }
+                    """;
+                string script = Encoding.UTF8.GetString(bytes);
+                Assert.Contains(WindowsHint, script, StringComparison.Ordinal);
+                bytes = Encoding.UTF8.GetBytes(script.Replace(WindowsHint + "\n", "", StringComparison.Ordinal));
+            }
+
+            if (LaterEdits.TryGetValue(path, out (string Now, string Develop)[]? edits))
+            {
+                string script = Encoding.UTF8.GetString(bytes);
+                foreach ((string now, string develop) in edits)
+                {
+                    Assert.Contains(now, script, StringComparison.Ordinal);
+                    script = script.Replace(now, develop, StringComparison.Ordinal);
+                }
+
+                bytes = Encoding.UTF8.GetBytes(script);
+            }
+
+            Assert.True(hash == Sha256(bytes), path + " changed");
         }
     }
 
@@ -127,9 +236,9 @@ public sealed class WebAssetSplitTests
         Assert.True(start >= 0 && end > start);
         // The shell list block moved, with "/room.js" added and the version raised.
         List<string> block = develop.GetRange(start, end - start + 1);
-        block[0] = "const CacheVersion = \"v22\";";
+        block[0] = "const CacheVersion = \"v25\";";
         block.Insert(block.IndexOf("  \"/token.js\",") + 1, "  \"/room.js\",");
-        int roomStart = room.IndexOf("const CacheVersion = \"v22\";");
+        int roomStart = room.IndexOf("const CacheVersion = \"v25\";");
         Assert.Equal(block, room.GetRange(roomStart, block.Count));
         develop.RemoveRange(start, end - start + 1);
 
@@ -143,11 +252,23 @@ public sealed class WebAssetSplitTests
         {
             develop[i] = develop[i]
                 .Replace("let tag = \"controlroom\";", "let tag = PushDefaultTag;", StringComparison.Ordinal)
-                .Replace("\"ControlRoom \" + version", "PushUpdatePrefix + version", StringComparison.Ordinal);
+                .Replace("const PushJobPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternDevelop,
+                    "const PushJobPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternNow, StringComparison.Ordinal)
+                .Replace("\"ControlRoom \" + version", "PushUpdatePrefix + version", StringComparison.Ordinal)
+                .Replace("The old version didn't come back. Check the Mac.",
+                    "The old version didn't restart. Check the computer running the server.", StringComparison.Ordinal);
         }
 
         develop.Insert(0, "importScripts(\"/room.js\");");
-        Assert.Equal(develop, Lines(Path.Combine(KitFolder(), "sw.js")));
+        // #411: network-first fetch, a no-cache install that takes over at once, and claiming clients on activate.
+        string script = string.Join('\n', develop);
+        foreach ((string now, string before) in ServiceWorkerEdits)
+        {
+            Assert.Contains(before, script, StringComparison.Ordinal);
+            script = script.Replace(before, now, StringComparison.Ordinal);
+        }
+
+        Assert.Equal(script.Split('\n').ToList(), Lines(Path.Combine(KitFolder(), "sw.js")));
     }
 
     [Fact]
@@ -160,6 +281,7 @@ public sealed class WebAssetSplitTests
         Assert.Equal(index.FindIndex(line => line.Contains("<script", StringComparison.Ordinal)), index.IndexOf(Room));
         Assert.Equal(index.IndexOf(Room) + 1, index.IndexOf("  <script src=\"/token.js\" defer></script>"));
         index.Remove(Room);
+        Assert.True(index.Remove("""      <p class="token-help">On Windows, open PowerShell in the server folder and run <code>.\controlroom.exe token</code>.</p>"""));
         Assert.Equal(develop, index);
     }
 
