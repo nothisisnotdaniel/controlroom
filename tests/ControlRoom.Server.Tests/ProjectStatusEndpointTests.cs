@@ -311,26 +311,14 @@ public sealed class ProjectStatusEndpointTests
     [Fact]
     public void Source_StartsOnlyGitAndNoHttpClient()
     {
-        string folder = AccessTokenTests.SourceFolder();
-        foreach (string file in new[]
-        {
-            Path.Combine(folder, "ProjectStatusEndpoint.cs"),
-            Path.Combine(AccessTokenTests.KitSourceFolder(), "ProjectGit.cs"),
-        })
-        {
-            string source = File.ReadAllText(file);
-            Assert.DoesNotContain("\"gh\"", source, StringComparison.Ordinal);
-            Assert.DoesNotContain("\"curl\"", source, StringComparison.Ordinal);
-            Assert.DoesNotContain("HttpClient", source, StringComparison.Ordinal);
-            Assert.DoesNotContain("UseShellExecute = true", source, StringComparison.Ordinal);
-        }
-
-        string endpoint = File.ReadAllText(Path.Combine(folder, "ProjectStatusEndpoint.cs"));
+        // ProjectGit.cs is in the RoomKit package now; RoomKit's own tests scan it.
+        string endpoint = File.ReadAllText(Path.Combine(AccessTokenTests.SourceFolder(), "ProjectStatusEndpoint.cs"));
+        Assert.DoesNotContain("\"gh\"", endpoint, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"curl\"", endpoint, StringComparison.Ordinal);
+        Assert.DoesNotContain("HttpClient", endpoint, StringComparison.Ordinal);
+        Assert.DoesNotContain("UseShellExecute = true", endpoint, StringComparison.Ordinal);
         Assert.DoesNotContain("ProcessStartInfo", endpoint, StringComparison.Ordinal);
         Assert.DoesNotContain("Process.", endpoint, StringComparison.Ordinal);
-        string git = File.ReadAllText(Path.Combine(AccessTokenTests.KitSourceFolder(), "ProjectGit.cs"));
-        Assert.Contains("ProcessStartInfo start = new(\"git\")", git, StringComparison.Ordinal);
-        Assert.Contains("[\"rev-list\", \"--count\", \"refs/heads/main..refs/heads/\" + Branch]", git, StringComparison.Ordinal);
     }
 
     private static string RepoState(string repo)

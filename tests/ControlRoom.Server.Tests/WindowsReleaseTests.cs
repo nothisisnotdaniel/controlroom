@@ -117,10 +117,10 @@ public sealed class WindowsReleaseTests : IDisposable
 
     [Theory]
     [InlineData("scripts")]
-    [InlineData("src/RoomKit/scripts")]
+    [InlineData("roomkit-package")]
     public void Updater_DecidesTheFirstCheckMarkerWithTheNoFollowOpen(string folder)
     {
-        string updater = File.ReadAllText(Path.Combine([RepoCopy.RepoFolder(), .. folder.Split('/'), "updater.ps1"]))
+        string updater = File.ReadAllText(UpdaterIn(folder))
             .Replace("\r\n", "\n", StringComparison.Ordinal);
         int start = updater.IndexOf("function Test-UpdateDue(", StringComparison.Ordinal);
         Assert.True(start >= 0);
@@ -135,10 +135,10 @@ public sealed class WindowsReleaseTests : IDisposable
 
     [Theory]
     [InlineData("scripts")]
-    [InlineData("src/RoomKit/scripts")]
+    [InlineData("roomkit-package")]
     public void Updater_OpensFilesWithoutBackupSemanticsFirst(string folder)
     {
-        string updater = File.ReadAllText(Path.Combine([RepoCopy.RepoFolder(), .. folder.Split('/'), "updater.ps1"]))
+        string updater = File.ReadAllText(UpdaterIn(folder))
             .Replace("\r\n", "\n", StringComparison.Ordinal);
         int start = updater.IndexOf("private static SafeFileHandle Open(string path, bool directory, FileShare share) {",
             StringComparison.Ordinal);
@@ -155,6 +155,15 @@ public sealed class WindowsReleaseTests : IDisposable
         Assert.True(file >= 0 && file < plain && plain < fallback && fallback < backup);
         Assert.Contains("if (fileError == 2 || fileError == 3) return null;", body, StringComparison.Ordinal);
         Assert.Equal(1, body.Split("0x02200000").Length - 1);
+    }
+
+    // ControlRoom's own scripts/ or, for "roomkit-package", the restored RoomKit package's scripts/.
+    private static string UpdaterIn(string folder)
+    {
+        string scripts = folder == "roomkit-package"
+            ? RoomKitPackage.Scripts()
+            : Path.Combine([RepoCopy.RepoFolder(), .. folder.Split('/')]);
+        return Path.Combine(scripts, "updater.ps1");
     }
 
     [Fact]

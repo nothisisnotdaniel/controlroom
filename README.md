@@ -160,13 +160,13 @@ gh attestation verify controlroom-1.2.3-osx-arm64.tar.gz --repo nothisisnotdanie
 Apple silicon macOS. A first `version` job works out the version; then the tests run in two parts per OS before the
 builds, all four parts in parallel. `.github/test-part-1.txt` lists the test classes of part 1; part 2 runs every other
 test, so each test runs exactly once per OS and a new test class needs no edit to the list. The guard
-(`TestPartsGuardTests`, in each test assembly) fails when a test would land in no part or in both, or when a listed
+(`TestPartsGuardTests`) fails when a test would land in no part or in both, or when a listed
 name matches no test. Then the Windows and macOS builds run in parallel after `version`, each in its own job once its
 OS's tests have passed. CI checks the version of each executable and serves the packaged web assets
 from the extracted Windows ZIP. Each build job reports the SHA-256 of the files it built. The final `release` job
 checks the downloaded files' hashes against the hashes the build jobs reported, then sums, attests and publishes
-them. The release on the merge commit includes the macOS tarball, Windows ZIP and RoomKit
-package, with a SHA-256 digest and build attestation for each. GitHub generates the release notes from the merged pull requests.
+them. The release on the merge commit includes the macOS tarball and the Windows ZIP, with a SHA-256 digest and
+build attestation for each. GitHub generates the release notes from the merged pull requests.
 
 Every push to `develop` (except one that changes only `backlog.md` or `backlog/`) also makes a prerelease
 `vX.Y.(Z+1)-develop.<run>`, one patch above the latest stable release, with the same checks, files and
@@ -196,10 +196,37 @@ tail -f ~/Library/Logs/ControlRoom/server.log
 
 The parts of ControlRoom that are not about this factory's job format (sign-in, the `Host` check, loopback
 listening, the web app shell, push, updates, backlogs, search, history and the Health view) live in the shared
-library `src/RoomKit`. ControlRoom (`src/ControlRoom.Server`) is a thin app on top of it: its names, its job format
-(`state.json`), its tabs and `wwwroot/room.js`. Every release also carries `RoomKit.X.Y.Z.nupkg`, listed in
-`SHA256SUMS` and attested like the tarball, so another factory's app can use the same core. See
-[docs/roomkit.md](docs/roomkit.md) for the plug-in API, the scripts and the local folder feed.
+library RoomKit, which has its own repo (`nothisisnotdaniel/roomkit`) and ships as the NuGet package `RoomKit` on
+GitHub Packages (`https://nuget.pkg.github.com/nothisisnotdaniel/index.json`). ControlRoom (`src/ControlRoom.Server`) is
+a thin app on top of it: its names, its job format (`state.json`), its tabs and `wwwroot/room.js`. See
+[RoomKit's docs](https://github.com/nothisisnotdaniel/roomkit/blob/main/docs/roomkit.md) for the plug-in API and
+the scripts.
+
+`nuget.config` takes `RoomKit` only from the source `github` (that feed) and every other package only from
+nuget.org. GitHub Packages needs a sign-in even to read, so set it up once on each Mac or PC that builds ControlRoom:
+
+1. Create a classic personal access token on GitHub with only the `read:packages` scope.
+2. Store it outside the repo, as the environment variable `NuGetPackageSourceCredentials_github` (recommended):
+
+   ```sh
+   export NuGetPackageSourceCredentials_github='Username=<your GitHub user>;Password=<token>'
+   ```
+
+   Put that line in your shell profile (for example `~/.zprofile`), not in a file of this repo. Or add a
+   user-level NuGet source with the same name instead (the token then sits in plain text in
+   `~/.nuget/NuGet/NuGet.Config`):
+
+   ```sh
+   dotnet nuget add source https://nuget.pkg.github.com/nothisisnotdaniel/index.json --name github \
+     --username <your GitHub user> --password <token> --store-password-in-clear-text
+   ```
+
+Never commit the token or a `packageSourceCredentials` section. CI passes its own `GITHUB_TOKEN` (read-only for
+packages) to the steps that run `dotnet`.
+
+ControlRoom pins one exact RoomKit version. To bump the pin, change `Version` of the `RoomKit` `PackageReference` in
+both `src/ControlRoom.Server/ControlRoom.Server.csproj` and `tests/ControlRoom.Server.Tests/ControlRoom.Server.Tests.csproj`
+to the same new version, then run `dotnet test`.
 
 ## Signing
 

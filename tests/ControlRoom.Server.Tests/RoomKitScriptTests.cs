@@ -2,7 +2,8 @@ using System.Text.RegularExpressions;
 
 namespace ControlRoom.Server.Tests;
 
-/// <summary>ControlRoom's scripts are RoomKit's scripts with ControlRoom's <c>roomkit:app</c> block.</summary>
+/// <summary>ControlRoom's scripts are RoomKit's scripts (the restored package's <c>scripts/</c>) with ControlRoom's
+/// <c>roomkit:app</c> block.</summary>
 public sealed partial class RoomKitScriptTests
 {
     private const string Begin = "# roomkit:app-begin\n";
@@ -12,7 +13,7 @@ public sealed partial class RoomKitScriptTests
     [Fact]
     public void WindowsUpdaterUsesRoomKitsSemVerIdentifierRule()
     {
-        string updater = Read(Path.Combine(RepoFolder(), "src", "RoomKit", "scripts", "updater.ps1"));
+        string updater = Read(Path.Combine(RoomKitPackage.Scripts(), "updater.ps1"));
         Assert.Contains("$identifier = '" + SemVer.PrereleaseIdentifierPattern + "'", updater.Split('\n'));
     }
 
@@ -20,7 +21,7 @@ public sealed partial class RoomKitScriptTests
     public void WindowsInstallerSharesTheUpdaterAndOnlyTheAppAssignmentsDiffer()
     {
         string scripts = Path.Combine(RepoFolder(), "scripts");
-        string kit = Path.Combine(RepoFolder(), "src", "RoomKit", "scripts");
+        string kit = RoomKitPackage.Scripts();
         Assert.Equal(Read(Path.Combine(kit, "launch-agent.ps1")), Read(Path.Combine(scripts, "launch-agent.ps1")));
         (string before, string block, string after) = Split(Read(Path.Combine(kit, "updater.ps1")));
         (string appBefore, string appBlock, string appAfter) = Split(Read(Path.Combine(scripts, "updater.ps1")));
@@ -38,7 +39,7 @@ public sealed partial class RoomKitScriptTests
     public void OutsideTheBlock_TheScriptsAreByteIdentical(string name)
     {
         string app = Read(Path.Combine(RepoFolder(), "scripts", name));
-        string kit = Read(Path.Combine(RepoFolder(), "src", "RoomKit", "scripts", name));
+        string kit = Read(Path.Combine(RoomKitPackage.Scripts(), name));
         (string appBefore, string appBlock, string appAfter) = Split(app);
         (string kitBefore, string kitBlock, string kitAfter) = Split(kit);
 
@@ -53,7 +54,7 @@ public sealed partial class RoomKitScriptTests
     [InlineData("updater.sh")]
     public void KitBlock_HoldsOnlyAssignmentsOfNeutralValues(string name)
     {
-        string kit = Read(Path.Combine(RepoFolder(), "src", "RoomKit", "scripts", name));
+        string kit = Read(Path.Combine(RoomKitPackage.Scripts(), name));
         (_, string block, _) = Split(kit);
         string[] lines = block.TrimEnd('\n').Split('\n');
 
@@ -66,21 +67,6 @@ public sealed partial class RoomKitScriptTests
             ["APP_NAME", "LABEL", "UPDATER_LABEL", "SUPPORT_FOLDER", "LOG_FOLDER", "REPO_SLUG", "RELEASES", "APP_PORT",
             "TARBALL_PREFIX", "SERVER_NAME", "SOLUTION_FILE"],
             Names(block));
-    }
-
-    [Theory]
-    [InlineData("launch-agent.sh")]
-    [InlineData("updater.sh")]
-    public void KitScripts_KeepTheExecutableMode(string name)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        UnixFileMode app = File.GetUnixFileMode(Path.Combine(RepoFolder(), "scripts", name));
-        UnixFileMode kit = File.GetUnixFileMode(Path.Combine(RepoFolder(), "src", "RoomKit", "scripts", name));
-        Assert.Equal(app & UnixFileMode.UserExecute, kit & UnixFileMode.UserExecute);
     }
 
     private static (string Before, string Block, string After) Split(string script)

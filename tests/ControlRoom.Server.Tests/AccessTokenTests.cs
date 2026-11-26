@@ -240,15 +240,6 @@ public sealed partial class AccessTokenTests
     }
 
     [Fact]
-    public void Matches_UsesFixedTimeEqualsOnBytes()
-    {
-        string source = File.ReadAllText(Path.Combine(KitSourceFolder(), "AccessToken.cs"));
-
-        Assert.Contains("CryptographicOperations.FixedTimeEquals(left, right)", source, StringComparison.Ordinal);
-        Assert.Contains("Encoding.UTF8.GetBytes(presented)", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void ResolvePath_DefaultsToLocalApplicationDataAndHonoursTheSetting()
     {
         string data = Environment.GetFolderPath(
@@ -270,10 +261,6 @@ public sealed partial class AccessTokenTests
         Assert.NotNull(current);
         return Path.Combine(current.FullName, "src", "ControlRoom.Server");
     }
-
-    // The shared files moved from src/ControlRoom.Server into src/RoomKit (386).
-    internal static string KitSourceFolder() =>
-        Path.Combine(Path.GetDirectoryName(SourceFolder())!, "RoomKit");
 
     [GeneratedRegex("^[A-Za-z0-9_-]{43}$")]
     private static partial Regex TokenPattern();

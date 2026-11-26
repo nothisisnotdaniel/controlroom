@@ -6,12 +6,11 @@ namespace ControlRoom.Server.Tests;
 
 /// <summary>The guard for the split of the release tests (<c>.github/test-part-1.txt</c>, read by
 /// <c>.github/scripts/test-filter.sh</c>): every test of this assembly lands in exactly one of the two parts, and no
-/// listed name of this assembly's namespace is stale. Linked into <c>RoomKit.Tests</c>, so each test assembly checks
-/// its own tests only.</summary>
+/// listed name is stale.</summary>
 [UnsupportedOSPlatform("windows")]
 public sealed class TestPartsGuardTests
 {
-    private static readonly string[] Prefixes = ["ControlRoom.Server.Tests.", "RoomKit.Tests."];
+    private static readonly string[] Prefixes = ["ControlRoom.Server.Tests."];
 
     [Fact]
     public void EveryTest_LandsInExactlyOnePart()
