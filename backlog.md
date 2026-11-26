@@ -165,7 +165,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#148](backlog/148-test-that-a-file-in-both.md) Test that a file in both wwwroot folders fails the build
 - [ ] [#149](backlog/149-strict-mode-for-sw-js.md) Strict mode for sw.js
 - [ ] [#150](backlog/150-check-job-ids-and-folders-from.md) Check job ids and folders from IJobFormat
-- [ ] [#151](backlog/151-extract-roomkit-to-its-own-repository.md) Extract RoomKit to its own repository
+- [x] [#151](backlog/151-extract-roomkit-to-its-own-repository.md) Extract RoomKit to its own repository → 429-extract-roomkit-repo.638034fbad07490e809f1000d0106194
 - [ ] [#154](backlog/154-windows-update-hint-includes-the-execution.md) Windows update hint includes the execution-policy step
 - [ ] [#155](backlog/155-claude-md-covers-the-powershell-scripts.md) CLAUDE.md covers the PowerShell scripts' network calls
 - [ ] [#156](backlog/156-drop-the-one-off-controlroom-400.md) Drop the one-off ControlRoom 400 test workflow
