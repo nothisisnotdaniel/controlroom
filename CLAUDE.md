@@ -198,8 +198,9 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   parent of the folder holding `ControlRoom.slnx`, or `--FactoryRoot <path>`).
   `--PushSubject <mailto:…>` sets the VAPID `sub` (default `mailto:controlroom@localhost`).
   `--TailnetHost <mac>.<tailnet>.ts.net` is needed before the iPhone works through Tailscale.
-  Start at login: `scripts/launch-agent.sh install [--tailnet-host <name> [--tailnet-port <port>]] [--factory-root <path>]|status|uninstall`
-  (`--tailnet-port` adds `--TailnetPort`; `--factory-root`, an existing absolute folder, replaces the parent folder default) (LaunchAgent `local.controlroom.server`,
+  Start at login: `scripts/launch-agent.sh install [--tailnet-host <name> [--tailnet-port <port>]] [--factory-root <path>] [--push-subject <subject>]|status|uninstall`
+  (`--tailnet-port` adds `--TailnetPort`; `--factory-root`, an existing absolute folder, replaces the parent folder default;
+  `--push-subject mailto:<address>|https://<host>` adds `--PushSubject`, needed for iPhone notifications, since Apple refuses `@localhost`) (LaunchAgent `local.controlroom.server`,
   published server in `~/Library/Application Support/ControlRoom/server/`, log `~/Library/Logs/ControlRoom/server.log`).
   `scripts/launch-agent.sh install --release [vX.Y.Z] [--tailnet-host <name>]` installs a GitHub release instead (latest
   when no tag, or the newest `develop_tag` build when `settings.json` holds the develop channel; no .NET SDK needed; launchd runs `server/ControlRoom.Server` directly). It also installs the

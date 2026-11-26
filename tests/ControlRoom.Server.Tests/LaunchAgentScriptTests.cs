@@ -19,7 +19,7 @@ public sealed class LaunchAgentScriptTests
 
     private const string Usage =
         "usage: scripts/launch-agent.sh install [--release [vX.Y.Z]] [--tailnet-host <name> [--tailnet-port <port>]] "
-        + "[--factory-root <path>]|uninstall|status\n";
+        + "[--factory-root <path>] [--push-subject <subject>]|uninstall|status\n";
 
     private const string Releases = "https://github.com/nothisisnotdaniel/controlroom/releases";
 
@@ -49,6 +49,9 @@ public sealed class LaunchAgentScriptTests
     private const string TailnetHostText = "--tailnet-host must be a name like mac.tailnet.ts.net. Nothing was changed.\n";
 
     private const string TailnetPortText = "--tailnet-port must be a port from 1 to 65535. Nothing was changed.\n";
+
+    private const string PushSubjectText =
+        "--push-subject must be mailto:<address> or https://<host>. Nothing was changed.\n";
 
     private const string FactoryRootText = "--factory-root must be an absolute path to a folder. Nothing was changed.\n";
 
@@ -215,6 +218,70 @@ public sealed class LaunchAgentScriptTests
         }
 
         [Theory]
+        [InlineData("mailto:me@example.com")]
+        [InlineData("mailto:first.last+push@mail.example.org")]
+        [InlineData("https://example.com/contact")]
+        public void Install_WithAPushSubject_AddsItLast(string subject)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using ScriptHome home = new();
+
+            ScriptRun run = home.Run(
+                ScriptHome.ScriptPath(), "install", "--push-subject", subject, "--tailnet-host", "mac.tail1234.ts.net",
+                "--tailnet-port", "8443");
+
+            Assert.Equal(0, run.ExitCode);
+            Assert.Equal(
+                ["--FactoryRoot", Directory.GetParent(ScriptHome.RepoFolder())!.FullName, "--TailnetHost",
+                    "mac.tail1234.ts.net", "--TailnetPort", "8443", "--PushSubject", subject],
+                ProgramArguments(home.Plist)[2..]);
+            if (File.Exists(PlutilPath))
+            {
+                Assert.Equal(0, Plutil("-lint", home.Plist).ExitCode);
+            }
+        }
+
+        [Theory]
+        [InlineData("mailto:controlroom@localhost")]
+        [InlineData("mailto:me@mail.localhost")]
+        [InlineData("mailto:me@example")]
+        [InlineData("mailto:@example.com")]
+        [InlineData("mailto:me@")]
+        [InlineData("mailto:me@example..com")]
+        [InlineData("mailto:me@example.com\n")]
+        [InlineData("mailto:me <me@example.com>")]
+        [InlineData("mailto:a\"b@example.com")]
+        [InlineData("me@example.com")]
+        [InlineData("http://example.com")]
+        [InlineData("https://")]
+        [InlineData("https://exa mple.com")]
+        [InlineData("https://example.com/<x>")]
+        [InlineData("")]
+        public void Install_WithABadPushSubject_ExitsNonZeroAndChangesNothing(string subject)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using ScriptHome home = new();
+            IReadOnlyList<string> before = home.Snapshot();
+
+            ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--push-subject", subject);
+
+            Assert.NotEqual(0, run.ExitCode);
+            Assert.Equal(PushSubjectText, run.Error);
+            Assert.False(File.Exists(home.Plist));
+            Assert.Empty(home.LaunchctlCalls());
+            Assert.Empty(home.DotnetArguments());
+            Assert.Equal(before, home.Snapshot());
+        }
+
+        [Theory]
         [InlineData("relative/root")]
         [InlineData("/no/such/factory-root-folder")]
         [InlineData("")]
@@ -246,6 +313,9 @@ public sealed class LaunchAgentScriptTests
         [InlineData("install --factory-root /tmp --factory-root /tmp")]
         [InlineData("status --tailnet-port 8443")]
         [InlineData("uninstall --factory-root /tmp")]
+        [InlineData("install --push-subject")]
+        [InlineData("install --push-subject mailto:me@example.com --push-subject mailto:me@example.com")]
+        [InlineData("status --push-subject mailto:me@example.com")]
         public void BadPortOrRootArguments_PrintUsageExitTwoAndChangeNothing(string joined)
         {
             string[] arguments = joined.Split(' ', StringSplitOptions.RemoveEmptyEntries);
