@@ -17,8 +17,9 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   it from the iPhone through Tailscale (`tailscale serve` gives HTTPS on the user's own tailnet and proxies to
   the local port), so nothing is reachable from the internet. Every request is first checked by `HostCheck`
   (DNS-rebinding defence): the whole `Host` must be exactly `127.0.0.1:8100`, `localhost:8100` or the
-  `--TailnetHost <mac>.<tailnet>.ts.net` name (no port, ignoring case), else `421 {"error":"bad_host"}` before the
-  method check and token gate; an invalid `TailnetHost` stops the server; the request log category
+  `--TailnetHost <mac>.<tailnet>.ts.net` name (no port, ignoring case), or with `--TailnetPort <port>` (1–65535,
+  only with `TailnetHost`) that name with exactly `:<port>` too, else `421 {"error":"bad_host"}` before the
+  method check and token gate; an invalid `TailnetHost` or `TailnetPort` stops the server; the request log category
   (`Microsoft.AspNetCore.Hosting.Diagnostics`) is at `Warning` so a `Host` is never logged. Every `/api/` request (read or write) needs
   `Authorization: Bearer <token>` (else `401 {"error":"unauthorized"}`); the static app shell stays public, and so does `GET|HEAD /health`, which
   returns only `{"version":"…"}` (`no-store`, still behind `HostCheck` and the method rule) for the updater. The

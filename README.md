@@ -17,6 +17,10 @@ name, the host part of the `https://<mac>.<tailnet>.ts.net` address `tailscale s
 dotnet run --project src/ControlRoom.Server -- --TailnetHost mac.tail1234.ts.net
 ```
 
+When another app already uses port 443 of that name, serve this one on another HTTPS port
+(`tailscale serve --bg --https=8443 http://127.0.0.1:8100`) and add `--TailnetPort 8443`. The name is then also
+accepted with exactly that port.
+
 ## Windows x64
 
 The x64 release includes the .NET runtime. Install Git for Windows for backlog edits and GitHub CLI for release downloads and attestation verification. If this is your first time using GitHub CLI, run `gh auth login` in PowerShell. Then download the latest stable release into an empty directory. Set `$tag` to an offered prerelease tag to install that version.

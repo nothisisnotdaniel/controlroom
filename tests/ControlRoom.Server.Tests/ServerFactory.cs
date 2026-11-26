@@ -52,6 +52,9 @@ internal sealed class ServerFactory : WebApplicationFactory<Program>
         TokenFile = tokenFile;
     }
 
+    /// <summary>Passed as <c>TailnetPort</c> when not null; set before the host starts.</summary>
+    public string? TailnetPort { get; set; }
+
     /// <summary>The fake GitHub API the update check goes to.</summary>
     public FakeUpdateHandler Update { get; } = new();
 
@@ -100,6 +103,11 @@ internal sealed class ServerFactory : WebApplicationFactory<Program>
         if (tailnetHost is not null)
         {
             builder.UseSetting(HostCheck.ConfigKey, tailnetHost);
+        }
+
+        if (TailnetPort is not null)
+        {
+            builder.UseSetting(HostCheck.PortConfigKey, TailnetPort);
         }
 
         builder.ConfigureTestServices(services =>

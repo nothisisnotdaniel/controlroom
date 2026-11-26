@@ -219,6 +219,116 @@ public sealed class HostCheckTests
         Assert.Equal(AccessToken.CreatedText(tokens.TokenFile) + Environment.NewLine, error.ToString());
     }
 
+    [Theory]
+    [InlineData("mac.tail1234.ts.net:8443")]
+    [InlineData("MAC.Tail1234.TS.NET:8443")]
+    [InlineData(Tailnet)]
+    [InlineData("127.0.0.1:8100")]
+    public async Task ConfiguredTailnetPort_IsHandledWithTheName(string host)
+    {
+        using TempFactoryRoot root = new();
+        using ServerFactory factory = new(root.Path, null, Tailnet) { TailnetPort = "8443" };
+        using HttpClient client = factory.CreateTokenClient();
+
+        await AssertHandled(client, host);
+    }
+
+    [Theory]
+    [InlineData("mac.tail1234.ts.net:443")]
+    [InlineData("mac.tail1234.ts.net:8444")]
+    [InlineData("mac.tail1234.ts.net:08443")]
+    [InlineData("mac.tail1234.ts.net:8443.evil.example")]
+    [InlineData("other.tail1234.ts.net:8443")]
+    [InlineData("evil.example:8443")]
+    [InlineData("127.0.0.1:8443")]
+    [InlineData("localhost:8443")]
+    public async Task OtherPorts_AreRefusedWithATailnetPort(string host)
+    {
+        using TempFactoryRoot root = new();
+        using ServerFactory factory = new(root.Path, null, Tailnet) { TailnetPort = "8443" };
+        using HttpClient client = factory.CreateTokenClient();
+
+        foreach (string path in RefusedPaths())
+        {
+            using HttpResponseMessage response = await Send(client, HttpMethod.Get, path, host, null);
+            await AssertRefused(response);
+        }
+    }
+
+    [Fact]
+    public void TailnetPortRule_AcceptsPortsFrom1To65535Only()
+    {
+        Assert.True(HostCheck.IsValidTailnetPort("1"));
+        Assert.True(HostCheck.IsValidTailnetPort("8443"));
+        Assert.True(HostCheck.IsValidTailnetPort("65535"));
+        Assert.False(HostCheck.IsValidTailnetPort("0"));
+        Assert.False(HostCheck.IsValidTailnetPort("65536"));
+        Assert.False(HostCheck.IsValidTailnetPort("99999"));
+        Assert.False(HostCheck.IsValidTailnetPort("08443"));
+        Assert.False(HostCheck.IsValidTailnetPort("+8443"));
+        Assert.False(HostCheck.IsValidTailnetPort("-1"));
+        Assert.False(HostCheck.IsValidTailnetPort(" 8443"));
+        Assert.False(HostCheck.IsValidTailnetPort("8443\n"));
+        Assert.False(HostCheck.IsValidTailnetPort("\u0668443"));
+        Assert.False(HostCheck.IsValidTailnetPort(""));
+        Assert.False(HostCheck.IsValidTailnetPort(null));
+        Assert.False(HostCheck.IsAllowed("mac.tail1234.ts.net:8443", null, "8443"));
+        Assert.False(HostCheck.IsAllowed("mac.tail1234.ts.net:8443", Tailnet, null));
+        Assert.True(HostCheck.IsAllowed("mac.tail1234.ts.net:8443", Tailnet, "8443"));
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("65536")]
+    [InlineData("08443")]
+    [InlineData("8443x")]
+    [InlineData("")]
+    public void InvalidTailnetPort_StopsTheServerWithAFixedText(string value)
+    {
+        using TempTokenFolder tokens = new();
+        using TempFactoryRoot root = new();
+        StringWriter error = new();
+
+        WebApplication? app = ServerApp.Create(
+            ["--FactoryRoot", root.Path, "--TokenFile", tokens.TokenFile, "--TailnetHost", Tailnet, "--TailnetPort", value],
+            error);
+
+        Assert.Null(app);
+        Assert.Equal(HostCheck.InvalidTailnetPortText + Environment.NewLine, error.ToString());
+        Assert.False(File.Exists(tokens.TokenFile));
+    }
+
+    [Fact]
+    public void TailnetPortWithoutTailnetHost_StopsTheServerWithAFixedText()
+    {
+        using TempTokenFolder tokens = new();
+        using TempFactoryRoot root = new();
+        StringWriter error = new();
+
+        WebApplication? app = ServerApp.Create(
+            ["--FactoryRoot", root.Path, "--TokenFile", tokens.TokenFile, "--TailnetPort", "8443"], error);
+
+        Assert.Null(app);
+        Assert.Equal(HostCheck.InvalidTailnetPortText + Environment.NewLine, error.ToString());
+        Assert.False(File.Exists(tokens.TokenFile));
+    }
+
+    [Fact]
+    public async Task ValidTailnetPort_StartsTheServer()
+    {
+        using TempTokenFolder tokens = new();
+        using TempFactoryRoot root = new();
+        StringWriter error = new();
+
+        WebApplication? app = ServerApp.Create(
+            ["--FactoryRoot", root.Path, "--TokenFile", tokens.TokenFile, "--TailnetHost", Tailnet, "--TailnetPort", "8443"],
+            error);
+
+        Assert.NotNull(app);
+        await app.DisposeAsync();
+        Assert.Equal(AccessToken.CreatedText(tokens.TokenFile) + Environment.NewLine, error.ToString());
+    }
+
     [Fact]
     public async Task RefusedHost_IsNotLogged()
     {
