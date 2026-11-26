@@ -181,3 +181,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#179](backlog/179-move-history-and-health-behind-a.md) Move History and Health behind a … menu in the tab bar
 - [ ] [#180](backlog/180-keep-a-scrollable-list-of-sent.md) Keep a scrollable list of sent notifications in a Notifications tab (after: #179)
 - [ ] [#181](backlog/181-show-the-number-of-blocked-jobs.md) Show the number of blocked jobs as the app badge on the iPhone (after: RoomKit#6)
+- [ ] [#182](backlog/182-skip-the-ci-tests-for-backlog.md) Skip the CI tests for backlog and lessons changes (after: factory#85)
