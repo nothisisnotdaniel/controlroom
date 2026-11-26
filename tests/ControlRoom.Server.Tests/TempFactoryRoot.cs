@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
+using System.Text;
 
 namespace ControlRoom.Server.Tests;
 
@@ -65,11 +66,12 @@ internal sealed class TempFactoryRoot : IDisposable
     public static void InitGit(string folder, string branch)
     {
         Git(folder, "init", "-q", "-b", branch);
-        Git(folder, "config", "user.name", "Test User");
-        Git(folder, "config", "user.email", "test@example.invalid");
-        Git(folder, "config", "commit.gpgsign", "false");
-        Git(folder, "config", "core.autocrlf", "false");
-        Git(folder, "config", "core.hooksPath", ".git/hooks");
+        // The same settings five `git config` calls would write, appended in one go: each git process costs time.
+        File.AppendAllText(
+            System.IO.Path.Combine(folder, ".git", "config"),
+            "[user]\n\tname = Test User\n\temail = test@example.invalid\n"
+            + "[commit]\n\tgpgsign = false\n"
+            + "[core]\n\tautocrlf = false\n\thooksPath = .git/hooks\n");
         Git(folder, "add", "-A");
         Git(folder, "commit", "-q", "-m", "init");
     }
@@ -95,9 +97,18 @@ internal sealed class TempFactoryRoot : IDisposable
     /// when git fails.</summary>
     public static string Git(string folder, params string[] arguments)
     {
+        return GitWithInput(folder, null, arguments);
+    }
+
+    /// <summary>Like <see cref="Git"/>, and writes <paramref name="input"/> (when given) to git's standard input,
+    /// for example a <c>git fast-import</c> stream that makes many commits in one process.</summary>
+    public static string GitWithInput(string folder, string? input, params string[] arguments)
+    {
         ProcessStartInfo start = new("git")
         {
             WorkingDirectory = folder,
+            RedirectStandardInput = input is not null,
+            StandardInputEncoding = input is null ? null : new UTF8Encoding(false),
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -110,7 +121,14 @@ internal sealed class TempFactoryRoot : IDisposable
         start.Environment["GIT_TERMINAL_PROMPT"] = "0";
         using Process process = Process.Start(start)!;
         Task<string> error = process.StandardError.ReadToEndAsync();
-        string output = process.StandardOutput.ReadToEnd();
+        Task<string> outputRead = process.StandardOutput.ReadToEndAsync();
+        if (input is not null)
+        {
+            process.StandardInput.Write(input);
+            process.StandardInput.Close();
+        }
+
+        string output = outputRead.Result;
         process.WaitForExit();
         Assert.True(process.ExitCode == 0, "git " + string.Join(" ", arguments) + ": " + error.Result);
         return output.Trim();

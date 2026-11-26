@@ -5,8 +5,15 @@ namespace ControlRoom.Server.Tests;
 /// <summary>Checks <c>live.js</c> and its hooks in <c>app.js</c>, <c>board.js</c>, <c>index.html</c>, <c>app.css</c>
 /// and <c>sw.js</c> as text (there is no JS test runtime yet, see #59). The live behaviour (views changing without a
 /// reload, the notice appearing and going away) is checked by hand.</summary>
-public sealed partial class LiveWebAppTests
+public sealed partial class LiveWebAppTests : IClassFixture<EmptyRootServer>
 {
+    private readonly EmptyRootServer server;
+
+    public LiveWebAppTests(EmptyRootServer server)
+    {
+        this.server = server;
+    }
+
     private static readonly string[] Scripts = ["/token.js", "/board.js", "/act.js", "/push.js", "/edit.js", "/counts.js", "/search.js", "/capture.js", "/history.js", "/doctor.js", "/status.js", "/releases.js", "/live.js", "/app.js"];
 
     [Fact]
@@ -197,7 +204,7 @@ public sealed partial class LiveWebAppTests
         string js = await Fetch("/sw.js");
         string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v24\";", room, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v25\";", room, StringComparison.Ordinal);
         Assert.DoesNotContain("const CacheVersion = \"v9\";", room, StringComparison.Ordinal);
         Assert.Contains("  \"/edit.js\",\n  \"/counts.js\",\n  \"/search.js\",\n  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/releases.js\",\n  \"/live.js\",\n", room, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/changes", js, StringComparison.Ordinal);
@@ -205,11 +212,10 @@ public sealed partial class LiveWebAppTests
         Assert.Contains("return Shell.includes(url.pathname);", js, StringComparison.Ordinal);
     }
 
-    private static async Task<string> Fetch(string path)
+    /// <summary>Gets a static file from the class's shared server: these tests only read the app's files.</summary>
+    private async Task<string> Fetch(string path)
     {
-        using TempFactoryRoot root = new();
-        using ServerFactory factory = new(root.Path);
-        using HttpClient client = factory.CreateClient();
+        using HttpClient client = server.Factory.CreateClient();
         return await client.GetStringAsync(path);
     }
 

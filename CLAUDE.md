@@ -255,7 +255,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   listener and health version before writing the marker and result. See the Windows section in `README.md`.
 - **Test command:** `dotnet test` (from `ControlRoom/`; `dotnet build` must stay at 0 warnings). Tests build a
   temporary factory root (`TempFactoryRoot`) and host the server with `ServerFactory`; no test reads the real
-  factory root or opens a real port.
+  factory root or opens a real port. xUnit runs test classes in parallel and the tests of one class one after
+  another, so a big class is split into public nested classes (for example `BacklogChangeApiTests.Requests`), each
+  its own collection; `FullyQualifiedName~<Outer>` still finds them all. A theory with many read-only cases shares one
+  host through a class fixture (`SharedServer`: `EmptyRootServer`, `TokenApiTests.SamplesServer`); a test that writes,
+  or checks that a write is refused, builds its own root and `ServerFactory`.
 - **Layout:**
   - `ControlRoom.slnx`, `Directory.Build.props` (nullable, implicit usings, code style in build), `.editorconfig`.
   - Since #386 the units below are split: `src/RoomKit/` holds `RoomKitApp` (was `ServerApp`'s build: Kestrel,
@@ -282,7 +286,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `manifest.webmanifest`, `icons/`, `app.js`, `board.js`, `act.js`, `status.js`, `releases.js` and `room.js`.
   - `wwwroot/room.js` (ControlRoom): the app values the RoomKit scripts read as globals, loaded as the first
     `<script>` of `index.html` and by `sw.js` through `importScripts("/room.js")`: `TokenKey`, `CaptureProjectKey`,
-    `HistoryProjectKey`, `PushAppTexts` (`homeScreen`, `denied`), `CacheVersion` (`v24`), `CacheName`, `Shell` (the
+    `HistoryProjectKey`, `PushAppTexts` (`homeScreen`, `denied`), `CacheVersion` (`v25`), `CacheName`, `Shell` (the
     shell list, with `/room.js`), `PushAppTitles` (`updated`), `PushFallbackTitle`, `PushDefaultTag` and
     `PushUpdatePrefix`. The script order below starts with `room.js`.
   - Scripts: every app value of `launch-agent.sh` and `updater.sh` is in the block between `# roomkit:app-begin`
@@ -557,7 +561,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `launchctl` (its `print` of the updater label answers `runs = N` and is logged apart)/`curl`/`sleep`/`mv`/`codesign` and a fake `date` (`+%s`
     prints a fixed epoch from a test file, every other call goes to `/bin/date`); `ScriptFixtures.UpdaterPlist` is the expected updater plist for both; `ScriptFixtures` holds the fake `codesign` and a `PATH` folder without it;
     `ReleaseWorkflowTests` reads `release.yml` as text and runs `.github/scripts/signing-cert.sh`;
-    `SigningKeychainScriptTests` runs `signing-keychain.sh` with a fake `security` first on `PATH`); `TempFactoryRoot` (`InitGit`, `AddBareRemote`
+    `SigningKeychainScriptTests` runs `signing-keychain.sh` with a fake `security` first on `PATH`); `TempFactoryRoot` (`InitGit`, which writes its settings straight into `.git/config`, `AddBareRemote`
     and `Git` for a real local repo), `TempTokenFolder` and `ServerFactory` (own temp token file; `FactoryDevelopDir` (set before the host starts; default `<root>-factory-develop`, so no test sees a real one); clients send `Host: 127.0.0.1:8100`; optional tailnet name;
     `CreateTokenClient()` for API calls; `Push` fake push service, `Update` fake GitHub (`FakeUpdateHandler`), `CurrentVersion` (default `dev`),
     `Time` fixed clock whose timers never fire (it records their due time and period; `Zone` sets its
