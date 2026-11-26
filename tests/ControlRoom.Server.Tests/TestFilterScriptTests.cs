@@ -10,9 +10,9 @@ public sealed class TestFilterScriptTests
     [Theory]
     [InlineData("A\n", "FullyQualifiedName~A", "FullyQualifiedName!~A")]
     [InlineData(
-        "# The slow classes\n\nControlRoom.Server.Tests.PublishTests\n   \n\t\nRoomKit.Tests.Sample_Room\n#ControlRoom.Server.Tests.Old\nZ9\n",
-        "FullyQualifiedName~ControlRoom.Server.Tests.PublishTests|FullyQualifiedName~RoomKit.Tests.Sample_Room|FullyQualifiedName~Z9",
-        "FullyQualifiedName!~ControlRoom.Server.Tests.PublishTests&FullyQualifiedName!~RoomKit.Tests.Sample_Room&FullyQualifiedName!~Z9")]
+        "# The slow classes\n\nControlRoom.Server.Tests.PublishTests\n   \n\t\nSample.Tests.Sample_Room\n#ControlRoom.Server.Tests.Old\nZ9\n",
+        "FullyQualifiedName~ControlRoom.Server.Tests.PublishTests|FullyQualifiedName~Sample.Tests.Sample_Room|FullyQualifiedName~Z9",
+        "FullyQualifiedName!~ControlRoom.Server.Tests.PublishTests&FullyQualifiedName!~Sample.Tests.Sample_Room&FullyQualifiedName!~Z9")]
     [InlineData("_B.c\nA.B", "FullyQualifiedName~_B.c|FullyQualifiedName~A.B", "FullyQualifiedName!~_B.c&FullyQualifiedName!~A.B")]
     public void List_PrintsBothPartsWithTheSameNamesInTheSameOrder(string list, string part1, string part2)
     {
