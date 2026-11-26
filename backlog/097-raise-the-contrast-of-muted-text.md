@@ -15,3 +15,5 @@ The muted colour is shared app-wide and the new waiting-edits note uses it; its 
 ## Notes
 
 Proposed by job 299-edit-backlog-during-jobs (`factory/jobs/299-edit-backlog-during-jobs/`).
+
+Done: the muted-text colour in app.css already passes the contrast check (backlog audit, 2026-11-26).

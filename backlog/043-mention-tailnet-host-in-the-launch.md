@@ -17,3 +17,5 @@ The UX review of job 188 found that the new option can only be found in the READ
 Proposed by job 188-host-header-check (review-ux round 1 nit 1).
 
 Proposed by job 188-host-header-check (`factory/jobs/188-host-header-check/`).
+
+Done: scripts/launch-agent.sh on develop already shows --tailnet-host in its usage text (backlog audit, 2026-11-26).

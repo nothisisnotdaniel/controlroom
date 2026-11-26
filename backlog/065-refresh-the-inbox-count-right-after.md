@@ -15,3 +15,5 @@ Review-code (job 251) noted AC-11 asks for the count after every committed chang
 ## Notes
 
 Proposed by job 251-approval-inbox (`factory/jobs/251-approval-inbox/`).
+
+Done in RoomKit: edit.js calls loadBacklogCounts() after a backlog change (backlog audit, 2026-11-26).

@@ -71,7 +71,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#40](backlog/040-hint-to-run-status-after-installing.md) Hint to run status after installing the LaunchAgent
 - [?] [#41](backlog/041-move-the-notifications-section-higher-on.md) Move the Notifications section higher on the board
 - [?] [#42](backlog/042-do-not-start-the-test-send.md) Do not start the test-send wait when the test send fails
-- [?] [#43](backlog/043-mention-tailnet-host-in-the-launch.md) Mention --tailnet-host in the launch-agent.sh usage text
+- [x] [#43](backlog/043-mention-tailnet-host-in-the-launch.md) Mention --tailnet-host in the launch-agent.sh usage text
 - [?] [#44](backlog/044-clearer-refusal-when-the-tailnet-name.md) Clearer refusal when the tailnet name is not configured
 - [x] [#45](backlog/045-release-builds-on-github.md) Release builds on GitHub → 225-release-builds-github
 - [x] [#46](backlog/046-update-available-notice.md) Update available notice (after: #45) → 228-update-available-notice
@@ -86,7 +86,6 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#55](backlog/055-limit-how-often-channel-changes-start.md) Limit how often channel changes start update checks
 - [?] [#56](backlog/056-drop-a-develop-check-result-after.md) Drop a develop check result after switching back to stable
 - [?] [#57](backlog/057-filter-drafts-in-the-updater-s.md) Filter drafts in the updater's develop tag pick too
-- [?] [#58](backlog/058-guard-the-release-workflow-s-github.md) Guard the release workflow's GITHUB_ENV writes
 - [?] [#59](backlog/059-behaviour-tests-for-the-web-app.md) Behaviour tests for the web app's JavaScript
 - [?] [#60](backlog/060-calmer-colour-for-non-urgent-job.md) Calmer colour for non-urgent job notes
 - [x] [#61](backlog/061-check-that-the-job-page-refreshes.md) Check that the job page refreshes in place
@@ -94,12 +93,8 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#63](backlog/063-browser-check-of-the-live-update.md) Browser check of the live-update notice
 - [ ] [#32](backlog/032-show-the-live-status-line-on.md) Show the live status line on the job page
 - [ ] [#50](backlog/050-updater-port-check-when-another-user.md) Updater port check when another user holds the port
-- [?] [#66](backlog/066-cheaper-inbox-reads.md) Cheaper inbox reads
-- [?] [#67](backlog/067-retry-button-when-the-inbox-fails.md) Retry button when the inbox fails to load
 - [x] [#68](backlog/068-browser-check-of-the-approval-inbox.md) Browser check of the approval inbox
 - [?] [#70](backlog/070-guard-updatechecker-startasync-after-dispose.md) Guard UpdateChecker.StartAsync after Dispose
-- [?] [#71](backlog/071-name-the-task-in-the-done.md) Name the task in the Done confirmation
-- [?] [#72](backlog/072-fill-the-search-project-filter-before.md) Fill the search project filter before the first search
 - [x] [#73](backlog/073-browser-check-of-the-search-view.md) Browser check of the Search view and five-link nav
 - [?] [#74](backlog/074-notice-when-a-live-search-refresh.md) Notice when a live search refresh fails
 - [x] [#75](backlog/075-browser-check-of-the-next-and.md) Browser check of the next and waiting view
@@ -123,7 +118,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#94](backlog/094-edit-backlogs-while-a-job-runs.md) Edit backlogs while a job runs (after: factory#17) → 299-edit-backlog-during-jobs
 - [?] [#95](backlog/095-clean-up-the-backlog-branch-when.md) Clean up the backlog branch when its worktree cannot be made
 - [?] [#96](backlog/096-note-for-waiting-edits-when-the.md) Note for waiting edits when the backlog worktree cannot be read
-- [?] [#97](backlog/097-raise-the-contrast-of-muted-text.md) Raise the contrast of muted text
+- [x] [#97](backlog/097-raise-the-contrast-of-muted-text.md) Raise the contrast of muted text
 - [?] [#103](backlog/103-keep-the-runner-keychain-search-list.md) Keep the runner keychain search list non-empty when removing the signing keychain
 - [?] [#104](backlog/104-give-signing-keychain-sh-check-its.md) Give signing-keychain.sh check its own message for a malformed fingerprint
 - [x] [#105](backlog/105-approve-and-drop-buttons-in-the.md) Approve and Drop buttons in the story view of a [?] item → 335-story-approve-drop
@@ -146,7 +141,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#124](backlog/124-check-the-stop-line-divider-on.md) Check the stop line divider on the iPhone in dark mode
 - [x] [#125](backlog/125-status-chip-in-the-story-view.md) Status chip in the story view → 352-story-status-chip
 - [ ] [#64](backlog/064-keep-stale-story-marks-across-route.md) Keep stale story marks across route changes
-- [ ] [#65](backlog/065-refresh-the-inbox-count-right-after.md) Refresh the inbox count right after any backlog change
+- [x] [#65](backlog/065-refresh-the-inbox-count-right-after.md) Refresh the inbox count right after any backlog change
 - [x] [#128](backlog/128-approve-or-drop-goes-back-from.md) Approve or Drop goes back from the story view → 355-approve-goes-back
 - [x] [#129](backlog/129-jobs-view-without-your-tasks.md) Jobs view without your tasks → 358-jobs-view-only-jobs
 - [x] [#130](backlog/130-check-the-bottom-tab-bar-on.md) Check the bottom tab bar on the iPhone
@@ -162,7 +157,6 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#144](backlog/144-settings-file-cap-fits-every-valid.md) Settings file cap fits every valid interval
 - [ ] [#145](backlog/145-story-reads-on-linux-with-glibc.md) Story reads on Linux with glibc older than 2.33
 - [x] [#146](backlog/146-shared-roomkit-core-for-controlroom-and.md) Shared RoomKit core for ControlRoom and PlayRoom → 386-roomkit-shared-core
-- [ ] [#148](backlog/148-test-that-a-file-in-both.md) Test that a file in both wwwroot folders fails the build
 - [ ] [#149](backlog/149-strict-mode-for-sw-js.md) Strict mode for sw.js
 - [ ] [#150](backlog/150-check-job-ids-and-folders-from.md) Check job ids and folders from IJobFormat
 - [x] [#151](backlog/151-extract-roomkit-to-its-own-repository.md) Extract RoomKit to its own repository → 429-extract-roomkit-repo.638034fbad07490e809f1000d0106194
