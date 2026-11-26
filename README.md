@@ -168,7 +168,8 @@ checks the downloaded files' hashes against the hashes the build jobs reported, 
 them. The release on the merge commit includes the macOS tarball and the Windows ZIP, with a SHA-256 digest and
 build attestation for each. GitHub generates the release notes from the merged pull requests.
 
-Every push to `develop` (except one that changes only `backlog.md` or `backlog/`) also makes a prerelease
+Every push to `develop` (except one that changes only `backlog.md`, `backlog/` or the `## Lessons` section of a
+`CLAUDE.md`, whose run skips the tests and builds) also makes a prerelease
 `vX.Y.(Z+1)-develop.<run>`, one patch above the latest stable release, with the same checks, files and
 attestation. A stable release then deletes the develop prereleases (and their tags) at or below its version.
 

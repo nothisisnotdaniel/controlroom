@@ -8,7 +8,7 @@ using System.Xml.Linq;
 namespace ControlRoom.Server.Tests;
 
 /// <summary><c>.github/workflows/release.yml</c>, README and CLAUDE.md, read as text: the trigger, the version
-/// job's <c>if:</c>, the six jobs (<c>version</c>, then the tests in two parts per OS (<c>windows-tests</c>,
+/// job's <c>if:</c>, the seven jobs (<c>changes</c>, then <c>version</c>, then the tests in two parts per OS (<c>windows-tests</c>,
 /// <c>macos-tests</c>), then <c>windows</c> and <c>macos</c> in parallel, then <c>release</c>), every permission block, the SHA pins, PR fields and hashes only through <c>env:</c>, and the
 /// steps of each job in order.</summary>
 public sealed partial class ReleaseWorkflowTests
@@ -21,11 +21,13 @@ public sealed partial class ReleaseWorkflowTests
         string yaml = Workflow();
 
         Assert.Equal(
-            "on:\n  push:\n    branches:\n      - \"develop\"\n    paths-ignore:\n      - \"backlog.md\"\n"
-            + "      - \"backlog/**\"\n  pull_request:\n    types:\n      - \"closed\"\n    branches:\n      - \"main\"\n",
+            "on:\n  push:\n    branches:\n      - \"develop\"\n"
+            + "  pull_request:\n    types:\n      - \"closed\"\n    branches:\n      - \"main\"\n",
             TopLevelBlock(yaml, "on:"));
         Assert.Single(TopLevelKey().Matches(yaml), match => match.Value == "on:");
-        Assert.Single(Regex.Matches(yaml, "paths-ignore:"));
+        // #471: no path filter, so every pushed commit gets a run; the changes job decides what it skips.
+        Assert.DoesNotContain("paths:", yaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("paths-ignore:", yaml, StringComparison.Ordinal);
         Assert.DoesNotContain("\n    tags:", yaml, StringComparison.Ordinal);
         Assert.DoesNotContain("workflow_dispatch", yaml, StringComparison.Ordinal);
         Assert.DoesNotContain("pull_request_target", yaml, StringComparison.Ordinal);
@@ -43,7 +45,8 @@ public sealed partial class ReleaseWorkflowTests
             yaml.Split('\n').Where(line => line.TrimStart().StartsWith("if:", StringComparison.Ordinal)
                 && !line.StartsWith("    if:", StringComparison.Ordinal)).Select(line => line.Trim()));
         Assert.Equal(
-            "if: github.event_name == 'push' || (github.event.pull_request.merged == true "
+            "if: (github.event_name == 'push' && needs.changes.outputs.tests == 'true') "
+            + "|| (github.event.pull_request.merged == true "
             + "&& github.event.pull_request.head.ref == 'develop' "
             + "&& github.event.pull_request.head.repo.full_name == github.repository)",
             condition.Trim());
@@ -55,13 +58,13 @@ public sealed partial class ReleaseWorkflowTests
         string yaml = Workflow();
 
         Assert.Equal("permissions: {}\n", TopLevelBlock(yaml, "permissions: {}"));
-        Assert.Equal(7, Regex.Matches(yaml, "permissions:").Count);
+        Assert.Equal(8, Regex.Matches(yaml, "permissions:").Count);
         foreach (string job in Jobs)
         {
             string[] expected = job switch
             {
                 "release" => ["contents: write", "id-token: write", "attestations: write"],
-                "version" => ["contents: read"],
+                "changes" or "version" => ["contents: read"],
                 // The jobs with a dotnet step also read the RoomKit package from GitHub Packages.
                 _ => ["contents: read", "packages: read"],
             };
@@ -75,7 +78,7 @@ public sealed partial class ReleaseWorkflowTests
         string yaml = Workflow();
 
         string[] uses = [.. yaml.Split('\n').Where(line => line.Contains("uses:", StringComparison.Ordinal))];
-        Assert.Equal(14, uses.Length);
+        Assert.Equal(15, uses.Length);
         Assert.All(uses, line => Assert.Matches(PinnedUse(), line));
         Assert.Contains("uses: actions/checkout@", yaml, StringComparison.Ordinal);
         Assert.Contains("uses: actions/attest-build-provenance@", yaml, StringComparison.Ordinal);
@@ -192,7 +195,7 @@ public sealed partial class ReleaseWorkflowTests
             + "\"dist/controlroom-$RELEASE_VERSION-win-x64.zip\" --title ", yaml, StringComparison.Ordinal);
         // The two signing secrets and the four dotnet steps' GITHUB_TOKEN.
         Assert.Equal(6, Regex.Matches(yaml, "secrets\\.").Count);
-        Assert.Equal(14, Regex.Matches(yaml, "\n +uses: ").Count);
+        Assert.Equal(15, Regex.Matches(yaml, "\n +uses: ").Count);
     }
 
     [Theory]
@@ -690,7 +693,9 @@ public sealed partial class ReleaseWorkflowTests
         string yaml = Workflow();
 
         Assert.Equal(Jobs, JobNames(yaml));
-        Assert.Empty(Regex.Matches(JobBlock(yaml, "version"), "\n    needs:"));
+        Assert.Empty(Regex.Matches(JobBlock(yaml, "changes"), "\n    needs:"));
+        Assert.Equal(["needs: changes"], NeedsLines(JobBlock(yaml, "version")));
+        Assert.Equal(["version"], Jobs.Where(job => NeededJobs(yaml, job).Contains("changes")));
         Assert.Equal(["needs: version"], NeedsLines(JobBlock(yaml, "windows-tests")));
         Assert.Equal(["needs: version"], NeedsLines(JobBlock(yaml, "macos-tests")));
         Assert.Equal(["needs: [version, windows-tests]"], NeedsLines(JobBlock(yaml, "windows")));
@@ -718,9 +723,65 @@ public sealed partial class ReleaseWorkflowTests
         Assert.All(Jobs.Where(job => job != "version"), job =>
             Assert.DoesNotContain(JobBlock(yaml, job).Split('\n'), line => line.StartsWith("    if:", StringComparison.Ordinal)));
         Assert.Contains("\n    runs-on: ubuntu-latest\n", JobBlock(yaml, "release"), StringComparison.Ordinal);
+        Assert.Contains("\n    runs-on: ubuntu-latest\n", JobBlock(yaml, "changes"), StringComparison.Ordinal);
         Assert.Contains("\n    runs-on: macos-15\n", JobBlock(yaml, "macos"), StringComparison.Ordinal);
         Assert.Contains("\n    runs-on: macos-15\n", JobBlock(yaml, "macos-tests"), StringComparison.Ordinal);
         Assert.Contains("\n    runs-on: windows-latest\n", JobBlock(yaml, "windows-tests"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ChangesJob_ReadsOnlyTheRepoAndRunsTheCheckScriptAsItsOneRun()
+    {
+        string yaml = Workflow();
+        string changes = JobBlock(yaml, "changes");
+
+        // #471: the first job, with no needs, read-only contents, a full-history pinned checkout without
+        // credentials, no env (so no token) and one run: that takes the event from GITHUB_EVENT_PATH itself.
+        Assert.Equal("changes", JobNames(yaml)[0]);
+        Assert.Equal(
+            "\n  changes:\n"
+            + "    # Decides whether a push needs the tests and builds; see the header. Fails open: any doubt says tests: true.\n"
+            + "    runs-on: ubuntu-latest\n"
+            + "    permissions:\n"
+            + "      contents: read\n"
+            + "    outputs:\n"
+            + "      tests: ${{ steps.changes.outputs.tests }}\n"
+            + "    steps:\n"
+            + "      - name: Check out\n"
+            + "        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0\n"
+            + "        with:\n"
+            + "          fetch-depth: 0\n"
+            + "          persist-credentials: false\n"
+            + "      - name: Check what changed\n"
+            + "        id: changes\n"
+            + "        run: python3 .github/scripts/ci_changes.py\n",
+            changes);
+        Assert.Equal(["python3 .github/scripts/ci_changes.py"], RunBlocks(changes));
+        Assert.All(RunBlocks(changes), run => Assert.DoesNotContain("${{", run, StringComparison.Ordinal));
+        Assert.DoesNotContain("env:", changes, StringComparison.Ordinal);
+        Assert.DoesNotContain("secrets.", changes, StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(RepoFolder(), ".github", "scripts", "ci_changes.py")));
+    }
+
+    [Fact]
+    public void VersionJob_NeedsChangesAndEverythingAfterItsIfIsUnchanged()
+    {
+        string yaml = Workflow();
+
+        // #471: version needs changes; its if: skips a push only on tests: false and keeps the merged-PR branch.
+        Assert.StartsWith(
+            "\n  version:\n    needs: changes\n    # A push to develop runs when changes says tests: true; a pull_request "
+            + "event runs only for a merged PR from\n    # develop in this repository.\n"
+            + "    if: (github.event_name == 'push' && needs.changes.outputs.tests == 'true') || (github.event.pull_request.merged "
+            + "== true && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.head.repo.full_name "
+            + "== github.repository)\n    # macos-15 is an Apple silicon (arm64) runner; the first step checks it.\n",
+            JobBlock(yaml, "version"), StringComparison.Ordinal);
+
+        // Everything from there on (the rest of version and all later jobs, steps and permissions) is byte for byte
+        // what it was before #471. Update this hash only with a deliberate change to those jobs.
+        int start = yaml.IndexOf("    # macos-15 is an Apple silicon (arm64) runner", StringComparison.Ordinal);
+        Assert.True(start > 0);
+        Assert.Equal("ede9890c2fdb68a4b47f6d8ddd4485446ef173fc36f2596627141f18a3c854aa", Sha256(yaml[start..]));
     }
 
     [Fact]
@@ -877,6 +938,7 @@ public sealed partial class ReleaseWorkflowTests
         string yaml = Workflow();
         Dictionary<string, string[]> expected = new()
         {
+            ["changes"] = ["actions/checkout"],
             ["version"] = ["actions/checkout"],
             ["windows-tests"] = ["actions/checkout", "actions/setup-dotnet"],
             ["macos-tests"] = ["actions/checkout", "actions/setup-dotnet"],
@@ -1112,8 +1174,11 @@ public sealed partial class ReleaseWorkflowTests
             Regex.Replace(File.ReadAllText(Path.Combine(repo, "CLAUDE.md")), @"\s+", " "),
         ];
 
-        Assert.Contains("in six jobs:", texts[0], StringComparison.Ordinal);
-        Assert.Contains("Six jobs:", texts[2], StringComparison.Ordinal);
+        Assert.Contains("in seven jobs:", texts[0], StringComparison.Ordinal);
+        Assert.Contains("Seven jobs:", texts[2], StringComparison.Ordinal);
+        Assert.Contains(".github/scripts/ci_changes.py", texts[0], StringComparison.Ordinal);
+        Assert.Contains(".github/scripts/ci_changes.py", texts[2], StringComparison.Ordinal);
+        Assert.DoesNotContain("paths-ignore", texts[0], StringComparison.Ordinal);
         Assert.DoesNotContain("four jobs", texts[0], StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Four jobs", texts[2], StringComparison.Ordinal);
         Assert.All(texts, text =>
@@ -1126,7 +1191,7 @@ public sealed partial class ReleaseWorkflowTests
         Assert.True(File.Exists(Path.Combine(repo, "tests", "ControlRoom.Server.Tests", "TestPartsGuardTests.cs")));
     }
 
-    private static readonly string[] Jobs = ["version", "windows-tests", "macos-tests", "windows", "macos", "release"];
+    private static readonly string[] Jobs = ["changes", "version", "windows-tests", "macos-tests", "windows", "macos", "release"];
 
     /// <summary>The package feed credential, the only line of each dotnet step's <c>env:</c> (#151).</summary>
     private const string CredentialLine =
