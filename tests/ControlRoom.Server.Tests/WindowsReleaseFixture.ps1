@@ -474,7 +474,7 @@ function Stop-FixtureServer {
     Wait-FixtureAction $process
 }
 
-function Expect-SharingViolation([scriptblock]$Open) {
+function Expect-SharingViolation([scriptblock]$Open, $Opened = 'The registered action did not pin the checked entry.') {
     try { (& $Open).Dispose() }
     catch {
         $failure = $_.Exception.GetBaseException()
@@ -482,7 +482,7 @@ function Expect-SharingViolation([scriptblock]$Open) {
         Expect $code 32
         return
     }
-    throw 'The registered action did not pin the checked entry.'
+    throw $Opened
 }
 
 function Invoke-FixtureUpdaterTask {
@@ -698,8 +698,40 @@ if ($Scenario -in 'lifecycle','sample') {
         Expect (Read-PrivateText 'last-check' 32) ([string]$clock.ToUnixTimeSeconds() + [char]10)
     }
     $stamp = Join-Path $Support 'last-check'
+    # Git Bash (the CI test shell) enables the backup privilege; enable it here too when the token holds it, so the
+    # lock is tested the same from any parent shell. A backup-semantics open could otherwise read the locked stamp.
+    Add-Type -Namespace Fixture -Name Privilege -MemberDefinition @'
+[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, Pack = 4)]
+private struct OnePrivilege { public uint Count; public long Luid; public uint Attributes; }
+[System.Runtime.InteropServices.DllImport("advapi32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+private static extern bool LookupPrivilegeValue(string system, string name, out long luid);
+[System.Runtime.InteropServices.DllImport("advapi32.dll", SetLastError = true)]
+private static extern bool OpenProcessToken(System.IntPtr process, uint access, out System.IntPtr token);
+[System.Runtime.InteropServices.DllImport("advapi32.dll", SetLastError = true)]
+private static extern bool AdjustTokenPrivileges(System.IntPtr token, bool disableAll, ref OnePrivilege state, uint length,
+    System.IntPtr previous, System.IntPtr returned);
+[System.Runtime.InteropServices.DllImport("kernel32.dll")]
+private static extern System.IntPtr GetCurrentProcess();
+[System.Runtime.InteropServices.DllImport("kernel32.dll")]
+private static extern bool CloseHandle(System.IntPtr handle);
+
+public static void TryEnable(string name) {
+    System.IntPtr token;
+    // TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY; a token without the privilege leaves it off (ERROR_NOT_ALL_ASSIGNED).
+    if (!OpenProcessToken(GetCurrentProcess(), 0x28, out token)) return;
+    try {
+        OnePrivilege state = new OnePrivilege { Count = 1, Attributes = 2 };
+        if (LookupPrivilegeValue(null, name, out state.Luid)) {
+            AdjustTokenPrivileges(token, false, ref state, 0, System.IntPtr.Zero, System.IntPtr.Zero);
+        }
+    } finally { CloseHandle(token); }
+}
+'@
+    [Fixture.Privilege]::TryEnable('SeBackupPrivilege')
     $held = [IO.File]::Open($stamp, 'Open', 'Read', 'None')
     try {
+        # The updater's own open meets the lock: a sharing violation (32), not a read of the fresh stamp.
+        Expect-SharingViolation { [RoomKit.UpdateEntry]::Open($stamp, $false) } 'The updater opened the locked stamp.'
         Expect-Update 'current'
         Expect (ListCount) (++$count)
     } finally { $held.Dispose() }
