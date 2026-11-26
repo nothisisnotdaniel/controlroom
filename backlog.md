@@ -39,6 +39,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#170](backlog/170-make-the-test-suite-faster-find.md) Make the test suite faster: find and fix the slowest tests → 414-faster-test-suite.708c8fa312a9409c800831c9af4d1857
 - [x] [#174](backlog/174-fix-the-flaky-windows-interval-release.md) Fix the flaky Windows interval release test → 416-fix-interval-release-test.d2a2970baae84d35bd2275907c0d614d
 - [x] [#175](backlog/175-fix-the-windows-updater-locked-last.md) Fix the Windows updater locked last-check case → 417-fix-locked-last-check.76ee7d442f6542c1b9e3c1777329e25a
+- [ ] [#178](backlog/178-redo-pr-4-on-develop-keep.md) Redo PR #4 on develop: keep overlong rework notes editable, on RoomKit 0.2.0 (after: RoomKit#6)
 - [ ] [#179](backlog/179-move-history-and-health-behind-a.md) Move History and Health behind a … menu in the tab bar
 - [ ] [#180](backlog/180-keep-a-scrollable-list-of-sent.md) Keep a scrollable list of sent notifications in a Notifications tab (after: #179)
 - [ ] [#182](backlog/182-skip-the-ci-tests-for-backlog.md) Skip the CI tests for backlog and lessons changes (after: factory#85)
@@ -181,4 +182,3 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#173](backlog/173-spike-find-the-slowest-tests-on.md) Spike: find the slowest tests on CI
 - [ ] [#176](backlog/176-show-each-backlog-item-s-factory.md) Show each backlog item's factory estimate (after: factory#62)
 - [?] [#177](backlog/177-pin-the-roomkit-package-content-with.md) Pin the RoomKit package content with a lock file and locked-mode restore
-- [ ] [#178](backlog/178-redo-pr-4-on-develop-keep.md) Redo PR #4 on develop: keep overlong rework notes editable, on RoomKit 0.2.0 (after: RoomKit#6)
