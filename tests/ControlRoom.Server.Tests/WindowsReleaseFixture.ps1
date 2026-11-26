@@ -7,6 +7,8 @@ param(
     [Parameter(Mandatory, ParameterSetName='Cleanup')][switch]$DetachRootJunction
 )
 $ErrorActionPreference = 'Stop'
+# Kept before the scripts are dot-sourced, so failure messages can pick this file's frames from the call stack.
+$fixtureScript = $PSCommandPath
 
 if ($DetachRootJunction) {
     $targetPath = Join-Path $Fixture 'scan root'
@@ -85,13 +87,37 @@ function Write-PrivateText($Name, $Value, $Folder = $Support) {
     if ($Name -ceq 'installed-release' -and $machine.AfterMarker) { & $machine.AfterMarker }
 }
 
+# The fixture lines of the call that failed, innermost first, skipping this helper and the Expect that called it.
+function Get-FixtureLines {
+    $lines = foreach ($frame in @(Get-PSCallStack | Select-Object -Skip 2)) {
+        if ($frame.ScriptName -eq $fixtureScript) { $frame.ScriptLineNumber }
+    }
+    return 'line ' + (@($lines) -join ' < ')
+}
 function Expect($Actual, $Wanted) {
-    if ([string]$Actual -cne [string]$Wanted) { throw "Expected [$Wanted], got [$Actual]." }
+    if ([string]$Actual -cne [string]$Wanted) { throw "Expected [$Wanted], got [$Actual] at $(Get-FixtureLines)." }
+}
+# Runs one update and, on a mismatch, also reports the inputs of the due decision (unchanged by a not_due run).
+function Expect-Update($Wanted) {
+    $actual = Invoke-RoomUpdate $factory
+    if ([string]$actual -ceq [string]$Wanted) { return }
+    $inputs = foreach ($name in 'first-check','last-check','settings.json') {
+        try { $text = [IO.File]::ReadAllText((Join-Path $Support $name)).Replace([string][char]10, '\n') }
+        catch { $text = '<' + $_.Exception.GetBaseException().GetType().Name + '>' }
+        "$name [$text]"
+    }
+    throw "Expected [$Wanted], got [$actual] at $(Get-FixtureLines) (clock $($clock.ToUnixTimeSeconds()); $($inputs -join '; '))"
 }
 function Expect-Refusal([scriptblock]$Operation, $Reason) {
     $message = ''
     try { & $Operation | Out-Null } catch { $message = $_.Exception.ToString() }
     if (!$message.Contains($Reason)) { throw "Expected refusal [$Reason], got [$message]." }
+}
+if ($Scenario -eq 'expect-line') {
+    $message = ''
+    try { $at = @(Get-PSCallStack)[0].ScriptLineNumber; Expect 'got' 'wanted' } catch { $message = $_.Exception.Message }
+    if ($message -cne "Expected [wanted], got [got] at line $at.") { throw "Unexpected Expect message [$message]." }
+    return
 }
 function With-RefusedEntry($Path, [scriptblock]$Check) {
     $saved = $Path + '.original'
@@ -646,40 +672,48 @@ if ($Scenario -in 'lifecycle','sample') {
     Expect (Get-RoomStatus) 'Installed=True Running=True'
 } elseif ($Scenario -eq 'interval') {
     $offered = $old
+    # The first check is due only through the installer's marker, since the seeded stamp is fresh.
+    Expect (Read-PrivateText 'first-check' 2) '1'
     Write-PrivateText 'last-check' "$Epoch"
-    Expect (Invoke-RoomUpdate $factory) 'current'
+    Expect-Update 'current'
     Expect (ListCount) 1
     Expect (Read-PrivateText 'last-check' 32) ("$Epoch" + [char]10)
     $clock = $clock.AddSeconds(1739)
-    Expect (Invoke-RoomUpdate $factory) 'not_due'
+    Expect-Update 'not_due'
     Expect (ListCount) 1
     Expect (Read-PrivateText 'last-check' 32) ("$Epoch" + [char]10)
     $clock = $clock.AddSeconds(1)
-    Expect (Invoke-RoomUpdate $factory) 'current'
+    Expect-Update 'current'
     Expect (ListCount) 2
     Expect (Read-PrivateText 'last-check' 32) ([string]($Epoch + 1740) + [char]10)
     Set-Options stable 60
     $clock = $clock.AddMinutes(30)
-    Expect (Invoke-RoomUpdate $factory) 'not_due'
+    Expect-Update 'not_due'
     $count = 2
     foreach ($bad in 'missing','broken',([string]($clock.ToUnixTimeSeconds() + 1))) {
         if ($bad -eq 'missing') { [IO.File]::Delete((Join-Path $Support 'last-check')) }
         else { Write-PrivateText 'last-check' $bad }
-        Expect (Invoke-RoomUpdate $factory) 'current'
+        Expect-Update 'current'
         Expect (ListCount) (++$count)
         Expect (Read-PrivateText 'last-check' 32) ([string]$clock.ToUnixTimeSeconds() + [char]10)
     }
     $stamp = Join-Path $Support 'last-check'
     $held = [IO.File]::Open($stamp, 'Open', 'Read', 'None')
     try {
-        Expect (Invoke-RoomUpdate $factory) 'current'
+        Expect-Update 'current'
         Expect (ListCount) (++$count)
     } finally { $held.Dispose() }
     [IO.File]::Delete($stamp)
     [void][IO.Directory]::CreateDirectory($stamp)
-    Expect (Invoke-RoomUpdate $factory) 'current'
+    Expect-Update 'current'
     Expect (ListCount) (++$count)
     [IO.Directory]::Delete($stamp)
+    $message = ''
+    try { $at = @(Get-PSCallStack)[0].ScriptLineNumber; Expect-Update 'updated' } catch { $message = $_.Exception.Message }
+    Expect (ListCount) (++$count)
+    $now = $clock.ToUnixTimeSeconds()
+    Expect $message ("Expected [updated], got [current] at line $at (clock $now; first-check [<FileNotFoundException>]; " +
+        "last-check [$now\n]; settings.json [" + '{"autoUpdate":true,"channel":"stable","updateInterval":60}])')
     Expect ([IO.File]::Exists($resultPath)) $false
 } elseif ($Scenario -eq 'linked-stamp') {
     $offered = $old

@@ -19,6 +19,7 @@ public sealed class WindowsReleaseTests : IDisposable
     [InlineData("lifecycle", null, null)]
     [InlineData("live-server-install", null, null)]
     [InlineData("interval", null, null)]
+    [InlineData("expect-line", null, null)]
     [InlineData("defer", null, null)]
     [InlineData("concurrent-install", "1.3.0", null)]
     [InlineData("stable", "1.3.0", null)]
@@ -112,6 +113,24 @@ public sealed class WindowsReleaseTests : IDisposable
         {
             output.WriteLine("Removed the private fixture tree.");
         }
+    }
+
+    [Theory]
+    [InlineData("scripts")]
+    [InlineData("src/RoomKit/scripts")]
+    public void Updater_DecidesTheFirstCheckMarkerWithTheNoFollowOpen(string folder)
+    {
+        string updater = File.ReadAllText(Path.Combine([RepoCopy.RepoFolder(), .. folder.Split('/'), "updater.ps1"]))
+            .Replace("\r\n", "\n", StringComparison.Ordinal);
+        int start = updater.IndexOf("function Test-UpdateDue(", StringComparison.Ordinal);
+        Assert.True(start >= 0);
+        int end = updater.IndexOf("\n}\n", start, StringComparison.Ordinal);
+        Assert.True(end > start);
+        string body = updater[start..end];
+        Assert.DoesNotContain("[IO.File]::Exists", body, StringComparison.Ordinal);
+        Assert.Contains("try { $marker = [RoomKit.UpdateEntry]::Open((Join-Path $Support 'first-check'), $false) }\n" +
+            "    catch { return $true }\n    if ($marker) { $marker.Dispose(); return $true }", body, StringComparison.Ordinal);
+        Assert.True(body.IndexOf("'first-check'", StringComparison.Ordinal) < body.IndexOf("'last-check'", StringComparison.Ordinal));
     }
 
     [Fact]
