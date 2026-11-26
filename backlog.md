@@ -183,3 +183,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#173](backlog/173-spike-find-the-slowest-tests-on.md) Spike: find the slowest tests on CI
 - [ ] [#176](backlog/176-show-each-backlog-item-s-factory.md) Show each backlog item's factory estimate (after: factory#62)
 - [?] [#177](backlog/177-pin-the-roomkit-package-content-with.md) Pin the RoomKit package content with a lock file and locked-mode restore
+- [ ] [#178](backlog/178-redo-pr-4-on-develop-keep.md) Redo PR #4 on develop: keep overlong rework notes editable, on RoomKit 0.2.0 (after: RoomKit#6)
