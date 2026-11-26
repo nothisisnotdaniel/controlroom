@@ -11,6 +11,28 @@ public sealed partial class RoomKitScriptTests
     private const string End = "# roomkit:app-end\n";
 
     [Fact]
+    public void PackageFolder_IsTheRestoredRoomKitWithItsScripts()
+    {
+        string folder = RoomKitPackage.Folder();
+        Assert.True(File.Exists(Path.Combine(folder, "lib", "net10.0", "RoomKit.dll")), folder);
+        Assert.True(File.Exists(Path.Combine(RoomKitPackage.Scripts(), "updater.sh")), folder);
+    }
+
+    [Fact]
+    public void MissingPackageFolder_FailsNamingTheFolderInsteadOfSkipping()
+    {
+        string missing = Path.Combine(Path.GetTempPath(), "roomkit-missing-" + Guid.NewGuid().ToString("N"), "scripts");
+
+        Exception error = Assert.ThrowsAny<Exception>(() => RoomKitPackage.Existing(missing));
+        Assert.Contains(missing, error.Message, StringComparison.Ordinal);
+        Assert.Contains("$(PkgRoomKit)", error.Message, StringComparison.Ordinal);
+        Assert.IsType<Xunit.Sdk.TrueException>(error);
+
+        Exception unset = Assert.ThrowsAny<Exception>(() => RoomKitPackage.Existing(null));
+        Assert.Contains("$(PkgRoomKit)", unset.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void WindowsUpdaterUsesRoomKitsSemVerIdentifierRule()
     {
         string updater = Read(Path.Combine(RoomKitPackage.Scripts(), "updater.ps1"));
