@@ -151,8 +151,12 @@ gh attestation verify controlroom-1.2.3-osx-arm64.tar.gz --repo nothisisnotdanie
 
 `.github/workflows/release.yml` makes the releases. Merging a pull request from `develop` into `main` titled
 `release vX.Y.Z` (a prerelease such as `release v1.2.3-rc.1` is allowed) runs the tests on Windows x64 and
-Apple silicon macOS. A first `version` job works out the version; then the Windows and macOS builds run in parallel
-after `version`, each in its own job. CI checks the version of each executable and serves the packaged web assets
+Apple silicon macOS. A first `version` job works out the version; then the tests run in two parts per OS before the
+builds, all four parts in parallel. `.github/test-part-1.txt` lists the test classes of part 1; part 2 runs every other
+test, so each test runs exactly once per OS and a new test class needs no edit to the list. The guard
+(`TestPartsGuardTests`, in each test assembly) fails when a test would land in no part or in both, or when a listed
+name matches no test. Then the Windows and macOS builds run in parallel after `version`, each in its own job once its
+OS's tests have passed. CI checks the version of each executable and serves the packaged web assets
 from the extracted Windows ZIP. Each build job reports the SHA-256 of the files it built. The final `release` job
 checks the downloaded files' hashes against the hashes the build jobs reported, then sums, attests and publishes
 them. The release on the merge commit includes the macOS tarball, Windows ZIP and RoomKit

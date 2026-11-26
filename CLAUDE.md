@@ -216,10 +216,18 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   `-develop`) and for every push to `develop` that changes more than `backlog.md` and `backlog/**` (a prerelease
   `X.Y.(Z+1)-develop.<run number>` from `.github/scripts/develop-version.sh` on `GITHUB_SHA`, checked against
   `refs/heads/develop` and `HEAD`); the version and commit reach later steps as `RELEASE_VERSION` and
-  `RELEASE_TARGET`, never `VERSION`, so MSBuild can't read them as `$(Version)`. Four jobs: `version` (on
-  `macos-15`, arm64) re-checks the PR and works out the version; the Windows and macOS builds run in parallel after
-  `version` (jobs `windows` and `macos`, each `needs: version`); the final `release` job (`ubuntu-latest`, `needs:
-  [version, windows, macos]`) builds nothing. The `macos` job (`macos-15`) runs `dotnet test -c Release`, publishes `-r osx-arm64 --self-contained
+  `RELEASE_TARGET`, never `VERSION`, so MSBuild can't read them as `$(Version)`. Six jobs: `version` (on
+  `macos-15`, arm64) re-checks the PR and works out the version; then the tests run in two parts per OS before the
+  builds (#415: jobs `windows-tests` on `windows-latest` and `macos-tests` on `macos-15`, each `needs: version`,
+  `strategy: { fail-fast: false, matrix: { part: [1, 2] } }`, `TEST_PART` only through `env:`, `dotnet test -c Release
+  --filter "$TEST_FILTER"` with the filter from `.github/scripts/test-filter.sh .github/test-part-1.txt "$TEST_PART"`:
+  part 1 every test whose fully qualified name contains a name listed in `.github/test-part-1.txt` (one name per line,
+  only `[A-Za-z_][A-Za-z0-9_.]*`, blank and `#` lines ignored), part 2 the exact negation, so a new class runs in part 2;
+  the guard `TestPartsGuardTests`, linked into both test assemblies, checks that every test lands in exactly one part
+  and that no listed name of its assembly's namespace is stale; to rebalance, move names by the trx times); the Windows
+  and macOS builds run in parallel after `version` (jobs `windows`, `needs: [version, windows-tests]`, and `macos`,
+  `needs: [version, macos-tests]`), each only after its own OS's test parts passed; the final `release` job
+  (`ubuntu-latest`, `needs: [version, windows, macos]`) builds nothing. The `macos` job (`macos-15`) publishes `-r osx-arm64 --self-contained
   -p:Version=X.Y.Z`, signs and verifies it when `signing-cert.sha1` is committed (steps `Sign`, `Verify signature`,
   `Remove signing keychain` with `if: always()`; README "Signing"; `.github/scripts/signing-cert.sh` reads the file,
   `.github/scripts/signing-keychain.sh` puts the temp keychain on the user search list after `unlock-keychain` (`add`),
@@ -236,8 +244,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   through `env:`), then sums, attests and publishes them: it writes `SHA256SUMS`, attests build provenance and runs `gh release create vX.Y.Z` on the merge commit or pushed commit
   (`--title "ControlRoom X.Y.Z" --generate-notes`, plus `--prerelease` for a prerelease version). After a stable
   release, `Prune old prereleases` (`continue-on-error`) deletes every `-develop` prerelease and tag at or below
-  that version (`.github/scripts/old-prereleases.sh`). Top-level `permissions: {}`; `version`, `windows` and `macos`
-  have only `contents: read`, `release` only `contents: write`, `id-token: write`, `attestations: write`; the signing
+  that version (`.github/scripts/old-prereleases.sh`). Top-level `permissions: {}`; `version`, `windows-tests`,
+  `macos-tests`, `windows` and `macos` have only `contents: read`, `release` only `contents: write`, `id-token: write`, `attestations: write`; the signing
   secrets reach only `Sign` in `macos`; every action pinned to a commit SHA; PR and ref fields only through `env:`.
   Check a tarball with `gh attestation verify <tarball> --repo nothisisnotdaniel/controlroom`. The repo slug is fixed
   in `launch-agent.sh`; renaming the repo breaks `--release`. After the tarball `Pack` step, `Pack RoomKit` runs
@@ -245,8 +253,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   `SHA256SUMS`, the attestation subjects and the `gh release create` files (stable and prerelease). Other apps restore
   it from a local folder feed filled with `gh release download` (`docs/roomkit.md`); no GitHub Packages, no
   `packages: write`, no new secret.
-- **Windows releases:** CI tests the same release commit on `windows-latest` and macOS; the `windows` job runs in
-  parallel with `macos`. The Windows ZIP contains
+- **Windows releases:** CI tests the same release commit on `windows-latest` and macOS, each OS in two parallel
+  parts (`windows-tests`, `macos-tests`); the `windows` job runs after `windows-tests` and in parallel with `macos`. The Windows ZIP contains
   the self-contained single-file `controlroom.exe`, both PowerShell scripts and `wwwroot`. CI runs the extracted
   executable and checks its version, health and served asset bytes, then reports the ZIP's SHA-256 (`zip_sha256`),
   which the `release` job checks before the common checksums and attestation.
@@ -550,7 +558,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     hosted by `CoreServerFactory` and tested in `CoreRoomTests` (own collection, no parallel runs, restores the
     `SampleRoom` context), and
     `RoomKitLibraryTests` (source scan, friends, `docs/roomkit.md` names every public type, `dotnet pack` contents);
-    `TempFactoryRoot`, `TempTokenFolder`, `PushFakes`, `PushTestData` and `RepoCopy` are linked from
+    `TempFactoryRoot`, `TempTokenFolder`, `PushFakes`, `PushTestData`, `RepoCopy` and `TestPartsGuardTests` are linked from
     `ControlRoom.Server.Tests`. `RepoCopy` copies `src/`, `docs/` and the root files to a temp folder for
     `dotnet publish`/`dotnet pack` tests; `tests/ControlRoom.Server.Tests/Develop/` holds develop's web file hashes
     and the develop copies of the files that lost lines to `room.js` (`WebAssetSplitTests`).
@@ -561,6 +569,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `launchctl` (its `print` of the updater label answers `runs = N` and is logged apart)/`curl`/`sleep`/`mv`/`codesign` and a fake `date` (`+%s`
     prints a fixed epoch from a test file, every other call goes to `/bin/date`); `ScriptFixtures.UpdaterPlist` is the expected updater plist for both; `ScriptFixtures` holds the fake `codesign` and a `PATH` folder without it;
     `ReleaseWorkflowTests` reads `release.yml` as text and runs `.github/scripts/signing-cert.sh`;
+    `TestFilterScriptTests` runs `.github/scripts/test-filter.sh` on temp lists; `TestPartsGuardTests` (also linked
+    into `RoomKit.Tests`) runs it on the committed `.github/test-part-1.txt`;
     `SigningKeychainScriptTests` runs `signing-keychain.sh` with a fake `security` first on `PATH`); `TempFactoryRoot` (`InitGit`, which writes its settings straight into `.git/config`, `AddBareRemote`
     and `Git` for a real local repo), `TempTokenFolder` and `ServerFactory` (own temp token file; `FactoryDevelopDir` (set before the host starts; default `<root>-factory-develop`, so no test sees a real one); clients send `Host: 127.0.0.1:8100`; optional tailnet name;
     `CreateTokenClient()` for API calls; `Push` fake push service, `Update` fake GitHub (`FakeUpdateHandler`), `CurrentVersion` (default `dev`),
