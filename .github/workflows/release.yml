@@ -1,5 +1,9 @@
-# Builds ControlRoom for Windows x64 and macOS on Apple silicon from one release commit, in six jobs:
-# - version checks the event and works out the release version and commit.
+# Builds ControlRoom for Windows x64 and macOS on Apple silicon from one release commit, in seven jobs:
+# - changes runs first on every event (.github/scripts/ci_changes.py) and sets its output tests: false when a push
+#   changes only backlog.md, backlog/ or lines inside the ## Lessons section of a CLAUDE.md, true for anything else
+#   or any doubt. It reads the event from GITHUB_EVENT_PATH, has only contents: read and no token in its env.
+# - version needs changes and checks the event and works out the release version and commit. A push runs it
+#   only when changes says tests: true; a merged release PR runs it whatever it changes.
 # - windows-tests and macos-tests need only version: the tests run in two parts per OS before the builds, all four
 #   parts in parallel (matrix part: [1, 2], fail-fast off). .github/test-part-1.txt lists part 1: a test runs there
 #   when its fully qualified name contains a listed name. Part 2 is every other test, the exact negation
@@ -16,8 +20,9 @@
 #   attests and publishes them. Only this job has write permissions, and it builds nothing itself. The hash check
 #   catches a file swapped or changed between jobs; it cannot catch a compromised build job, which reports its own hash.
 # - A push to develop makes a prerelease vX.Y.(Z+1)-develop.<run number>, one patch above the highest
-#   release tag (.github/scripts/develop-version.sh), on the pushed commit. A push that changes only
-#   backlog.md or backlog/ is skipped (paths-ignore), so it makes no prerelease.
+#   release tag (.github/scripts/develop-version.sh), on the pushed commit. A push that changes only backlog.md,
+#   backlog/ or lessons still gets a run, so every pushed commit has one, but version and every later job are
+#   skipped: no tests, no builds, no prerelease, and the run ends green.
 # - A merged pull request from develop into main, titled "release vX.Y.Z", makes a release: vX.Y.Z (and
 #   its tag) on the merge commit (.github/scripts/release-version.sh). Closed-unmerged PRs, PRs from other
 #   branches and fork PRs are skipped by the version job's if:, and its first step checks the same again.
@@ -46,9 +51,6 @@ on:
   push:
     branches:
       - "develop"
-    paths-ignore:
-      - "backlog.md"
-      - "backlog/**"
   pull_request:
     types:
       - "closed"
@@ -58,9 +60,28 @@ on:
 permissions: {}
 
 jobs:
+  changes:
+    # Decides whether a push needs the tests and builds; see the header. Fails open: any doubt says tests: true.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tests: ${{ steps.changes.outputs.tests }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check what changed
+        id: changes
+        run: python3 .github/scripts/ci_changes.py
+
   version:
-    # Every push to develop runs; a pull_request event runs only for a merged PR from develop in this repository.
-    if: github.event_name == 'push' || (github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.head.repo.full_name == github.repository)
+    needs: changes
+    # A push to develop runs when changes says tests: true; a pull_request event runs only for a merged PR from
+    # develop in this repository.
+    if: (github.event_name == 'push' && needs.changes.outputs.tests == 'true') || (github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.head.repo.full_name == github.repository)
     # macos-15 is an Apple silicon (arm64) runner; the first step checks it.
     runs-on: macos-15
     permissions:

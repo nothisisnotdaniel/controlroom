@@ -224,11 +224,20 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   command, autoUpdate, channel, updateInterval}` from the last update check (`dev` never checks) and `settings.json` (`null` when refused).
 - **Releases:** `.github/workflows/release.yml` runs for a merged PR from `develop` into `main` titled
   `release vX.Y.Z` (`.github/scripts/release-version.sh` checks the title and existing tags, and refuses
-  `-develop`) and for every push to `develop` that changes more than `backlog.md` and `backlog/**` (a prerelease
+  `-develop`) and for every push to `develop` (a prerelease
   `X.Y.(Z+1)-develop.<run number>` from `.github/scripts/develop-version.sh` on `GITHUB_SHA`, checked against
   `refs/heads/develop` and `HEAD`); the version and commit reach later steps as `RELEASE_VERSION` and
-  `RELEASE_TARGET`, never `VERSION`, so MSBuild can't read them as `$(Version)`. Six jobs: `version` (on
-  `macos-15`, arm64) re-checks the PR and works out the version; then the tests run in two parts per OS before the
+  `RELEASE_TARGET`, never `VERSION`, so MSBuild can't read them as `$(Version)`. No `paths-ignore`, so every pushed
+  commit gets a run (`job.py ci` finds it by commit). Seven jobs: `changes` (#471, `ubuntu-latest`, no `needs`, only
+  `contents: read`, checkout `fetch-depth: 0` and `persist-credentials: false`, one `run:` `python3
+  .github/scripts/ci_changes.py`, standard library only, tests in `.github/scripts/tests/test_ci_changes.py`, run by
+  `CiChangesScriptTests`) sets output `tests`: `false` only when every changed file is `backlog.md`, under `backlog/`
+  (repo root only) or an existing `CLAUDE.md` changed only inside its `## Lessons` section (up to the next `# `/`## `
+  line); push compares `before..GITHUB_SHA`, `pull_request` `base.sha...head.sha`; any doubt (zero or unknown base,
+  other event, bad payload or SHA, empty diff, git error) says `true`, and it exits 1 only when `GITHUB_OUTPUT` can't be
+  written. `version` (`needs: changes`, on `macos-15`, arm64; a push runs it only when `tests == 'true'`, a merged
+  release PR always, so a skipped push skips every later job, makes no prerelease and ends green) re-checks the PR
+  and works out the version; then the tests run in two parts per OS before the
   builds (#415: jobs `windows-tests` on `windows-latest` and `macos-tests` on `macos-15`, each `needs: version`,
   `strategy: { fail-fast: false, matrix: { part: [1, 2] } }`, `TEST_PART` only through `env:`, `dotnet test -c Release
   --filter "$TEST_FILTER"` with the filter from `.github/scripts/test-filter.sh .github/test-part-1.txt "$TEST_PART"`:
@@ -253,7 +262,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   through `env:`), then sums, attests and publishes them: it writes `SHA256SUMS`, attests build provenance and runs `gh release create vX.Y.Z` on the merge commit or pushed commit
   (`--title "ControlRoom X.Y.Z" --generate-notes`, plus `--prerelease` for a prerelease version). After a stable
   release, `Prune old prereleases` (`continue-on-error`) deletes every `-develop` prerelease and tag at or below
-  that version (`.github/scripts/old-prereleases.sh`). Top-level `permissions: {}`; `version` has only `contents:
+  that version (`.github/scripts/old-prereleases.sh`). Top-level `permissions: {}`; `changes` and `version` have only `contents:
   read`; `windows-tests`, `macos-tests`, `windows` and `macos` (the jobs with a dotnet step: a step whose `run:` calls
   `dotnet` or `windows-release.ps1`) have only `contents: read` and `packages: read`; `release` only `contents: write`,
   `id-token: write`, `attestations: write`; no job has `packages: write`. Only the dotnet steps get
