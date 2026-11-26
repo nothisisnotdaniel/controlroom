@@ -474,7 +474,7 @@ function Stop-FixtureServer {
     Wait-FixtureAction $process
 }
 
-function Expect-SharingViolation([scriptblock]$Open) {
+function Expect-SharingViolation([scriptblock]$Open, $Opened = 'The registered action did not pin the checked entry.') {
     try { (& $Open).Dispose() }
     catch {
         $failure = $_.Exception.GetBaseException()
@@ -482,7 +482,7 @@ function Expect-SharingViolation([scriptblock]$Open) {
         Expect $code 32
         return
     }
-    throw 'The registered action did not pin the checked entry.'
+    throw $Opened
 }
 
 function Invoke-FixtureUpdaterTask {
@@ -731,10 +731,7 @@ public static void TryEnable(string name) {
     $held = [IO.File]::Open($stamp, 'Open', 'Read', 'None')
     try {
         # The updater's own open meets the lock: a sharing violation (32), not a read of the fresh stamp.
-        $code = 'opened'
-        try { ([RoomKit.UpdateEntry]::Open($stamp, $false)).Dispose() }
-        catch { $code = $_.Exception.GetBaseException().NativeErrorCode }
-        Expect $code 32
+        Expect-SharingViolation { [RoomKit.UpdateEntry]::Open($stamp, $false) } 'The updater opened the locked stamp.'
         Expect-Update 'current'
         Expect (ListCount) (++$count)
     } finally { $held.Dispose() }
