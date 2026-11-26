@@ -81,6 +81,9 @@ public sealed class WebAssetSplitTests
         // #409: other machines' item claims.
         ["app.css"] =
         [
+            // #405: the unused backlog heading selector.
+            ("\n.group summary {\n  font-size: 0.85rem;\n",
+                "\n.group h3,\n.group summary {\n  font-size: 0.85rem;\n"),
             ("  /* Another machine's claim on a backlog item (factory#54). */\n  --claim-bg: #ccfbf1;\n  --claim-fg: #115e59;\n",
                 ""),
             ("    --claim-bg: #134e4a;\n    --claim-fg: #99f6e4;\n",
@@ -233,9 +236,9 @@ public sealed class WebAssetSplitTests
         Assert.True(start >= 0 && end > start);
         // The shell list block moved, with "/room.js" added and the version raised.
         List<string> block = develop.GetRange(start, end - start + 1);
-        block[0] = "const CacheVersion = \"v24\";";
+        block[0] = "const CacheVersion = \"v25\";";
         block.Insert(block.IndexOf("  \"/token.js\",") + 1, "  \"/room.js\",");
-        int roomStart = room.IndexOf("const CacheVersion = \"v24\";");
+        int roomStart = room.IndexOf("const CacheVersion = \"v25\";");
         Assert.Equal(block, room.GetRange(roomStart, block.Count));
         develop.RemoveRange(start, end - start + 1);
 
