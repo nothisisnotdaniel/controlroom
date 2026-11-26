@@ -112,6 +112,8 @@ again if it stops.
 ```sh
 scripts/launch-agent.sh install    # publishes the server and starts it
 scripts/launch-agent.sh install --tailnet-host mac.tail1234.ts.net  # the same, for use through Tailscale
+scripts/launch-agent.sh install --tailnet-host mac.tail1234.ts.net --tailnet-port 8443  # on tailscale serve --https=8443
+scripts/launch-agent.sh install --factory-root /path/to/root  # a factory root other than the folder above this one
 scripts/launch-agent.sh status     # shows installed: yes|no, running: yes|no and the log path
 scripts/launch-agent.sh uninstall  # stops it and removes the agent and the published server
 ```

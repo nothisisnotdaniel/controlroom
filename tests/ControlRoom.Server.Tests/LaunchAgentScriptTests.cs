@@ -18,7 +18,8 @@ public sealed class LaunchAgentScriptTests
         "/usr/local/share/dotnet:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
 
     private const string Usage =
-        "usage: scripts/launch-agent.sh install [--release [vX.Y.Z]] [--tailnet-host <name>]|uninstall|status\n";
+        "usage: scripts/launch-agent.sh install [--release [vX.Y.Z]] [--tailnet-host <name> [--tailnet-port <port>]] "
+        + "[--factory-root <path>]|uninstall|status\n";
 
     private const string Releases = "https://github.com/nothisisnotdaniel/controlroom/releases";
 
@@ -46,6 +47,10 @@ public sealed class LaunchAgentScriptTests
     private const string PlutilPath = "/usr/bin/plutil";
 
     private const string TailnetHostText = "--tailnet-host must be a name like mac.tailnet.ts.net. Nothing was changed.\n";
+
+    private const string TailnetPortText = "--tailnet-port must be a port from 1 to 65535. Nothing was changed.\n";
+
+    private const string FactoryRootText = "--factory-root must be an absolute path to a folder. Nothing was changed.\n";
 
     /// <summary><c>install</c> from the repo and its refusals.</summary>
     public sealed class Install
@@ -136,6 +141,129 @@ public sealed class LaunchAgentScriptTests
                 Assert.Equal("--TailnetHost", Extract(home.Plist, "ProgramArguments.4"));
                 Assert.Equal("mac.tail1234.ts.net", Extract(home.Plist, "ProgramArguments.5"));
             }
+        }
+
+        [Fact]
+        public void Install_WithATailnetPort_AddsItAfterTheTailnetHost()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using ScriptHome home = new();
+
+            ScriptRun run = home.Run(
+                ScriptHome.ScriptPath(), "install", "--tailnet-port", "8443", "--tailnet-host", "mac.tail1234.ts.net");
+
+            Assert.Equal(0, run.ExitCode);
+            Assert.Equal(
+                ["--FactoryRoot", Directory.GetParent(ScriptHome.RepoFolder())!.FullName, "--TailnetHost",
+                    "mac.tail1234.ts.net", "--TailnetPort", "8443"],
+                ProgramArguments(home.Plist)[2..]);
+            if (File.Exists(PlutilPath))
+            {
+                Assert.Equal(0, Plutil("-lint", home.Plist).ExitCode);
+            }
+        }
+
+        [Fact]
+        public void Install_WithAFactoryRoot_UsesItForTheServer()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using ScriptHome home = new();
+            string root = Path.Combine(home.Path, "Some Factory");
+            Directory.CreateDirectory(root);
+
+            ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--factory-root", root);
+
+            Assert.Equal(0, run.ExitCode);
+            Assert.Equal(["--FactoryRoot", root], ProgramArguments(home.Plist)[2..]);
+        }
+
+        [Theory]
+        [InlineData("0")]
+        [InlineData("65536")]
+        [InlineData("08443")]
+        [InlineData("+8443")]
+        [InlineData("8443x")]
+        [InlineData("123456")]
+        [InlineData("")]
+        public void Install_WithABadTailnetPort_ExitsNonZeroAndChangesNothing(string port)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using ScriptHome home = new();
+            IReadOnlyList<string> before = home.Snapshot();
+
+            ScriptRun run = home.Run(
+                ScriptHome.ScriptPath(), "install", "--tailnet-host", "mac.tail1234.ts.net", "--tailnet-port", port);
+
+            Assert.NotEqual(0, run.ExitCode);
+            Assert.Equal(TailnetPortText, run.Error);
+            Assert.False(File.Exists(home.Plist));
+            Assert.Empty(home.LaunchctlCalls());
+            Assert.Empty(home.DotnetArguments());
+            Assert.Equal(before, home.Snapshot());
+        }
+
+        [Theory]
+        [InlineData("relative/root")]
+        [InlineData("/no/such/factory-root-folder")]
+        [InlineData("")]
+        public void Install_WithABadFactoryRoot_ExitsNonZeroAndChangesNothing(string root)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using ScriptHome home = new();
+            IReadOnlyList<string> before = home.Snapshot();
+
+            ScriptRun run = home.Run(ScriptHome.ScriptPath(), "install", "--factory-root", root);
+
+            Assert.NotEqual(0, run.ExitCode);
+            Assert.Equal(FactoryRootText, run.Error);
+            Assert.False(File.Exists(home.Plist));
+            Assert.Empty(home.LaunchctlCalls());
+            Assert.Empty(home.DotnetArguments());
+            Assert.Equal(before, home.Snapshot());
+        }
+
+        [Theory]
+        [InlineData("install --tailnet-port 8443")]
+        [InlineData("install --tailnet-port")]
+        [InlineData("install --factory-root")]
+        [InlineData("install --tailnet-host mac.tail1234.ts.net --tailnet-port 8443 --tailnet-port 8443")]
+        [InlineData("install --factory-root /tmp --factory-root /tmp")]
+        [InlineData("status --tailnet-port 8443")]
+        [InlineData("uninstall --factory-root /tmp")]
+        public void BadPortOrRootArguments_PrintUsageExitTwoAndChangeNothing(string joined)
+        {
+            string[] arguments = joined.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using ScriptHome home = new();
+            IReadOnlyList<string> before = home.Snapshot();
+
+            ScriptRun run = home.Run(ScriptHome.ScriptPath(), arguments);
+
+            Assert.Equal(2, run.ExitCode);
+            Assert.Equal(Usage, run.Error);
+            Assert.Empty(home.LaunchctlCalls());
+            Assert.Empty(home.DotnetArguments());
+            Assert.Equal(before, home.Snapshot());
         }
 
         [Fact]
