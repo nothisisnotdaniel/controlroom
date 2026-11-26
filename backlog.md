@@ -38,7 +38,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#169](backlog/169-run-the-windows-and-macos-release.md) Run the Windows and macOS release builds in parallel → 413-parallel-release-builds.355c0f49ec1d42848e08033fd1b76b50
 - [x] [#170](backlog/170-make-the-test-suite-faster-find.md) Make the test suite faster: find and fix the slowest tests → 414-faster-test-suite.708c8fa312a9409c800831c9af4d1857
 - [x] [#174](backlog/174-fix-the-flaky-windows-interval-release.md) Fix the flaky Windows interval release test → 416-fix-interval-release-test.d2a2970baae84d35bd2275907c0d614d
-- [ ] [#175](backlog/175-fix-the-windows-updater-locked-last.md) Fix the Windows updater locked last-check case
+- [x] [#175](backlog/175-fix-the-windows-updater-locked-last.md) Fix the Windows updater locked last-check case → 417-fix-locked-last-check.76ee7d442f6542c1b9e3c1777329e25a
 - [ ] [#163](backlog/163-show-when-the-last-check-for.md) Show when the updater last checked for updates
 - [ ] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone (after: #139)
 - [ ] [#139](backlog/139-phone-start-spike.md) Phone start spike
