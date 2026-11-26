@@ -1,0 +1,14 @@
+# Part 1 of the release tests (.github/workflows/release.yml, jobs windows-tests and macos-tests): every test whose
+# fully qualified name contains one of the names below. Part 2 runs every other test, so a new test class runs there
+# without an edit here. One name per line (a test class or a prefix, letters, digits, _ and . only); blank lines and
+# lines starting with # are ignored. TestPartsGuardTests checks that every test lands in exactly one part and that
+# every name here still matches a test. Split by the summed test times from a trx run, about half in each part.
+ControlRoom.Server.Tests.BacklogChangeApiTests
+ControlRoom.Server.Tests.LaunchAgentScriptTests
+ControlRoom.Server.Tests.FactoryBacklogApiTests
+ControlRoom.Server.Tests.HttpSafetyTests
+ControlRoom.Server.Tests.BacklogWorktreeApiTests
+ControlRoom.Server.Tests.UpdateSettingsTests
+ControlRoom.Server.Tests.ClaimsApiTests
+ControlRoom.Server.Tests.ProjectStatusEndpointTests
+ControlRoom.Server.Tests.JobApiTests
