@@ -354,7 +354,8 @@ public sealed class WebAssetSplitTests
 
     private static string AppFolder() => Path.Combine(AccessTokenTests.SourceFolder(), "wwwroot");
 
-    private static string KitFolder() => Path.Combine(AccessTokenTests.KitSourceFolder(), "wwwroot");
+    // RoomKit's web files, from the restored package (they are no longer in this repo).
+    private static string KitFolder() => RoomKitPackage.WebAssets();
 
     private static string DevelopFolder() =>
         Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(AccessTokenTests.SourceFolder())!)!,

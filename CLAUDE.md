@@ -180,20 +180,28 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     reads that copy (must be `0600`, owned by the user, not a symlink, else `check_failed`). The private key is only
     in the `SIGNING_CERT_P12`/`SIGNING_CERT_PASSWORD` secrets and a per-run temp keychain. The pin covers only the
     Mach-O files (identity for macOS permissions), not the managed `*.dll` files: it is not tamper protection.
-- **Stack:** .NET 10 ASP.NET Core minimal API (`Microsoft.NET.Sdk.Web`, no extra packages) serving a plain
+- **Stack:** .NET 10 ASP.NET Core minimal API (`Microsoft.NET.Sdk.Web`, only the `RoomKit` package) serving a plain
   HTML/CSS/JS web app from its own `wwwroot` (no CDN, no build step, strict CSP), xUnit tests with
   `Microsoft.AspNetCore.Mvc.Testing` to host the app in memory. No new package without a reason in the spec.
-  Since #386 the shared core is the class library `src/RoomKit` (`Microsoft.NET.Sdk.Razor`, `FrameworkReference
-  Microsoft.AspNetCore.App`, no `PackageReference`, namespace `RoomKit`; see `docs/roomkit.md`): everything that is
-  not about this factory's job format. Its web files are static web assets at base path `/` (same URLs; a path in
-  both `wwwroot` folders fails the build; outside Development `RoomKitApp` loads them through the static web assets
-  manifest). `src/ControlRoom.Server` is the app on it: `ControlRoomApp` (`RoomKitOptions` with today's values,
+  Since #386 the shared core is the class library RoomKit (namespace `RoomKit`): everything that is not about this
+  factory's job format. Since #151 it lives in its own repo `nothisisnotdaniel/roomkit` and ControlRoom uses the
+  package `RoomKit` from GitHub Packages (`https://nuget.pkg.github.com/nothisisnotdaniel/index.json`; docs:
+  `https://github.com/nothisisnotdaniel/roomkit/blob/main/docs/roomkit.md`), pinned to one exact version
+  (`<PackageReference Include="RoomKit" Version="0.1.0" GeneratePathProperty="true" />`) in both
+  `ControlRoom.Server.csproj` and `ControlRoom.Server.Tests.csproj`; to bump the pin, change `Version` in both csproj
+  files together (`RoomKitPinTests` checks they match). `nuget.config` clears inherited sources and maps `RoomKit` to
+  the source `github` only and `*` to `nuget.org` only (no credentials in the repo). Restore needs a read credential
+  once per machine: a classic PAT with only `read:packages`, stored as the env var
+  `NuGetPackageSourceCredentials_github` (`Username=<user>;Password=<token>`, recommended) or as a user-level NuGet
+  source named `github`, never in the repo (README "RoomKit"); in CI the dotnet steps get `GITHUB_TOKEN` that way.
+  Its web files are static web assets at base path `/` (same URLs; a path in both the app's `wwwroot` and the
+  package fails the build; outside Development `RoomKitApp` loads them through the static web assets manifest). `src/ControlRoom.Server` is the app on it: `ControlRoomApp` (`RoomKitOptions` with today's values,
   `StateJsonJobFormat`, its endpoints), and `RoomKitApp.Run(args, Options, Map, new FactoryModule(Jobs))` is the whole
   `Program.cs`. Since #153 RoomKit is a core (shell, security, push with pluggable `IPushSource`s, updates; no job
   format, factory root or git) plus the opt-in `FactoryModule` (factory root, backlog/job endpoints and web files,
   `BacklogWorktree`, the job/backlog push source, `CaptureNote`); a core-only app answers 404 for the module's routes
   and files. ControlRoom uses RoomKit's
-  public API only; RoomKit's `InternalsVisibleTo` names only the two test assemblies.
+  public API only (the package's `InternalsVisibleTo ControlRoom.Server.Tests` lets the tests reach internals).
   Run: `dotnet run --project src/ControlRoom.Server` (listens on `127.0.0.1:8100` only; the factory root is the
   parent of the folder holding `ControlRoom.slnx`, or `--FactoryRoot <path>`).
   `--PushSubject <mailto:…>` sets the VAPID `sub` (default `mailto:controlroom@localhost`).
@@ -226,8 +234,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   --filter "$TEST_FILTER"` with the filter from `.github/scripts/test-filter.sh .github/test-part-1.txt "$TEST_PART"`:
   part 1 every test whose fully qualified name contains a name listed in `.github/test-part-1.txt` (one name per line,
   only `[A-Za-z_][A-Za-z0-9_.]*`, blank and `#` lines ignored), part 2 the exact negation, so a new class runs in part 2;
-  the guard `TestPartsGuardTests`, linked into both test assemblies, checks that every test lands in exactly one part
-  and that no listed name of its assembly's namespace is stale; to rebalance, move names by the trx times); the Windows
+  the guard `TestPartsGuardTests` checks that every test lands in exactly one part and that no listed name is stale; to rebalance, move names by the trx times); the Windows
   and macOS builds run in parallel after `version` (jobs `windows`, `needs: [version, windows-tests]`, and `macos`,
   `needs: [version, macos-tests]`), each only after its own OS's test parts passed; the final `release` job
   (`ubuntu-latest`, `needs: [version, windows, macos]`) builds nothing. The `macos` job (`macos-15`) publishes `-r osx-arm64 --self-contained
@@ -238,24 +245,24 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   `Remove signing keychain` (`remove`, only a `::warning::` on failure, then `delete-keychain`),
   `.github/signing/entitlements.plist` holds the three hardened-runtime entitlements; the secrets reach only `Sign`
   through its `env:`; missing file is a `::warning::` and an ad-hoc build), smoke-checks `ControlRoom.Server version`, packs `controlroom-X.Y.Z-osx-arm64.tar.gz` (one top
-  folder, with a byte copy of `scripts/updater.sh` (`0755`) as `<top>/updater.sh`), packs RoomKit, writes the
-  SHA-256 of both files as job outputs `tarball_sha256` and `roomkit_sha256` (step `Hash the macOS files`) and
-  uploads them as artifact `macos-release`; `windows` does the same for its ZIP (`zip_sha256`, `Hash the verified
+  folder, with a byte copy of `scripts/updater.sh` (`0755`) as `<top>/updater.sh`), writes its SHA-256 as job
+  output `tarball_sha256` (step `Hash the macOS files`) and uploads it as artifact `macos-release`; `windows` does the same for its ZIP (`zip_sha256`, `Hash the verified
   ZIP`, artifact `windows-release`). The `release` job downloads both artifacts into `dist/` (`Collect the build
   artifacts`) and, in `Check the downloaded files`, checks the downloaded files' hashes against the hashes the build
-  jobs reported (exactly the three expected files, each hash 64 lower-case hex characters, reaching the shell only
+  jobs reported (exactly the two expected files, each hash 64 lower-case hex characters, reaching the shell only
   through `env:`), then sums, attests and publishes them: it writes `SHA256SUMS`, attests build provenance and runs `gh release create vX.Y.Z` on the merge commit or pushed commit
   (`--title "ControlRoom X.Y.Z" --generate-notes`, plus `--prerelease` for a prerelease version). After a stable
   release, `Prune old prereleases` (`continue-on-error`) deletes every `-develop` prerelease and tag at or below
-  that version (`.github/scripts/old-prereleases.sh`). Top-level `permissions: {}`; `version`, `windows-tests`,
-  `macos-tests`, `windows` and `macos` have only `contents: read`, `release` only `contents: write`, `id-token: write`, `attestations: write`; the signing
+  that version (`.github/scripts/old-prereleases.sh`). Top-level `permissions: {}`; `version` has only `contents:
+  read`; `windows-tests`, `macos-tests`, `windows` and `macos` (the jobs with a dotnet step: a step whose `run:` calls
+  `dotnet` or `windows-release.ps1`) have only `contents: read` and `packages: read`; `release` only `contents: write`,
+  `id-token: write`, `attestations: write`; no job has `packages: write`. Only the dotnet steps get
+  `env: NuGetPackageSourceCredentials_github: Username=github;Password=${{ secrets.GITHUB_TOKEN }}` (the same in
+  `controlroom-400-tests.yml`, whose one job has the same two permissions); the signing
   secrets reach only `Sign` in `macos`; every action pinned to a commit SHA; PR and ref fields only through `env:`.
   Check a tarball with `gh attestation verify <tarball> --repo nothisisnotdaniel/controlroom`. The repo slug is fixed
-  in `launch-agent.sh`; renaming the repo breaks `--release`. After the tarball `Pack` step, `Pack RoomKit` runs
-  `dotnet pack src/RoomKit -c Release -p:Version="$RELEASE_VERSION" -o dist` (in `macos`); `RoomKit.X.Y.Z.nupkg` is in
-  `SHA256SUMS`, the attestation subjects and the `gh release create` files (stable and prerelease). Other apps restore
-  it from a local folder feed filled with `gh release download` (`docs/roomkit.md`); no GitHub Packages, no
-  `packages: write`, no new secret.
+  in `launch-agent.sh`; renaming the repo breaks `--release`. A release holds only the tarball, the ZIP and
+  `SHA256SUMS`: RoomKit is released from its own repo, not with ControlRoom.
 - **Windows releases:** CI tests the same release commit on `windows-latest` and macOS, each OS in two parallel
   parts (`windows-tests`, `macos-tests`); the `windows` job runs after `windows-tests` and in parallel with `macos`. The Windows ZIP contains
   the self-contained single-file `controlroom.exe`, both PowerShell scripts and `wwwroot`. CI runs the extracted
@@ -273,7 +280,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   or checks that a write is refused, builds its own root and `ServerFactory`.
 - **Layout:**
   - `ControlRoom.slnx`, `Directory.Build.props` (nullable, implicit usings, code style in build), `.editorconfig`.
-  - Since #386 the units below are split: `src/RoomKit/` holds `RoomKitApp` (was `ServerApp`'s build: Kestrel,
+  - Since #386 the units below are split, and since #151 the RoomKit half is the `RoomKit` package (its own repo):
+    RoomKit holds `RoomKitApp` (was `ServerApp`'s build: Kestrel,
     headers, `HostCheck`, the method rule with the POST allow-list built from RoomKit's routes plus the app's
     `RoomRoutes.MapPost` routes (fixed `/api/` paths only), the token gate, static files, push and update services,
     the `version` and `token` commands; without the module a `HiddenFileProvider` hides the module's web files),
@@ -289,9 +297,9 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `ChangeFingerprint`, `PushCrypto`, `PrivateFolder`, `PushStore`, `PushSender`, `PushWatcher`, `PushEndpoint`,
     `PushTestLimiter`, `UnixOwner`, `AppVersion`, `VersionCommand`, `VersionEndpoint`, `UpdateCheck`, `UpdateEndpoint`,
     `UpdateSettingsStore`, `UpdateResult`, `HealthEndpoint`, `DoctorCheck`, `DoctorEndpoint` and `FactoryBacklog` (the factory's develop worktree, `FactorySource`, `JobRunning`), reading jobs only
-    through `IJobFormat`; its `wwwroot/` holds `app.css`, `sw.js`, `token.js`, `push.js`, `edit.js`, `counts.js`,
-    `search.js`, `capture.js`, `history.js`, `doctor.js` and `live.js`, and `scripts/` the neutral `launch-agent.sh`
-    and `updater.sh`. `src/ControlRoom.Server/` keeps `Program.cs`, a thin `ServerApp`, `ControlRoomApp`,
+    through `IJobFormat`; its web files (the package's `staticwebassets/`) are `app.css`, `sw.js`, `token.js`, `push.js`, `edit.js`, `counts.js`,
+    `search.js`, `capture.js`, `history.js`, `doctor.js` and `live.js`, and the package's `scripts/` hold the neutral
+    `launch-agent.sh`, `updater.sh`, `launch-agent.ps1` and `updater.ps1`. `src/ControlRoom.Server/` keeps `Program.cs`, a thin `ServerApp`, `ControlRoomApp`,
     `StateJsonJobFormat`, `JobReader`, `JobAction`, `JobActEndpoint`, `BoardEndpoint`, `ChangesEndpoint`,
     `JobEndpoint`, `ProjectStatusEndpoint`, `ReleasesEndpoint`, and in `wwwroot/` `index.html`,
     `manifest.webmanifest`, `icons/`, `app.js`, `board.js`, `act.js`, `status.js`, `releases.js` and `room.js`.
@@ -301,8 +309,9 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     shell list, with `/room.js`), `PushAppTitles` (`updated`), `PushFallbackTitle`, `PushDefaultTag` and
     `PushUpdatePrefix`. The script order below starts with `room.js`.
   - Scripts: every app value of `launch-agent.sh` and `updater.sh` is in the block between `# roomkit:app-begin`
-    and `# roomkit:app-end` (assignments only); outside it `scripts/*.sh` are byte-identical to
-    `src/RoomKit/scripts/*.sh` (`RoomKitScriptTests`).
+    and `# roomkit:app-end` (assignments only); outside it `scripts/*.sh` are byte-identical to the restored
+    package's `scripts/*.sh` (`RoomKitScriptTests`, which reads `$(PkgRoomKit)` through the test assembly's
+    `AssemblyMetadata` `RoomKitPackage`; `RoomKitPackage.Folder()` fails, naming the folder, when it is missing).
   - `src/ControlRoom.Server/`: `Program.cs` (entry; `token` runs `TokenCommand`,
     `version` runs `VersionCommand`), `ServerApp` (builds the app:
     Kestrel, headers, the `HostCheck`, GET/HEAD only (POST only on `/api/backlog/change`, `/api/job/act`, `/api/update/settings` and the four `/api/push/*` POST routes), the `/api/` token gate, static files, endpoints, push services), `AccessToken` (token file
@@ -555,15 +564,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     on the `security list-keychains -d user` search list, keeping the others in order; `check <keychain> <sha1>`
     through `find-identity -p codesigning` without `-v`; never prints `security`'s output, no password argument; exit 1
     on a `security` failure, 2 on wrong usage); `.github/signing/entitlements.plist`.
-  - `tests/RoomKit.Tests/` (references only RoomKit): `SampleRoom` (a test-only app, port 8201, repo
-    `example/sampleroom`, a fake job format in `work/jobs/<id>/job.txt`, with `FactoryModule`) hosted by
-    `SampleServerFactory`, `CoreRoom` (core only, port 8202, no job format or `CaptureNote`; `QueuedPushSource`)
-    hosted by `CoreServerFactory` and tested in `CoreRoomTests` (own collection, no parallel runs, restores the
-    `SampleRoom` context), and
-    `RoomKitLibraryTests` (source scan, friends, `docs/roomkit.md` names every public type, `dotnet pack` contents);
-    `TempFactoryRoot`, `TempTokenFolder`, `PushFakes`, `PushTestData`, `RepoCopy` and `TestPartsGuardTests` are linked from
-    `ControlRoom.Server.Tests`. `RepoCopy` copies `src/`, `docs/` and the root files to a temp folder for
-    `dotnet publish`/`dotnet pack` tests; `tests/ControlRoom.Server.Tests/Develop/` holds develop's web file hashes
+  - `RepoCopy` copies `src/`, `nuget.config` and the root files to a temp folder for `dotnet publish` tests (restore
+    there uses the global packages folder the test run's own restore filled); `tests/ControlRoom.Server.Tests/Develop/` holds develop's web file hashes
     and the develop copies of the files that lost lines to `room.js` (`WebAssetSplitTests`).
   - `tests/ControlRoom.Server.Tests/`: one test class per unit or concern (`LaunchAgentScriptTests` runs the script with fake
     `launchctl`/`dotnet`/`curl`/`codesign` in a temp `HOME`, runs every `install --release` from its own copy of the
@@ -572,8 +574,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `launchctl` (its `print` of the updater label answers `runs = N` and is logged apart)/`curl`/`sleep`/`mv`/`codesign` and a fake `date` (`+%s`
     prints a fixed epoch from a test file, every other call goes to `/bin/date`); `ScriptFixtures.UpdaterPlist` is the expected updater plist for both; `ScriptFixtures` holds the fake `codesign` and a `PATH` folder without it;
     `ReleaseWorkflowTests` reads `release.yml` as text and runs `.github/scripts/signing-cert.sh`;
-    `TestFilterScriptTests` runs `.github/scripts/test-filter.sh` on temp lists; `TestPartsGuardTests` (also linked
-    into `RoomKit.Tests`) runs it on the committed `.github/test-part-1.txt`;
+    `TestFilterScriptTests` runs `.github/scripts/test-filter.sh` on temp lists; `TestPartsGuardTests` runs it on the committed `.github/test-part-1.txt`;
     `SigningKeychainScriptTests` runs `signing-keychain.sh` with a fake `security` first on `PATH`); `TempFactoryRoot` (`InitGit`, which writes its settings straight into `.git/config`, `AddBareRemote`
     and `Git` for a real local repo), `TempTokenFolder` and `ServerFactory` (own temp token file; `FactoryDevelopDir` (set before the host starts; default `<root>-factory-develop`, so no test sees a real one); clients send `Host: 127.0.0.1:8100`; optional tailnet name;
     `CreateTokenClient()` for API calls; `Push` fake push service, `Update` fake GitHub (`FakeUpdateHandler`), `CurrentVersion` (default `dev`),

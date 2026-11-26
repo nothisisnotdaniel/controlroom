@@ -2,9 +2,10 @@ using System.Diagnostics;
 
 namespace ControlRoom.Server.Tests;
 
-/// <summary>A copy of the repo's <c>src/</c>, <c>docs/</c>, <c>Directory.Build.props</c>, <c>.editorconfig</c> and
-/// <c>ControlRoom.slnx</c> (without <c>bin</c> or <c>obj</c>) in its own temp folder, deleted on dispose, so a test
-/// can run <c>dotnet publish</c> or <c>dotnet pack</c> without touching the real build output.</summary>
+/// <summary>A copy of the repo's <c>src/</c>, <c>Directory.Build.props</c>, <c>.editorconfig</c>,
+/// <c>ControlRoom.slnx</c> and <c>nuget.config</c> (without <c>bin</c> or <c>obj</c>) in its own temp folder, deleted on
+/// dispose, so a test can run <c>dotnet publish</c> without touching the real build output. Restore in the copy uses
+/// the global packages folder that the test run's own restore has filled.</summary>
 internal sealed class RepoCopy : IDisposable
 {
     /// <summary>How long one <c>dotnet</c> run may take before the test fails.</summary>
@@ -15,8 +16,7 @@ internal sealed class RepoCopy : IDisposable
         Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "roomkit-repo-" + Guid.NewGuid().ToString("N"));
         string repo = RepoFolder();
         CopyFolder(System.IO.Path.Combine(repo, "src"), System.IO.Path.Combine(Path, "src"));
-        CopyFolder(System.IO.Path.Combine(repo, "docs"), System.IO.Path.Combine(Path, "docs"));
-        foreach (string file in new[] { "Directory.Build.props", ".editorconfig", "ControlRoom.slnx" })
+        foreach (string file in new[] { "Directory.Build.props", ".editorconfig", "ControlRoom.slnx", "nuget.config" })
         {
             File.Copy(System.IO.Path.Combine(repo, file), System.IO.Path.Combine(Path, file));
         }

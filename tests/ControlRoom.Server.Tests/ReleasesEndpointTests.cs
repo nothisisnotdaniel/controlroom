@@ -446,14 +446,7 @@ public sealed class ReleasesEndpointTests
             Assert.DoesNotContain("ProcessStartInfo", endpoint, StringComparison.Ordinal);
             Assert.DoesNotContain("Process.", endpoint, StringComparison.Ordinal);
             Assert.DoesNotContain("ProjectGit.Run", endpoint, StringComparison.Ordinal);
-            string git = File.ReadAllText(Path.Combine(AccessTokenTests.KitSourceFolder(), "ProjectGit.cs"));
-            Assert.Contains(
-                "[\"for-each-ref\", \"--format=%(refname:strip=2)%09%(creatordate:unix)\", \"refs/tags/\"]", git, StringComparison.Ordinal);
-            Assert.Contains("[\"rev-list\", \"--count\", range]", git, StringComparison.Ordinal);
-            Assert.Contains(
-                "[\"log\", \"--first-parent\", \"--format=%h%x1f%s\", \"--max-count=\" + MaxLog, range]", git, StringComparison.Ordinal);
-            Assert.Contains("public const int MaxLog = 1000;", git, StringComparison.Ordinal);
-            Assert.Contains("return IsReleaseTag(tag) ? \"refs/tags/\" + tag + \"..refs/heads/\" + Branch : null;", git, StringComparison.Ordinal);
+            // ProjectGit.cs (the three fixed git calls) is in the RoomKit package now; RoomKit's own tests scan it.
         }
     }
 

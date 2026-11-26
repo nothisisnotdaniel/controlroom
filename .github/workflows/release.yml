@@ -4,15 +4,15 @@
 #   parts in parallel (matrix part: [1, 2], fail-fast off). .github/test-part-1.txt lists part 1: a test runs there
 #   when its fully qualified name contains a listed name. Part 2 is every other test, the exact negation
 #   (.github/scripts/test-filter.sh prints both dotnet test --filter expressions), so every test runs exactly once
-#   per OS and a new test class runs in part 2 without an edit to the list. The guard (TestPartsGuardTests, in
-#   each test assembly) checks that every test lands in exactly one part and that no listed name is stale.
+#   per OS and a new test class runs in part 2 without an edit to the list. The guard (TestPartsGuardTests)
+#   checks that every test lands in exactly one part and that no listed name is stale.
 # - windows needs version and windows-tests, macos needs version and macos-tests, so the Windows and macOS builds
 #   run in parallel after version, each once its own OS's tests have passed.
 #   windows packages and exercises the win-x64 ZIP; macos publishes, signs, smoke-checks and packs
-#   the osx-arm64 tarball and RoomKit.<version>.nupkg. Each build job reports the SHA-256 of the files it uploads
-#   as job outputs (zip_sha256, tarball_sha256, roomkit_sha256), and uploads them as one artifact.
+#   the osx-arm64 tarball. Each build job reports the SHA-256 of the file it uploads as a job output
+#   (zip_sha256, tarball_sha256), and uploads it as one artifact.
 # - release needs version, windows and macos. It downloads both artifacts and checks the downloaded files' hashes
-#   against the hashes the build jobs reported (exactly the three expected files, nothing else), then sums,
+#   against the hashes the build jobs reported (exactly the two expected files, nothing else), then sums,
 #   attests and publishes them. Only this job has write permissions, and it builds nothing itself. The hash check
 #   catches a file swapped or changed between jobs; it cannot catch a compromised build job, which reports its own hash.
 # - A push to develop makes a prerelease vX.Y.(Z+1)-develop.<run number>, one patch above the highest
@@ -24,12 +24,14 @@
 # - After a proper release vX.Y.Z, every -develop prerelease at or below X.Y.Z is deleted with its tag
 #   (.github/scripts/old-prereleases.sh). A failed prune only warns (continue-on-error); the release counts.
 # - The release holds controlroom-<version>-osx-arm64.tar.gz (one top folder controlroom-<version>-osx-arm64/
-#   with the self-contained publish output, wwwroot/ included), controlroom-<version>-win-x64.zip,
-#   RoomKit.<version>.nupkg and SHA256SUMS, plus a build-provenance attestation for the three files (check one
-#   with: gh attestation verify <tarball> --repo nothisisnotdaniel/controlroom).
-#   scripts/launch-agent.sh install --release [vX.Y.Z] installs it.
-# - RoomKit.<version>.nupkg is the shared server core (docs/roomkit.md), packed with the same version. Apps restore
-#   it from a local folder feed filled with gh release download; no package registry, permission or secret is needed.
+#   with the self-contained publish output, wwwroot/ included), controlroom-<version>-win-x64.zip and SHA256SUMS,
+#   plus a build-provenance attestation for the two files (check one with: gh attestation verify <tarball>
+#   --repo nothisisnotdaniel/controlroom). scripts/launch-agent.sh install --release [vX.Y.Z] installs it.
+# - RoomKit, the shared server core, is the pinned package RoomKit from GitHub Packages (nuget.config maps it to the
+#   source github only); the release does not pack or carry it. A dotnet step is a step whose run: calls dotnet or
+#   windows-release.ps1 (which runs dotnet publish). Every job with a dotnet step has job-level contents: read and
+#   packages: read, and only the dotnet steps get the job's GITHUB_TOKEN, as NuGetPackageSourceCredentials_github
+#   in their env:, so restore can read the package. No job may write packages.
 # - Once signing-cert.sha1 is committed, every macOS build is signed with that self-signed certificate (steps Sign
 #   and Verify signature in the macos job; README "Signing"), and install --release and the updater refuse any build
 #   that is not. The temporary signing keychain goes on the user keychain search list for the run
@@ -171,6 +173,7 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: read
+      packages: read
     strategy:
       fail-fast: false
       matrix:
@@ -191,6 +194,8 @@ jobs:
 
       - name: Windows tests
         shell: bash
+        env:
+          NuGetPackageSourceCredentials_github: Username=github;Password=${{ secrets.GITHUB_TOKEN }}
         run: |
           if ! TEST_FILTER="$(sh .github/scripts/test-filter.sh .github/test-part-1.txt "$TEST_PART")"; then
             echo "No test filter for part $TEST_PART from .github/test-part-1.txt" >&2
@@ -204,6 +209,7 @@ jobs:
     runs-on: macos-15
     permissions:
       contents: read
+      packages: read
     strategy:
       fail-fast: false
       matrix:
@@ -224,6 +230,8 @@ jobs:
 
       # MSBuild reads every environment variable as a property, ignoring case; TEST_PART matches no MSBuild property.
       - name: Test
+        env:
+          NuGetPackageSourceCredentials_github: Username=github;Password=${{ secrets.GITHUB_TOKEN }}
         run: |
           if ! TEST_FILTER="$(sh .github/scripts/test-filter.sh .github/test-part-1.txt "$TEST_PART")"; then
             echo "No test filter for part $TEST_PART from .github/test-part-1.txt" >&2
@@ -236,6 +244,7 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: read
+      packages: read
     outputs:
       zip_sha256: ${{ steps.hash.outputs.zip_sha256 }}
     env:
@@ -253,6 +262,8 @@ jobs:
           dotnet-version: "10.0.x"
 
       - name: Build and smoke check the Windows ZIP
+        env:
+          NuGetPackageSourceCredentials_github: Username=github;Password=${{ secrets.GITHUB_TOKEN }}
         run: ./.github/scripts/windows-release.ps1
 
       # The release job checks the downloaded ZIP against this hash, which travels as a job output, apart
@@ -277,9 +288,9 @@ jobs:
     runs-on: macos-15
     permissions:
       contents: read
+      packages: read
     outputs:
       tarball_sha256: ${{ steps.hash.outputs.tarball_sha256 }}
-      roomkit_sha256: ${{ steps.hash.outputs.roomkit_sha256 }}
     env:
       RELEASE_VERSION: ${{ needs.version.outputs.release_version }}
     steps:
@@ -298,6 +309,8 @@ jobs:
       # VERSION would become $(Version) here. That is why the names above are RELEASE_VERSION and
       # RELEASE_TARGET, which match no MSBuild property.
       - name: Publish
+        env:
+          NuGetPackageSourceCredentials_github: Username=github;Password=${{ secrets.GITHUB_TOKEN }}
         run: dotnet publish src/ControlRoom.Server -c Release -r osx-arm64 --self-contained -p:Version="$RELEASE_VERSION" -o "$RUNNER_TEMP/publish"
 
       # Signing with the one self-signed certificate (no Developer ID, no notarization), so every build has the same
@@ -440,27 +453,20 @@ jobs:
           chmod 0755 "$RUNNER_TEMP/pack/$NAME/updater.sh"
           tar -czf "dist/$NAME.tar.gz" -C "$RUNNER_TEMP/pack" "$NAME"
 
-      - name: Pack RoomKit
-        run: dotnet pack src/RoomKit -c Release -p:Version="$RELEASE_VERSION" -o dist
-
-      # The release job checks the downloaded files against these hashes, which travel as job outputs, apart
+      # The release job checks the downloaded tarball against this hash, which travels as a job output, apart
       # from the artifact store.
       - name: Hash the macOS files
         id: hash
         run: |
           set -o pipefail
           TARBALL_SHA256="$(shasum -a 256 "dist/controlroom-$RELEASE_VERSION-osx-arm64.tar.gz" | cut -d ' ' -f 1)"
-          ROOMKIT_SHA256="$(shasum -a 256 "dist/RoomKit.$RELEASE_VERSION.nupkg" | cut -d ' ' -f 1)"
           echo "tarball_sha256=$TARBALL_SHA256" >> "$GITHUB_OUTPUT"
-          echo "roomkit_sha256=$ROOMKIT_SHA256" >> "$GITHUB_OUTPUT"
 
       - name: Save the verified macOS files
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: macos-release
-          path: |
-            dist/controlroom-${{ env.RELEASE_VERSION }}-osx-arm64.tar.gz
-            dist/RoomKit.${{ env.RELEASE_VERSION }}.nupkg
+          path: dist/controlroom-${{ env.RELEASE_VERSION }}-osx-arm64.tar.gz
           if-no-files-found: error
           compression-level: 0
 
@@ -489,19 +495,17 @@ jobs:
           merge-multiple: true
           path: dist
 
-      # Exactly the three built files, each byte-identical to what its build job hashed before the upload. The
+      # Exactly the two built files, each byte-identical to what its build job hashed before the upload. The
       # hashes come from the build jobs' outputs, a separate channel from the artifact store, and reach the shell
       # only through env:; each must be 64 lower-case hex characters before it is compared.
       - name: Check the downloaded files
         env:
           ZIP_SHA256: ${{ needs.windows.outputs.zip_sha256 }}
           TARBALL_SHA256: ${{ needs.macos.outputs.tarball_sha256 }}
-          ROOMKIT_SHA256: ${{ needs.macos.outputs.roomkit_sha256 }}
         run: |
           TARBALL="controlroom-$RELEASE_VERSION-osx-arm64.tar.gz"
-          ROOMKIT="RoomKit.$RELEASE_VERSION.nupkg"
           ZIP="controlroom-$RELEASE_VERSION-win-x64.zip"
-          for name in "$TARBALL" "$ROOMKIT" "$ZIP"; do
+          for name in "$TARBALL" "$ZIP"; do
             if [ ! -f "dist/$name" ] || [ -L "dist/$name" ]; then
               echo "The downloaded artifacts have no file $name" >&2
               exit 1
@@ -512,7 +516,7 @@ jobs:
               continue
             fi
             case "${entry#dist/}" in
-              "$TARBALL" | "$ROOMKIT" | "$ZIP") ;;
+              "$TARBALL" | "$ZIP") ;;
               *)
                 echo "The downloaded artifacts hold an unexpected file: ${entry#dist/}" >&2
                 exit 1
@@ -544,14 +548,12 @@ jobs:
             fi
           }
           check_hash "$TARBALL" "$TARBALL_SHA256"
-          check_hash "$ROOMKIT" "$ROOMKIT_SHA256"
           check_hash "$ZIP" "$ZIP_SHA256"
 
       - name: Checksums
         run: |
           cd dist
           shasum -a 256 "controlroom-$RELEASE_VERSION-osx-arm64.tar.gz" > SHA256SUMS
-          shasum -a 256 "RoomKit.$RELEASE_VERSION.nupkg" >> SHA256SUMS
           shasum -a 256 "controlroom-$RELEASE_VERSION-win-x64.zip" >> SHA256SUMS
           cat SHA256SUMS
 
@@ -560,7 +562,6 @@ jobs:
         with:
           subject-path: |
             dist/controlroom-${{ env.RELEASE_VERSION }}-osx-arm64.tar.gz
-            dist/RoomKit.${{ env.RELEASE_VERSION }}.nupkg
             dist/controlroom-${{ env.RELEASE_VERSION }}-win-x64.zip
 
       - name: Create GitHub release
@@ -572,7 +573,7 @@ jobs:
           case "$RELEASE_VERSION" in
             *-*) PRERELEASE="--prerelease" ;;
           esac
-          gh release create "v$RELEASE_VERSION" "dist/controlroom-$RELEASE_VERSION-osx-arm64.tar.gz" dist/SHA256SUMS "dist/RoomKit.$RELEASE_VERSION.nupkg" "dist/controlroom-$RELEASE_VERSION-win-x64.zip" --title "ControlRoom $RELEASE_VERSION" --generate-notes --target "$RELEASE_TARGET" $PRERELEASE
+          gh release create "v$RELEASE_VERSION" "dist/controlroom-$RELEASE_VERSION-osx-arm64.tar.gz" dist/SHA256SUMS "dist/controlroom-$RELEASE_VERSION-win-x64.zip" --title "ControlRoom $RELEASE_VERSION" --generate-notes --target "$RELEASE_TARGET" $PRERELEASE
 
       # Housekeeping after a proper release: delete the -develop prereleases (and their tags) at or below the
       # release (.github/scripts/old-prereleases.sh). It runs only after the release was created, so

@@ -1,10 +1,8 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/ControlRoom.Server/ControlRoom.Server.csproj" />
-    <Project Path="src/RoomKit/RoomKit.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ControlRoom.Server.Tests/ControlRoom.Server.Tests.csproj" />
-    <Project Path="tests/RoomKit.Tests/RoomKit.Tests.csproj" />
   </Folder>
 </Solution>
