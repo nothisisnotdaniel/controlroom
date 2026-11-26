@@ -177,5 +177,5 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#167](backlog/167-give-the-claim-badge-a-screen.md) Give the claim badge a screen-reader label
 - [ ] [#168](backlog/168-update-the-factory-s-claim-marks.md) Update the factory's claim marks live
 - [ ] [#171](backlog/171-one-project-filter-on-the-backlog.md) One project filter on the Backlog page, with factory
-- [ ] [#172](backlog/172-split-the-release-tests-across-parallel.md) Split the release tests across parallel runners
+- [x] [#172](backlog/172-split-the-release-tests-across-parallel.md) Split the release tests across parallel runners → 415-parallel-release-tests.2a7150e6f23a4394b4a23946f6f34dc1
 - [ ] [#173](backlog/173-spike-find-the-slowest-tests-on.md) Spike: find the slowest tests on CI
