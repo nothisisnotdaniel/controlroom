@@ -184,3 +184,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#173](backlog/173-spike-find-the-slowest-tests-on.md) Spike: find the slowest tests on CI
 - [?] [#177](backlog/177-pin-the-roomkit-package-content-with.md) Pin the RoomKit package content with a lock file and locked-mode restore
 - [?] [#183](backlog/183-skip-the-release-workflow-changes-job.md) Skip the release workflow changes job on closed pull requests that are not release merges
+- [?] [#184](backlog/184-close-the-more-menu-when-keyboard.md) Close the More menu when keyboard focus leaves it
