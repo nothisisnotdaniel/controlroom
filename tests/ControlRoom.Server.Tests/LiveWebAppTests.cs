@@ -204,7 +204,7 @@ public sealed partial class LiveWebAppTests : IClassFixture<EmptyRootServer>
         string js = await Fetch("/sw.js");
         string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v28\";", room, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v29\";", room, StringComparison.Ordinal);
         Assert.DoesNotContain("const CacheVersion = \"v9\";", room, StringComparison.Ordinal);
         Assert.Contains("  \"/edit.js\",\n  \"/counts.js\",\n  \"/search.js\",\n  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/releases.js\",\n  \"/live.js\",\n", room, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/changes", js, StringComparison.Ordinal);

@@ -19,7 +19,7 @@ public sealed class UpdateSettingsTests
 
         string json = await client.GetStringAsync(UpdateEndpoint.Route);
 
-        Assert.EndsWith(",\"autoUpdate\":false,\"channel\":\"stable\",\"updateInterval\":30}", json, StringComparison.Ordinal);
+        Assert.EndsWith(",\"autoUpdate\":false,\"channel\":\"stable\",\"updateInterval\":30,\"lastCheck\":null}", json, StringComparison.Ordinal);
         Assert.False(File.Exists(SettingsPath(factory)));
     }
 
@@ -44,7 +44,7 @@ public sealed class UpdateSettingsTests
             Assert.Equal(AccessToken.FileMode, File.GetUnixFileMode(SettingsPath(factory)));
         }
 
-        Assert.EndsWith(",\"autoUpdate\":" + (value ? "true" : "false") + ",\"channel\":\"stable\",\"updateInterval\":30}",
+        Assert.EndsWith(",\"autoUpdate\":" + (value ? "true" : "false") + ",\"channel\":\"stable\",\"updateInterval\":30,\"lastCheck\":null}",
             await client.GetStringAsync(UpdateEndpoint.Route), StringComparison.Ordinal);
     }
 
@@ -143,7 +143,7 @@ public sealed class UpdateSettingsTests
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         Assert.Equal("{\"error\":\"settings_store\"}", await response.Content.ReadAsStringAsync());
         Assert.True(response.Headers.CacheControl?.NoStore);
-        Assert.EndsWith(",\"autoUpdate\":null,\"channel\":null,\"updateInterval\":null}", json, StringComparison.Ordinal);
+        Assert.EndsWith(",\"autoUpdate\":null,\"channel\":null,\"updateInterval\":null,\"lastCheck\":null}", json, StringComparison.Ordinal);
         Assert.Equal(before, Snapshot(folder, target));
         File.SetUnixFileMode(folder, AccessToken.FolderMode);
     }
@@ -283,7 +283,7 @@ public sealed class UpdateSettingsTests
             Assert.Equal(AccessToken.FileMode, File.GetUnixFileMode(SettingsPath(factory)));
         }
 
-        Assert.EndsWith(",\"updateInterval\":" + interval + "}", await client.GetStringAsync(UpdateEndpoint.Route),
+        Assert.EndsWith(",\"updateInterval\":" + interval + ",\"lastCheck\":null}", await client.GetStringAsync(UpdateEndpoint.Route),
             StringComparison.Ordinal);
         Assert.Empty(factory.Update.Requests);
     }
@@ -334,7 +334,7 @@ public sealed class UpdateSettingsTests
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         Assert.Equal("{\"error\":\"settings_store\"}", await response.Content.ReadAsStringAsync());
         Assert.Equal(Saved, File.ReadAllText(SettingsPath(factory)));
-        Assert.EndsWith(",\"autoUpdate\":null,\"channel\":null,\"updateInterval\":null}",
+        Assert.EndsWith(",\"autoUpdate\":null,\"channel\":null,\"updateInterval\":null,\"lastCheck\":null}",
             await client.GetStringAsync(UpdateEndpoint.Route), StringComparison.Ordinal);
         Assert.Empty(factory.Update.Requests);
     }
@@ -354,7 +354,7 @@ public sealed class UpdateSettingsTests
 
         string json = await client.GetStringAsync(UpdateEndpoint.Route);
 
-        Assert.EndsWith(",\"autoUpdate\":" + autoUpdate + ",\"channel\":\"" + channel + "\",\"updateInterval\":30}", json, StringComparison.Ordinal);
+        Assert.EndsWith(",\"autoUpdate\":" + autoUpdate + ",\"channel\":\"" + channel + "\",\"updateInterval\":30,\"lastCheck\":null}", json, StringComparison.Ordinal);
         Assert.Equal(file, File.ReadAllText(SettingsPath(factory)));
     }
 

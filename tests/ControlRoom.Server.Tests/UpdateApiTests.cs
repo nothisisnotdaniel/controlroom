@@ -92,7 +92,7 @@ public sealed class UpdateApiTests
         string json = await client.GetStringAsync(UpdateEndpoint.Route);
 
         Assert.Equal(
-            "{\"current\":\"" + current + "\",\"available\":false,\"latest\":null,\"url\":null,\"command\":null,\"autoUpdate\":false,\"channel\":\"stable\",\"updateInterval\":30}", json);
+            "{\"current\":\"" + current + "\",\"available\":false,\"latest\":null,\"url\":null,\"command\":null,\"autoUpdate\":false,\"channel\":\"stable\",\"updateInterval\":30,\"lastCheck\":null}", json);
     }
 
     [Fact]
@@ -126,7 +126,7 @@ public sealed class UpdateApiTests
 
         Assert.Equal(
             "{\"current\":\"1.0.0\",\"available\":false,\"latest\":null,\"url\":null,\"command\":null,"
-            + "\"autoUpdate\":false,\"channel\":\"develop\",\"updateInterval\":30}",
+            + "\"autoUpdate\":false,\"channel\":\"develop\",\"updateInterval\":30,\"lastCheck\":null}",
             json);
     }
 
@@ -241,7 +241,7 @@ public sealed class UpdateApiTests
         using JsonDocument parsed = JsonDocument.Parse(json);
         Assert.Equal(command, parsed.RootElement.GetProperty("command").GetString());
         Assert.Equal(JsonSerializer.Serialize(new { current, available = true, latest, url, command, autoUpdate,
-            channel, updateInterval = 30 }, new Microsoft.AspNetCore.Http.Json.JsonOptions().SerializerOptions), json);
+            channel, updateInterval = 30, lastCheck = (string?)null }, new Microsoft.AspNetCore.Http.Json.JsonOptions().SerializerOptions), json);
     }
 
     private static void WriteSettings(ServerFactory factory, string content)

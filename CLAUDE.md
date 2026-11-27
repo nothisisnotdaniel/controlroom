@@ -148,7 +148,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     off, `stable` and 30), written only by `POST /api/update/settings` as the four-key form plus a line break (body: one
     or more of `autoUpdate`, `channel` and `updateInterval` (an integer among the choices), a missing one keeps its
     value; a channel change starts one update check without waiting, an interval change none; a refused or invalid file gives `500 {"error":"settings_store"}` and is never overwritten). `update-result.json` is written only by `scripts/updater.sh`; the server reads it (no-follow,
-    `0600`, owned by the user, at most 4 KiB, exact schema) and never writes or deletes it.
+    `0600`, owned by the user, at most 4 KiB, exact schema) and never writes or deletes it. `last-check` is written only by `scripts/updater.sh`
+    (the updater's due-check stamp) and read only by RoomKit for `lastCheck` in `GET /api/update`; ControlRoom's own code never reads or writes it.
   - The only outbound calls are Web Push POSTs to subscription endpoints, allowed only as `https`, port 443, no
     userinfo, on `*.push.apple.com`, `fcm.googleapis.com` or `updates.push.services.mozilla.com`, and the update
     check: one fixed `GET https://api.github.com/repos/nothisisnotdaniel/controlroom/releases/latest` at start and
@@ -187,7 +188,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   factory's job format. Since #151 it lives in its own repo `nothisisnotdaniel/roomkit` and ControlRoom uses the
   package `RoomKit` from GitHub Packages (`https://nuget.pkg.github.com/nothisisnotdaniel/index.json`; docs:
   `https://github.com/nothisisnotdaniel/roomkit/blob/main/docs/roomkit.md`), pinned to one exact version
-  (`<PackageReference Include="RoomKit" Version="0.2.0" GeneratePathProperty="true" />`) in both
+  (`<PackageReference Include="RoomKit" Version="0.3.0" GeneratePathProperty="true" />`) in both
   `ControlRoom.Server.csproj` and `ControlRoom.Server.Tests.csproj`; to bump the pin, change `Version` in both csproj
   files together (`RoomKitPinTests` checks they match). `nuget.config` clears inherited sources and maps `RoomKit` to
   the source `github` only and `*` to `nuget.org` only (no credentials in the repo). Restore needs a read credential
@@ -221,7 +222,8 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   `uninstall` remove it (with `updater.sh.previous` and `updater.plist.previous`).
   `dotnet run --project src/ControlRoom.Server -- version` prints `ControlRoom <version>` (`dev` without `-p:Version`);
   `GET /api/version` returns `{"version":"…"}`; `GET /api/update` returns `{current, available, latest, url,
-  command, autoUpdate, channel, updateInterval}` from the last update check (`dev` never checks) and `settings.json` (`null` when refused).
+  command, autoUpdate, channel, updateInterval, lastCheck}` from the last update check (`dev` never checks), `settings.json` (`null` when refused)
+  and, since RoomKit 0.3.0, `lastCheck`: RoomKit's `last-check` stamp as UTC `YYYY-MM-DDTHH:MM:SSZ` (`null` when missing or refused).
 - **Releases:** `.github/workflows/release.yml` runs for a merged PR from `develop` into `main` titled
   `release vX.Y.Z` (`.github/scripts/release-version.sh` checks the title and existing tags, and refuses
   `-develop`) and for every push to `develop` (a prerelease
@@ -314,7 +316,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `manifest.webmanifest`, `icons/`, `app.js`, `board.js`, `act.js`, `status.js`, `releases.js`, `room.js` and `room.css`.
   - `wwwroot/room.js` (ControlRoom): the app values the RoomKit scripts read as globals, loaded as the first
     `<script>` of `index.html` and by `sw.js` through `importScripts("/room.js")`: `TokenKey`, `CaptureProjectKey`,
-    `HistoryProjectKey`, `PushAppTexts` (`homeScreen`, `denied`), `CacheVersion` (`v28`), `CacheName`, `Shell` (the
+    `HistoryProjectKey`, `PushAppTexts` (`homeScreen`, `denied`), `CacheVersion` (`v29`), `CacheName`, `Shell` (the
     shell list, with `/room.js` and `/room.css`), `PushAppTitles` (`updated`), `PushFallbackTitle`, `PushDefaultTag` and
     `PushUpdatePrefix`. The script order below starts with `room.js`.
   - App badge (#476): in `app.js`, directly after the first `jobCounts` hook a second one sets the app icon's badge to
@@ -462,7 +464,10 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     line at the foot of Jobs and the update banner under its heading, each asked once per page load; under the version line the
     "Install updates automatically" switch, the `Update channel` select and the `Check for updates` interval select
     (`renderUpdateInterval`, the five fixed `Every …` options, only where the channel select shows; a change POSTs only
-    `updateInterval` and on any error puts the saved value back with the fixed `intervalFailed` text)), `live.js` (the one `setInterval`: asks `/api/changes` every 5 s while visible, no token view and nothing
+    `updateInterval` and on any error puts the saved value back with the fixed `intervalFailed` text; between that
+    label and its note one muted `p.update-last-check` (`textContent`) with `Last checked <local date and time>`
+    (`formatTime(date, false)`) from `lastCheck` when it is a RoomKit UTC time (`LastCheckPattern`), else `Not checked yet`,
+    as of the page load)), `live.js` (the one `setInterval`: asks `/api/changes` every 5 s while visible, no token view and nothing
     pending, and at once on becoming visible; refetches only the board, the changed backlog sections (kept while a form
     is open or focus is inside) and the open story (in place, never while Edit story or Add note is open); a failed check shows
     the fixed `Connection lost. Reconnecting…` notice under the header, or in the `board-status` line on the board;
