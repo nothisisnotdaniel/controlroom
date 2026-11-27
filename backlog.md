@@ -42,7 +42,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#182](backlog/182-skip-the-ci-tests-for-backlog.md) Skip the CI tests for backlog and lessons changes (after: factory#85) → 471-ci-skip-backlog-changes.9afbe8bdf51e4bd2b0eb2b2992fac9fe
 - [x] [#178](backlog/178-redo-pr-4-on-develop-keep.md) Redo PR #4 on develop: keep overlong rework notes editable, on RoomKit 0.2.0 (after: RoomKit#6) → 472-redo-pr4-rework-notes.38de8ae8b29444d09f4f9496f5e88bf4
 - [x] [#179](backlog/179-move-history-and-health-behind-a.md) Move History and Health behind a … menu in the tab bar → 475-more-menu-tabs.4bc0d3c44f8849c3a586d62c320880bd
-- [ ] [#181](backlog/181-show-the-number-of-blocked-jobs.md) Show the number of blocked jobs as the app badge on the iPhone (after: RoomKit#6)
+- [x] [#181](backlog/181-show-the-number-of-blocked-jobs.md) Show the number of blocked jobs as the app badge on the iPhone (after: RoomKit#6) → 476-blocked-jobs-badge.489646d30a9d4d00b22cb5f428b4004e
 - [ ] [#163](backlog/163-show-when-the-last-check-for.md) Show when the updater last checked for updates
 - [stop] Auto stops here
 - [ ] [#176](backlog/176-show-each-backlog-item-s-factory.md) Show each backlog item's factory estimate (after: factory#62)
