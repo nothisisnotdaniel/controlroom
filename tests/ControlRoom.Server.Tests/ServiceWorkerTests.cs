@@ -9,7 +9,7 @@ public sealed partial class ServiceWorkerTests
 {
     private static readonly string[] ShellPaths =
     [
-        "/", "/index.html", "/app.css", "/app.js", "/board.js", "/act.js", "/edit.js", "/counts.js", "/search.js", "/capture.js", "/history.js", "/doctor.js", "/status.js", "/releases.js", "/live.js", "/push.js", "/token.js", "/room.js", "/manifest.webmanifest", "/icons/apple-touch-icon.png",
+        "/", "/index.html", "/app.css", "/room.css", "/app.js", "/board.js", "/act.js", "/edit.js", "/counts.js", "/search.js", "/capture.js", "/history.js", "/doctor.js", "/status.js", "/releases.js", "/live.js", "/push.js", "/token.js", "/room.js", "/manifest.webmanifest", "/icons/apple-touch-icon.png",
         "/icons/icon-192.png", "/icons/icon-512.png",
     ];
 
@@ -84,7 +84,7 @@ public sealed partial class ServiceWorkerTests
         string js = await Fetch();
         string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v25\";", room, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v26\";", room, StringComparison.Ordinal);
         Assert.Contains("  \"/edit.js\",\n", room, StringComparison.Ordinal);
         Assert.Contains("  \"/counts.js\",\n", room, StringComparison.Ordinal);
         Assert.Contains("  \"/live.js\",\n", room, StringComparison.Ordinal);
@@ -152,7 +152,9 @@ public sealed partial class ServiceWorkerTests
 
         int push = js.IndexOf("self.addEventListener(\"push\", (event) => {", StringComparison.Ordinal);
         Assert.True(push >= 0);
-        Assert.Contains("event.waitUntil(self.registration.showNotification(note.title, note.options));", js,
+        // RoomKit 0.2.0: the notification and the payload's app badge settle together.
+        Assert.Contains("event.waitUntil(Promise.all([\n    updatePushBadge(pushBadge(data)),\n"
+                        + "    self.registration.showNotification(note.title, note.options),\n  ]));", js,
             StringComparison.Ordinal);
         Assert.Contains("\"needs-human\": \"Needs you\",", js, StringComparison.Ordinal);
         Assert.Contains("\"merge-conflict\": \"Merge conflict\",", js, StringComparison.Ordinal);

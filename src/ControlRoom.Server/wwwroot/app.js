@@ -1250,6 +1250,15 @@ function registerServiceWorker() {
   navigator.serviceWorker.register("/sw.js").catch(() => undefined);
 }
 
+// RoomKit host hooks, registered at load time (after counts.js and live.js): every counts read of the board is checked
+// against the open job page (board.js), and each live check verifies an open decision (act.js) before the shown
+// views refresh; its promise holds that refresh until the check has started.
+roomKitHooks.on("jobCounts", (jobs) => {
+  refreshOpenJob(jobs);
+});
+roomKitHooks.on("liveChecked", ({ jobsChanged, recovered, firstCheck }) =>
+  recheckPendingCancel(jobsChanged || recovered || firstCheck, { includeForm: firstCheck }));
+
 // After Save: show the current view again and reload its data, the backlogs and the counts on the Backlogs and Jobs
 // tabs.
 onTokenSaved(() => {

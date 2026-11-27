@@ -39,7 +39,7 @@ public sealed partial class RoomKitPinTests
             Path.Combine(repo, "src", "ControlRoom.Server", "ControlRoom.Server.csproj")));
         string pin = (string?)server.Attribute("Version") ?? "";
 
-        Assert.Equal("0.1.0", pin);
+        Assert.Equal("0.2.0", pin);
         Assert.Matches(FixedVersion(), pin);
         Assert.Equal("true", (string?)server.Attribute("GeneratePathProperty"));
 

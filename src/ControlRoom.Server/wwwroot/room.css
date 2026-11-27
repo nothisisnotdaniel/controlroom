@@ -1,0 +1,22 @@
+/* ControlRoom's own styles, loaded right after RoomKit's app.css (which belongs to RoomKit). */
+
+/* "Your decision" (act.js): a note over 1,000 characters has the error border; the hint keeps its small size and
+   only takes the error colour; the note is muted while it is read-only during a send. */
+.act-note[aria-invalid="true"] {
+  border-color: var(--error);
+}
+
+.act-note:read-only {
+  color: var(--muted);
+  background: var(--card);
+  cursor: default;
+}
+
+.act-hint.act-hint-error,
+.act-over {
+  color: var(--error);
+}
+
+.act-over[hidden] {
+  display: none;
+}
