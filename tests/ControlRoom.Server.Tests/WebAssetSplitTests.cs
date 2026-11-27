@@ -71,6 +71,21 @@ public sealed class WebAssetSplitTests
             // #472: the RoomKit 0.2.0 host hooks for the open job page and the decision check.
             ("\n// RoomKit host hooks, registered at load time (after counts.js and live.js): every counts read of the board is checked\n// against the open job page (board.js), and each live check verifies an open decision (act.js) before the shown\n// views refresh; its promise holds that refresh until the check has started.\nroomKitHooks.on(\"jobCounts\", (jobs) => {\n  refreshOpenJob(jobs);\n});\nroomKitHooks.on(\"liveChecked\", ({ jobsChanged, recovered, firstCheck }) =>\n  recheckPendingCancel(jobsChanged || recovered || firstCheck, { includeForm: firstCheck }));\n\n// After Save: show the current view again and reload its data, the backlogs and the counts on the Backlogs and Jobs\n",
                 "\n// After Save: show the current view again and reload its data, the backlogs and the counts on the Backlogs and Jobs\n"),
+            // #475: History and Health behind the More button, and the #health alias.
+            ("const TabForView = { job: \"board\", story: \"backlogs\" };\n// History and Health are behind the More button (#475): while one is shown, the button and its menu link are marked.\nconst MoreViews = new Set([\"history\", \"doctor\"]);\n// Another name for Health: it opens the Health view and becomes #doctor in place.\nconst HealthRoute = \"#health\";\n",
+                "const TabForView = { job: \"board\", story: \"backlogs\" };\n"),
+            ("  if (hash === HealthRoute) {\n    return \"doctor\";\n  }\n",
+                ""),
+            ("// The More menu (#475): plain links above the tab bar that #tab-more shows and hides (a disclosure, not role=\"menu\").\nfunction moreMenuOpen() {\n  return !document.getElementById(\"tab-more-menu\").hidden;\n}\n\nfunction openMoreMenu() {\n  document.getElementById(\"tab-more-menu\").hidden = false;\n  document.getElementById(\"tab-more\").setAttribute(\"aria-expanded\", \"true\");\n}\n\nfunction closeMoreMenu() {\n  document.getElementById(\"tab-more-menu\").hidden = true;\n  document.getElementById(\"tab-more\").setAttribute(\"aria-expanded\", \"false\");\n}\n\nfunction toggleMoreMenu() {\n  if (moreMenuOpen()) {\n    closeMoreMenu();\n  } else {\n    openMoreMenu();\n  }\n}\n\n// The button toggles the menu; choosing a link, a tap or click outside the button and the menu, and Escape close it.\n// Escape moves focus back to the button.\nfunction setUpMoreMenu() {\n  const button = document.getElementById(\"tab-more\");\n  const menu = document.getElementById(\"tab-more-menu\");\n  button.addEventListener(\"click\", toggleMoreMenu);\n  for (const link of menu.querySelectorAll(\"a\")) {\n    link.addEventListener(\"click\", closeMoreMenu);\n  }\n  document.addEventListener(\"pointerdown\", (event) => {\n    if (moreMenuOpen() && !button.contains(event.target) && !menu.contains(event.target)) {\n      closeMoreMenu();\n    }\n  });\n  document.addEventListener(\"keydown\", (event) => {\n    if (event.key === \"Escape\" && moreMenuOpen()) {\n      closeMoreMenu();\n      button.focus();\n    }\n  });\n}\n\n",
+                ""),
+            ("function showView(name) {\n  // Every view change closes the More menu, so it never stays open over a new view or the token view.\n  closeMoreMenu();\n",
+                "function showView(name) {\n"),
+            ("  // History and Health: the More button and the matching menu link carry the mark, and no other link does.\n  const more = MoreViews.has(current);\n  const button = document.getElementById(\"tab-more\");\n  if (more) {\n    button.setAttribute(\"aria-current\", \"page\");\n  } else {\n    button.removeAttribute(\"aria-current\");\n  }\n  for (const link of document.querySelectorAll(\"#tab-more-menu a\")) {\n    if (more && link.dataset.view === current) {\n      link.setAttribute(\"aria-current\", \"page\");\n    } else {\n      link.removeAttribute(\"aria-current\");\n    }\n  }\n",
+                ""),
+            ("  // #health becomes #doctor in place (no new history entry).\n  if (location.hash === HealthRoute) {\n    history.replaceState(null, \"\", DoctorRoute);\n  }\n",
+                ""),
+            ("setUpMoreMenu();\nwindow.addEventListener(\"hashchange\", route);\n",
+                "window.addEventListener(\"hashchange\", route);\n"),
         ],
         ["edit.js"] =
         [
@@ -326,10 +341,10 @@ public sealed class WebAssetSplitTests
         Assert.True(start >= 0 && end > start);
         // The shell list block moved, with "/room.js" added and the version raised.
         List<string> block = develop.GetRange(start, end - start + 1);
-        block[0] = "const CacheVersion = \"v26\";";
+        block[0] = "const CacheVersion = \"v27\";";
         block.Insert(block.IndexOf("  \"/token.js\",") + 1, "  \"/room.js\",");
         block.Insert(block.IndexOf("  \"/app.css\",") + 1, "  \"/room.css\",");
-        int roomStart = room.IndexOf("const CacheVersion = \"v26\";");
+        int roomStart = room.IndexOf("const CacheVersion = \"v27\";");
         Assert.Equal(block, room.GetRange(roomStart, block.Count));
         develop.RemoveRange(start, end - start + 1);
 
@@ -362,6 +377,31 @@ public sealed class WebAssetSplitTests
         Assert.Equal(script.Split('\n').ToList(), Lines(Path.Combine(KitFolder(), "sw.js")));
     }
 
+    // #475: the nav's last item and the More menu now, and the two tabs develop had in their place.
+    private const string MoreTabs = """
+            <button type="button" class="tab-more" id="tab-more" aria-expanded="false" aria-controls="tab-more-menu">
+              <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg>
+              <span class="tab-label">More</span>
+            </button>
+          </nav>
+          <div class="tab-more-menu" id="tab-more-menu" hidden>
+            <a href="#history" data-view="history">History</a>
+            <a href="#doctor" data-view="doctor">Health</a>
+          </div>
+        """;
+
+    private const string HistoryAndHealthTabs = """
+            <a href="#history" data-view="history">
+              <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM12 7v5l3 2"/></svg>
+              <span class="tab-label">History</span>
+            </a>
+            <a href="#doctor" data-view="doctor">
+              <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              <span class="tab-label">Health</span>
+            </a>
+          </nav>
+        """;
+
     [Fact]
     public void Index_GainsOnlyTheRoomScriptAsItsFirstScript()
     {
@@ -374,6 +414,10 @@ public sealed class WebAssetSplitTests
         index.Remove(Room);
         Assert.True(index.Remove("  <link rel=\"stylesheet\" href=\"/room.css\">"));
         Assert.True(index.Remove("""      <p class="token-help">On Windows, open PowerShell in the server folder and run <code>.\controlroom.exe token</code>.</p>"""));
+        // #475: the History and Health tabs moved behind the More button, into the menu after the nav.
+        string page = string.Join('\n', index);
+        Assert.Contains(MoreTabs, page, StringComparison.Ordinal);
+        index = [.. page.Replace(MoreTabs, HistoryAndHealthTabs, StringComparison.Ordinal).Split('\n')];
         Assert.Equal(develop, index);
     }
 

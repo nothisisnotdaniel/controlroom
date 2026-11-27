@@ -8,14 +8,16 @@ namespace ControlRoom.Server.Tests;
 public sealed partial class HistoryWebAppTests
 {
     [Fact]
-    public async Task IndexHtml_HasTheHistoryLinkAfterCaptureAndTheHistoryView()
+    public async Task IndexHtml_HasTheHistoryLinkInTheMoreMenuAfterTheNavAndTheHistoryView()
     {
         string html = await Fetch("/index.html");
 
+        // #475: History moved from the tab bar into the More menu right after it.
         int search = html.IndexOf("<a href=\"#capture\" data-view=\"capture\">", StringComparison.Ordinal);
-        int history = html.IndexOf("<a href=\"#history\" data-view=\"history\">", StringComparison.Ordinal);
+        int history = html.IndexOf("<a href=\"#history\" data-view=\"history\">History</a>", StringComparison.Ordinal);
         int navEnd = html.IndexOf("</nav>", StringComparison.Ordinal);
-        Assert.True(search >= 0 && history > search && history < navEnd);
+        int menu = html.IndexOf("<div class=\"tab-more-menu\" id=\"tab-more-menu\" hidden>", StringComparison.Ordinal);
+        Assert.True(search >= 0 && navEnd > search && menu > navEnd && history > menu);
         Assert.Contains("<main id=\"history\" hidden></main>", html, StringComparison.Ordinal);
     }
 
@@ -297,7 +299,7 @@ public sealed partial class HistoryWebAppTests
         string js = await Fetch("/sw.js");
         string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v26\";", room, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v27\";", room, StringComparison.Ordinal);
         Assert.Contains("  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n", room, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/history", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/history", room, StringComparison.Ordinal);

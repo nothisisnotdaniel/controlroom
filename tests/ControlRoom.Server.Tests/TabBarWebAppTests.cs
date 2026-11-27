@@ -2,9 +2,10 @@ using System.Text.RegularExpressions;
 
 namespace ControlRoom.Server.Tests;
 
-/// <summary>Checks the bottom tab bar in <c>index.html</c>, <c>app.css</c>, <c>app.js</c> and <c>token.js</c> as
-/// text (there is no JS test runtime). The layout itself (all five tabs in one row at 375 px, the last item clear of
-/// the bar, light and dark mode, the home indicator inset in the installed web app) is checked by hand.</summary>
+/// <summary>Checks the bottom tab bar in <c>index.html</c>, <c>app.css</c>, <c>room.css</c>, <c>app.js</c> and
+/// <c>token.js</c> as text (there is no JS test runtime). The layout itself (the four items, Jobs, Backlogs, Capture and
+/// More, in one row at 375 px, the More menu above the bar, the last item clear of the bar, light and dark mode, the
+/// home indicator inset in the installed web app) is checked by hand.</summary>
 public sealed partial class TabBarWebAppTests
 {
     private const string NavOpen = "<nav class=\"nav tab-bar\" aria-label=\"Sections\">";
@@ -12,11 +13,13 @@ public sealed partial class TabBarWebAppTests
     private static readonly (string Href, string View, string Label)[] Tabs =
     [
         ("#jobs", "board", "Jobs"), ("#backlogs", "backlogs", "Backlogs"), ("#capture", "capture", "Capture"),
-        ("#history", "history", "History"), ("#doctor", "doctor", "Health"),
     ];
 
+    private const string MoreButton =
+        "<button type=\"button\" class=\"tab-more\" id=\"tab-more\" aria-expanded=\"false\" aria-controls=\"tab-more-menu\">";
+
     [Fact]
-    public async Task IndexHtml_HasOneTabBarAfterTheLiveNoticeOutsideTheHeaderWithTheFiveLinksInOrder()
+    public async Task IndexHtml_HasOneTabBarAfterTheLiveNoticeOutsideTheHeaderWithTheThreeLinksInOrderThenMore()
     {
         string html = Normalize(await Fetch("/index.html"));
 
@@ -39,6 +42,12 @@ public sealed partial class TabBarWebAppTests
             Assert.Equal(Tabs[i].Href, links[i].Groups["href"].Value);
             Assert.Equal(Tabs[i].View, links[i].Groups["view"].Value);
         }
+        // The More button is the nav's last child, after the three links.
+        string items = NavSlice(html);
+        Assert.Single(Regex.Matches(html, "<button[^>]*id=\"tab-more\""));
+        Assert.Single(Regex.Matches(items, "<button[ >]"));
+        Assert.True(items.IndexOf(MoreButton, StringComparison.Ordinal) > links[^1].Index);
+        Assert.EndsWith("</button>\n  ", items, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -46,15 +55,16 @@ public sealed partial class TabBarWebAppTests
     {
         string nav = NavSlice(Normalize(await Fetch("/index.html")));
 
-        string[] bodies = LinkBodies(nav);
-        Assert.Equal(Tabs.Length, bodies.Length);
-        for (int i = 0; i < Tabs.Length; i++)
+        string[] bodies = [.. LinkBodies(nav), MoreBody(nav)];
+        (string Href, string View, string Label)[] items = [.. Tabs, ("", "", "More")];
+        Assert.Equal(items.Length, bodies.Length);
+        for (int i = 0; i < items.Length; i++)
         {
             Assert.Single(Regex.Matches(bodies[i], "<svg "));
             Assert.Single(Regex.Matches(bodies[i],
                 Regex.Escape("<svg class=\"tab-icon\" aria-hidden=\"true\" focusable=\"false\"")));
             Assert.Single(Regex.Matches(bodies[i], "class=\"tab-label\""));
-            Assert.Contains("<span class=\"tab-label\">" + Tabs[i].Label + "</span>", bodies[i], StringComparison.Ordinal);
+            Assert.Contains("<span class=\"tab-label\">" + items[i].Label + "</span>", bodies[i], StringComparison.Ordinal);
         }
         Assert.DoesNotContain("<img", nav, StringComparison.Ordinal);
         Assert.DoesNotContain("<image", nav, StringComparison.Ordinal);
@@ -64,7 +74,7 @@ public sealed partial class TabBarWebAppTests
             Assert.DoesNotContain("href=", svg.Value, StringComparison.Ordinal);
             Assert.DoesNotContain("url(", svg.Value, StringComparison.Ordinal);
         }
-        Assert.Equal(Tabs.Length, SvgElement().Matches(nav).Count);
+        Assert.Equal(items.Length, SvgElement().Matches(nav).Count);
     }
 
     [Fact]
@@ -82,7 +92,8 @@ public sealed partial class TabBarWebAppTests
     [Fact]
     public async Task IndexHtml_OnlyTheJobsAndBacklogsTabsHaveTheirTwoHiddenCountBadges()
     {
-        string[] bodies = LinkBodies(NavSlice(Normalize(await Fetch("/index.html"))));
+        string nav = NavSlice(Normalize(await Fetch("/index.html")));
+        string[] bodies = LinkBodies(nav);
 
         Assert.Contains(
             "<span class=\"tab-label\">Jobs</span>\n"
@@ -98,6 +109,7 @@ public sealed partial class TabBarWebAppTests
         {
             Assert.Equal(i <= 1 ? 2 : 0, Regex.Matches(bodies[i], "class=\"nav-count[ \"]").Count);
         }
+        Assert.DoesNotContain("nav-count", MoreBody(nav), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -169,7 +181,7 @@ public sealed partial class TabBarWebAppTests
     }
 
     [Fact]
-    public async Task AppCss_AllFiveTabsFitInOneRowWithTinyLabelsUnderTheIcons()
+    public async Task AppCss_AllFourItemsFitInOneRowWithTinyLabelsUnderTheIcons()
     {
         string css = Normalize(await Fetch("/app.css"));
 
@@ -235,7 +247,8 @@ public sealed partial class TabBarWebAppTests
         int headerIf = show.IndexOf("if (!top.hidden) {", StringComparison.Ordinal);
         int headerEnd = show.IndexOf("\n  }\n", headerIf, StringComparison.Ordinal);
         Assert.True(headerIf >= 0 && headerEnd > headerIf && marking > headerEnd);
-        Assert.Single(Regex.Matches(js, Regex.Escape("setAttribute(\"aria-current\", \"page\")")));
+        // One mark for the tab links, one for the More button and one for its menu links (MoreMenu checks those two).
+        Assert.Equal(3, Regex.Matches(js, Regex.Escape("setAttribute(\"aria-current\", \"page\")")).Count);
     }
 
     [Fact]
@@ -293,6 +306,16 @@ public sealed partial class TabBarWebAppTests
         int end = html.IndexOf("</nav>", from, StringComparison.Ordinal);
         Assert.True(end > from);
         return html[from..end];
+    }
+
+    // The More button's inner markup, between its open tag and </button>.
+    private static string MoreBody(string nav)
+    {
+        int from = nav.IndexOf(MoreButton, StringComparison.Ordinal);
+        Assert.True(from >= 0, "More button not found");
+        int end = nav.IndexOf("</button>", from, StringComparison.Ordinal);
+        Assert.True(end > from);
+        return nav[(from + MoreButton.Length)..end];
     }
 
     private static string[] LinkBodies(string nav) =>

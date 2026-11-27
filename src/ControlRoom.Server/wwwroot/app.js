@@ -1113,6 +1113,10 @@ const InboxRoute = "#inbox";
 const TasksRoute = "#tasks";
 // A page without its own tab marks the tab it belongs to: a job is on the Jobs board, a story in a backlog.
 const TabForView = { job: "board", story: "backlogs" };
+// History and Health are behind the More button (#475): while one is shown, the button and its menu link are marked.
+const MoreViews = new Set(["history", "doctor"]);
+// Another name for Health: it opens the Health view and becomes #doctor in place.
+const HealthRoute = "#health";
 let currentView = null;
 
 function viewFor(hash) {
@@ -1139,10 +1143,60 @@ function viewFor(hash) {
   if (hash === DoctorRoute) {
     return "doctor";
   }
+  if (hash === HealthRoute) {
+    return "doctor";
+  }
   return hash === BoardRoute ? "board" : "backlogs";
 }
 
+// The More menu (#475): plain links above the tab bar that #tab-more shows and hides (a disclosure, not role="menu").
+function moreMenuOpen() {
+  return !document.getElementById("tab-more-menu").hidden;
+}
+
+function openMoreMenu() {
+  document.getElementById("tab-more-menu").hidden = false;
+  document.getElementById("tab-more").setAttribute("aria-expanded", "true");
+}
+
+function closeMoreMenu() {
+  document.getElementById("tab-more-menu").hidden = true;
+  document.getElementById("tab-more").setAttribute("aria-expanded", "false");
+}
+
+function toggleMoreMenu() {
+  if (moreMenuOpen()) {
+    closeMoreMenu();
+  } else {
+    openMoreMenu();
+  }
+}
+
+// The button toggles the menu; choosing a link, a tap or click outside the button and the menu, and Escape close it.
+// Escape moves focus back to the button.
+function setUpMoreMenu() {
+  const button = document.getElementById("tab-more");
+  const menu = document.getElementById("tab-more-menu");
+  button.addEventListener("click", toggleMoreMenu);
+  for (const link of menu.querySelectorAll("a")) {
+    link.addEventListener("click", closeMoreMenu);
+  }
+  document.addEventListener("pointerdown", (event) => {
+    if (moreMenuOpen() && !button.contains(event.target) && !menu.contains(event.target)) {
+      closeMoreMenu();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && moreMenuOpen()) {
+      closeMoreMenu();
+      button.focus();
+    }
+  });
+}
+
 function showView(name) {
+  // Every view change closes the More menu, so it never stays open over a new view or the token view.
+  closeMoreMenu();
   // While the token view is shown, no data view or header is.
   const blocked = tokenViewShown();
   for (const view of Views) {
@@ -1165,6 +1219,21 @@ function showView(name) {
       link.removeAttribute("aria-current");
     }
   }
+  // History and Health: the More button and the matching menu link carry the mark, and no other link does.
+  const more = MoreViews.has(current);
+  const button = document.getElementById("tab-more");
+  if (more) {
+    button.setAttribute("aria-current", "page");
+  } else {
+    button.removeAttribute("aria-current");
+  }
+  for (const link of document.querySelectorAll("#tab-more-menu a")) {
+    if (more && link.dataset.view === current) {
+      link.setAttribute("aria-current", "page");
+    } else {
+      link.removeAttribute("aria-current");
+    }
+  }
 }
 
 function route() {
@@ -1178,6 +1247,10 @@ function route() {
   const fromOldTab = location.hash === InboxRoute || location.hash === TasksRoute;
   if (fromOldTab) {
     history.replaceState(null, "", BacklogsRoute);
+  }
+  // #health becomes #doctor in place (no new history entry).
+  if (location.hash === HealthRoute) {
+    history.replaceState(null, "", DoctorRoute);
   }
   // Keep the scroll position of the list being left, so Back returns to it.
   if (currentView === "backlogs" && next !== "backlogs") {
@@ -1270,6 +1343,7 @@ onTokenSaved(() => {
 if (!hasToken()) {
   showTokenView(false);
 }
+setUpMoreMenu();
 window.addEventListener("hashchange", route);
 route();
 load();

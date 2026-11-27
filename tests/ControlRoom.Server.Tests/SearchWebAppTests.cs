@@ -15,7 +15,8 @@ public sealed partial class SearchWebAppTests
         int navEnd = html.IndexOf("</nav>", StringComparison.Ordinal);
         Assert.DoesNotContain("href=\"#search\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("data-view=\"search\"", html, StringComparison.Ordinal);
-        Assert.Equal(5, NavLink().Matches(html[..navEnd]).Count);
+        // #475: three links and the More button, with History and Health in its menu.
+        Assert.Equal(3, NavLink().Matches(html[..navEnd]).Count);
         Assert.DoesNotContain("<main id=\"search\"", html, StringComparison.Ordinal);
         Assert.Contains(
             "<main id=\"backlogs\">\n    <div class=\"backlog-search\" id=\"backlog-search\"></div>\n    <p class=\"status\">Loading…</p>",
@@ -273,7 +274,7 @@ public sealed partial class SearchWebAppTests
         string js = await Fetch("/sw.js");
         string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v26\";", room, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v27\";", room, StringComparison.Ordinal);
         Assert.Contains("  \"/counts.js\",\n  \"/search.js\",\n  \"/capture.js\",\n  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/releases.js\",\n  \"/live.js\",\n", room, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/search", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/search", room, StringComparison.Ordinal);
