@@ -47,8 +47,8 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#188](backlog/188-show-the-severity-of-security-backlog.md) Show the severity of security backlog items
 - [h] [#186](backlog/186-set-up-the-github-packages-login.md) Set up the GitHub Packages login for RoomKit on this Mac
 - [ ] [#176](backlog/176-show-each-backlog-item-s-factory.md) Show each backlog item's factory estimate (after: factory#62)
+- [ ] [#180](backlog/180-keep-a-scrollable-list-of-sent.md) Keep a scrollable list of sent notifications in a Notifications tab (after: #179)
 - [stop] Auto stops here
-- [ ] [#29](backlog/029-drop-the-hand-written-equality-on.md) Drop the hand-written equality on BacklogEntry
 - [?] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone (after: #139)
 - [?] [#139](backlog/139-phone-start-spike.md) Phone start spike
 - [x] [#13](backlog/013-releases-overview.md) Releases overview → 375-releases-overview
@@ -66,7 +66,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#25](backlog/025-ci-and-git-status.md) CI and git status → 269-ci-and-git-status
 - [x] [#127](backlog/127-bottom-tab-bar-with-icons.md) Bottom tab bar with icons → 357-bottom-tab-bar
 - [x] [#28](backlog/028-close-the-symlink-race-when-reading.md) Close the symlink race when reading story files → 378-story-open-nofollow
-- [ ] [#180](backlog/180-keep-a-scrollable-list-of-sent.md) Keep a scrollable list of sent notifications in a Notifications tab (after: #179)
+- [ ] [#29](backlog/029-drop-the-hand-written-equality-on.md) Drop the hand-written equality on BacklogEntry
 - [?] [#30](backlog/030-cap-the-bytes-read-per-board.md) Cap the bytes read per board and job response
 - [ ] [#31](backlog/031-show-pending-reviewer-chips-with-a.md) Show pending reviewer chips with a text marker
 - [x] [#126](backlog/126-backlog-position-in-the-story-view.md) Backlog position in the story view → 356-story-position
