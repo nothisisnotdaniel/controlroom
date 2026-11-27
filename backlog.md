@@ -46,8 +46,8 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#163](backlog/163-show-when-the-last-check-for.md) Show when the updater last checked for updates → 477-updater-last-check.fb9bc9de67a24b2085825fdf605fabb5
 - [ ] [#188](backlog/188-show-the-severity-of-security-backlog.md) Show the severity of security backlog items
 - [h] [#186](backlog/186-set-up-the-github-packages-login.md) Set up the GitHub Packages login for RoomKit on this Mac
-- [stop] Auto stops here
 - [ ] [#176](backlog/176-show-each-backlog-item-s-factory.md) Show each backlog item's factory estimate (after: factory#62)
+- [stop] Auto stops here
 - [ ] [#180](backlog/180-keep-a-scrollable-list-of-sent.md) Keep a scrollable list of sent notifications in a Notifications tab (after: #179)
 - [?] [#12](backlog/012-start-factory-runs-from-the-phone.md) Start factory runs from the phone (after: #139)
 - [?] [#139](backlog/139-phone-start-spike.md) Phone start spike
