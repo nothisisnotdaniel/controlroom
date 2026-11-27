@@ -8,18 +8,20 @@ namespace ControlRoom.Server.Tests;
 public sealed partial class DoctorWebAppTests
 {
     [Fact]
-    public async Task IndexHtml_HasTheHealthLinkLastWithNoCountAndTheDoctorView()
+    public async Task IndexHtml_HasTheHealthLinkLastInTheMoreMenuWithNoCountAndTheDoctorView()
     {
         string html = await Fetch("/index.html");
 
+        // #475: Health moved from the tab bar into the More menu, after History.
         const string Link = "<a href=\"#doctor\" data-view=\"doctor\">";
-        const string Tail = "<span class=\"tab-label\">Health</span>\n    </a>\n  ";
+        const string Tail = "Health</a>\n  ";
         int history = html.IndexOf("<a href=\"#history\" data-view=\"history\">", StringComparison.Ordinal);
         int health = html.IndexOf(Link, StringComparison.Ordinal);
         int navEnd = html.IndexOf("</nav>", StringComparison.Ordinal);
-        Assert.True(history >= 0 && health > history && health < navEnd);
-        Assert.EndsWith(Tail, html[health..navEnd], StringComparison.Ordinal);
-        Assert.DoesNotContain("nav-count", html[health..navEnd], StringComparison.Ordinal);
+        int menuEnd = html.IndexOf("</div>", health, StringComparison.Ordinal);
+        Assert.True(navEnd >= 0 && history > navEnd && health > history && menuEnd > health);
+        Assert.EndsWith(Tail, html[health..menuEnd], StringComparison.Ordinal);
+        Assert.DoesNotContain("nav-count", html[health..menuEnd], StringComparison.Ordinal);
         Assert.Contains("<main id=\"doctor\" hidden></main>", html, StringComparison.Ordinal);
         Assert.DoesNotContain("doctor-count", html, StringComparison.Ordinal);
     }
@@ -208,7 +210,7 @@ public sealed partial class DoctorWebAppTests
         string js = await Fetch("/sw.js");
         string room = await Fetch("/room.js");
 
-        Assert.Contains("const CacheVersion = \"v26\";", room, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v27\";", room, StringComparison.Ordinal);
         Assert.Contains("  \"/history.js\",\n  \"/doctor.js\",\n  \"/status.js\",\n  \"/releases.js\",\n  \"/live.js\",\n", room, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/doctor", js, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/doctor", room, StringComparison.Ordinal);

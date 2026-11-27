@@ -53,15 +53,15 @@
       <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM12 8v8M8 12h8"/></svg>
       <span class="tab-label">Capture</span>
     </a>
-    <a href="#history" data-view="history">
-      <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM12 7v5l3 2"/></svg>
-      <span class="tab-label">History</span>
-    </a>
-    <a href="#doctor" data-view="doctor">
-      <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-      <span class="tab-label">Health</span>
-    </a>
+    <button type="button" class="tab-more" id="tab-more" aria-expanded="false" aria-controls="tab-more-menu">
+      <svg class="tab-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg>
+      <span class="tab-label">More</span>
+    </button>
   </nav>
+  <div class="tab-more-menu" id="tab-more-menu" hidden>
+    <a href="#history" data-view="history">History</a>
+    <a href="#doctor" data-view="doctor">Health</a>
+  </div>
   <main id="backlogs">
     <div class="backlog-search" id="backlog-search"></div>
     <p class="status">Loading…</p>
