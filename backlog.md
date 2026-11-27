@@ -116,7 +116,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#85](backlog/085-distinct-chart-colours-for-more-than.md) Distinct chart colours for more than six modes
 - [ ] [#86](backlog/086-add-the-empty-30-day-text.md) Add the empty 30-day text to the History spec
 - [?] [#87](backlog/087-cap-the-git-output-the-server.md) Cap the git output the server reads
-- [?] [#88](backlog/088-one-doctor-check-at-a-time.md) One doctor check at a time
+- [ ] [#88](backlog/088-one-doctor-check-at-a-time.md) One doctor check at a time
 - [x] [#89](backlog/089-browser-check-of-the-health-view.md) Browser check of the Health view
 - [?] [#90](backlog/090-separate-the-parts-of-the-project.md) Separate the parts of the project status line
 - [?] [#91](backlog/091-tell-the-user-the-ci-link.md) Tell the user the CI link opens a new tab
