@@ -314,7 +314,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `manifest.webmanifest`, `icons/`, `app.js`, `board.js`, `act.js`, `status.js`, `releases.js`, `room.js` and `room.css`.
   - `wwwroot/room.js` (ControlRoom): the app values the RoomKit scripts read as globals, loaded as the first
     `<script>` of `index.html` and by `sw.js` through `importScripts("/room.js")`: `TokenKey`, `CaptureProjectKey`,
-    `HistoryProjectKey`, `PushAppTexts` (`homeScreen`, `denied`), `CacheVersion` (`v27`), `CacheName`, `Shell` (the
+    `HistoryProjectKey`, `PushAppTexts` (`homeScreen`, `denied`), `CacheVersion` (`v28`), `CacheName`, `Shell` (the
     shell list, with `/room.js` and `/room.css`), `PushAppTitles` (`updated`), `PushFallbackTitle`, `PushDefaultTag` and
     `PushUpdatePrefix`. The script order below starts with `room.js`.
   - Scripts: every app value of `launch-agent.sh` and `updater.sh` is in the block between `# roomkit:app-begin`
@@ -486,7 +486,13 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     (`JobDetailTimeout` 10000 ms). `app.js` hooks it into RoomKit 0.2.0 without
     replacing a RoomKit global: `roomKitHooks.on("jobCounts", …)` passes the board's `jobs` to `refreshOpenJob`, and
     `roomKitHooks.on("liveChecked", …)` returns
-    `recheckPendingCancel(jobsChanged || recovered || firstCheck, { includeForm: firstCheck })`. `room.css` (linked after `app.css`, in the shell) styles the More button like a `.tab-bar a` (no button chrome, `var(--link)` when current, focus outline, 44 px) and the menu (`position: fixed` above the bar and home indicator, `z-index` 4, theme colours only, `[hidden]` `display: none`; RoomKit's `app.css` styles only `.tab-bar a`), the invalid note
+    `recheckPendingCancel(jobsChanged || recovered || firstCheck, { includeForm: firstCheck })`. The app badge (#476):
+    directly after the first `jobCounts` hook a second one sets the app icon's badge to the blocked (`needs-human`) count
+    over every project (`appBadgeCount`: RoomKit's `countJobs`, the same count as `#blocked-count`, capped at 999,
+    `null` while unknown, then nothing is set) through RoomKit's `setRoomKitBadge` (`push.js`), which clears it at 0; no app
+    file calls the Badging API itself. iOS shows the badge only for the Home Screen web app with notification permission.
+    The badge changes only while the app is open and loads the job counts: server pushes do not carry `badge` yet
+    (RoomKit 0.2.0 has no server-side badge), so it can be stale while the app is closed. `room.css` (linked after `app.css`, in the shell) styles the More button like a `.tab-bar a` (no button chrome, `var(--link)` when current, focus outline, 44 px) and the menu (`position: fixed` above the bar and home indicator, `z-index` 4, theme colours only, `[hidden]` `display: none`; RoomKit's `app.css` styles only `.tab-bar a`), the invalid note
     (`border-color: var(--error)`), the read-only note (muted) and the over-limit hint (keeps `act-hint` 0.85rem, error
     colour). After any change to the decision code in `act.js` or `board.js`, run the hand fixture
     `tests/ControlRoom.Server.Tests/Browser/rework-submission.html`: open the file in a browser and wait until
