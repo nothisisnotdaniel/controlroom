@@ -214,7 +214,7 @@ public sealed class ActWebAppTests
         string room = await Fetch("/room.js");
 
         Assert.Contains("  \"/board.js\",\n  \"/act.js\",\n", room, StringComparison.Ordinal);
-        Assert.Contains("const CacheVersion = \"v28\";", room, StringComparison.Ordinal);
+        Assert.Contains("const CacheVersion = \"v29\";", room, StringComparison.Ordinal);
         Assert.Contains("  \"/app.css\",\n  \"/room.css\",\n", room, StringComparison.Ordinal);
     }
 
@@ -383,7 +383,7 @@ public sealed class ActWebAppTests
         string text = File.ReadAllText(Path.Combine(RepoFolder(), "CLAUDE.md"));
 
         Assert.DoesNotContain("(`maxlength` 1000)", text, StringComparison.Ordinal);
-        Assert.Contains("Version=\"0.2.0\"", text, StringComparison.Ordinal);
+        Assert.Contains("Version=\"0.3.0\"", text, StringComparison.Ordinal);
         Assert.Contains("roomKitHooks.on(\"jobCounts\"", text, StringComparison.Ordinal);
         Assert.Contains("roomKitHooks.on(\"liveChecked\"", text, StringComparison.Ordinal);
         Assert.Contains("`room.css`", text, StringComparison.Ordinal);

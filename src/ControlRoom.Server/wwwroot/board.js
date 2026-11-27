@@ -38,6 +38,8 @@ const BoardTexts = {
   interval360: "Every 6 hours",
   interval720: "Every 12 hours",
   intervalFailed: "Can't change the update interval. Try again.",
+  lastChecked: "Last checked ",
+  notChecked: "Not checked yet",
   jobState: "Job state",
   jobRound: " · round ",
   specCheck: "spec check",
@@ -663,7 +665,8 @@ async function loadUpdate() {
       data && (data.channel === "stable" || data.channel === "develop") ? data.channel : null);
     renderUpdateInterval(asText(data && data.current),
       data && (data.channel === "stable" || data.channel === "develop") ? data.channel : null,
-      data && UpdateIntervals.includes(data.updateInterval) ? data.updateInterval : null);
+      data && UpdateIntervals.includes(data.updateInterval) ? data.updateInterval : null,
+      data && typeof data.lastCheck === "string" && LastCheckPattern.test(data.lastCheck) ? data.lastCheck : null);
     const latest = asText(data && data.latest);
     const command = asText(data && data.command);
     if (!data || data.available !== true || latest === "" || command === "") {
@@ -827,9 +830,13 @@ async function setUpdateChannel(select, note) {
 // The update interval choices in minutes, in the order the select shows them.
 const UpdateIntervals = [30, 60, 120, 360, 720];
 
+// The updater's last check as RoomKit sends it (UTC, whole seconds); anything else counts as not checked.
+const LastCheckPattern = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/;
+
 // The update interval choice after the channel select, in the same places only: it adds nothing on dev, when the
-// channel is null (a refused settings file) or when the interval is not one of the choices.
-function renderUpdateInterval(current, channel, interval) {
+// channel is null (a refused settings file) or when the interval is not one of the choices. Under it one muted line
+// says when the updater last checked (lastCheck, a RoomKit UTC time or null), in the device's time zone.
+function renderUpdateInterval(current, channel, interval, lastCheck) {
   const box = document.getElementById("auto-update");
   if (current === "" || current === "dev" || channel === null || interval === null || box.hidden) {
     return;
@@ -852,7 +859,12 @@ function renderUpdateInterval(current, channel, interval) {
   note.hidden = true;
   select.addEventListener("change", () => setUpdateInterval(select, note));
   label.append(element("span", null, BoardTexts.updateInterval), select);
-  box.append(label, note);
+  const checkedAt = lastCheck === null ? null : new Date(lastCheck);
+  const lastLine = element("p", "auto-update-text update-last-check");
+  lastLine.textContent = checkedAt === null || Number.isNaN(checkedAt.getTime())
+    ? BoardTexts.notChecked
+    : BoardTexts.lastChecked + formatTime(checkedAt, false);
+  box.append(label, lastLine, note);
 }
 
 // Sends only the chosen interval; on any error the choice goes back to the stored one and a fixed text is shown.

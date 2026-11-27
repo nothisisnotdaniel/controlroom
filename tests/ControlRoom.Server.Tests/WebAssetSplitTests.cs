@@ -141,6 +141,23 @@ public sealed class WebAssetSplitTests
                 "const PollInterval = 5000;\n"),
             ("const JobIdPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternNow,
                 "const JobIdPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternDevelop),
+            // #477: the updater's last check line under the interval select.
+            ("  lastChecked: \"Last checked \",\n  notChecked: \"Not checked yet\",\n",
+                ""),
+            ("data.updateInterval : null,\n      data && typeof data.lastCheck === \"string\" && LastCheckPattern.test(data.lastCheck) ? data.lastCheck : null);\n",
+                "data.updateInterval : null);\n"),
+            ("\n// The updater's last check as RoomKit sends it (UTC, whole seconds); anything else counts as not checked.\n"
+                + "const LastCheckPattern = /^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\dZ$/;\n",
+                ""),
+            (" Under it one muted line\n// says when the updater last checked (lastCheck, a RoomKit UTC time or null), in the device's time zone.\n"
+                + "function renderUpdateInterval(current, channel, interval, lastCheck) {\n",
+                "\nfunction renderUpdateInterval(current, channel, interval) {\n"),
+            ("  const checkedAt = lastCheck === null ? null : new Date(lastCheck);\n"
+                + "  const lastLine = element(\"p\", \"auto-update-text update-last-check\");\n"
+                + "  lastLine.textContent = checkedAt === null || Number.isNaN(checkedAt.getTime())\n"
+                + "    ? BoardTexts.notChecked\n    : BoardTexts.lastChecked + formatTime(checkedAt, false);\n"
+                + "  box.append(label, lastLine, note);\n",
+                "  box.append(label, note);\n"),
         ],
         ["releases.js"] = [("const ReleaseJobPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternNow,
             "const ReleaseJobPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternDevelop)],
@@ -341,10 +358,10 @@ public sealed class WebAssetSplitTests
         Assert.True(start >= 0 && end > start);
         // The shell list block moved, with "/room.js" added and the version raised.
         List<string> block = develop.GetRange(start, end - start + 1);
-        block[0] = "const CacheVersion = \"v28\";";
+        block[0] = "const CacheVersion = \"v29\";";
         block.Insert(block.IndexOf("  \"/token.js\",") + 1, "  \"/room.js\",");
         block.Insert(block.IndexOf("  \"/app.css\",") + 1, "  \"/room.css\",");
-        int roomStart = room.IndexOf("const CacheVersion = \"v28\";");
+        int roomStart = room.IndexOf("const CacheVersion = \"v29\";");
         Assert.Equal(block, room.GetRange(roomStart, block.Count));
         develop.RemoveRange(start, end - start + 1);
 

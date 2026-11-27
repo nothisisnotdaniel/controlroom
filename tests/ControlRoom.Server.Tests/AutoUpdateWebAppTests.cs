@@ -128,7 +128,7 @@ public sealed class AutoUpdateWebAppTests
         int interval = js.IndexOf(
             "    renderUpdateInterval(asText(data && data.current),\n"
             + "      data && (data.channel === \"stable\" || data.channel === \"develop\") ? data.channel : null,\n"
-            + "      data && UpdateIntervals.includes(data.updateInterval) ? data.updateInterval : null);",
+            + "      data && UpdateIntervals.includes(data.updateInterval) ? data.updateInterval : null,\n",
             StringComparison.Ordinal);
         Assert.True(channel >= 0 && interval > channel);
         string render = Body(js, "function renderUpdateInterval(");
@@ -147,7 +147,7 @@ public sealed class AutoUpdateWebAppTests
         Assert.Contains("select.addEventListener(\"change\", () => setUpdateInterval(select, note));", render,
             StringComparison.Ordinal);
         Assert.Contains("element(\"span\", null, BoardTexts.updateInterval)", render, StringComparison.Ordinal);
-        Assert.Contains("box.append(label, note);", render, StringComparison.Ordinal);
+        Assert.Contains("box.append(label, lastLine, note);", render, StringComparison.Ordinal);
     }
 
     [Fact]

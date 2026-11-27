@@ -11,7 +11,7 @@
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
     <!-- The same pin as ControlRoom.Server.csproj, so the tests can read the package folder ($(PkgRoomKit)). -->
-    <PackageReference Include="RoomKit" Version="0.2.0" GeneratePathProperty="true" />
+    <PackageReference Include="RoomKit" Version="0.3.0" GeneratePathProperty="true" />
   </ItemGroup>
 
   <!-- The restored RoomKit package folder, read by RoomKitPackage.Folder(). -->
