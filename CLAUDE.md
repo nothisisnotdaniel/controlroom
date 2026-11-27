@@ -148,7 +148,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     off, `stable` and 30), written only by `POST /api/update/settings` as the four-key form plus a line break (body: one
     or more of `autoUpdate`, `channel` and `updateInterval` (an integer among the choices), a missing one keeps its
     value; a channel change starts one update check without waiting, an interval change none; a refused or invalid file gives `500 {"error":"settings_store"}` and is never overwritten). `update-result.json` is written only by `scripts/updater.sh`; the server reads it (no-follow,
-    `0600`, owned by the user, at most 4 KiB, exact schema) and never writes or deletes it. `last-check` is written only by `scripts/updater.sh`
+    `0600`, owned by the user, at most 4 KiB, exact schema) and never writes or deletes it. `last-check` is written only by the updater (`scripts/updater.sh`, `updater.ps1`)
     (the updater's due-check stamp) and read only by RoomKit for `lastCheck` in `GET /api/update`; ControlRoom's own code never reads or writes it.
   - The only outbound calls are Web Push POSTs to subscription endpoints, allowed only as `https`, port 443, no
     userinfo, on `*.push.apple.com`, `fcm.googleapis.com` or `updates.push.services.mozilla.com`, and the update

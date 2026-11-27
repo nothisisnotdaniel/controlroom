@@ -60,7 +60,7 @@ public sealed class UpdateLastCheckWebAppTests
         Assert.DoesNotContain("Include=\"RoomKit\" Version=\"0.2.0\"", text, StringComparison.Ordinal);
         Assert.Contains("command, autoUpdate, channel, updateInterval, lastCheck}`", text, StringComparison.Ordinal);
         Assert.Contains("RoomKit's `last-check` stamp", text, StringComparison.Ordinal);
-        Assert.Contains("`last-check` is written only by `scripts/updater.sh`", text, StringComparison.Ordinal);
+        Assert.Contains("`last-check` is written only by the updater (`scripts/updater.sh`, `updater.ps1`)", text, StringComparison.Ordinal);
         Assert.Contains("`p.update-last-check`", text, StringComparison.Ordinal);
     }
 
