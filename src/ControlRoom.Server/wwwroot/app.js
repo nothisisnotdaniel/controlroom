@@ -1323,11 +1323,29 @@ function registerServiceWorker() {
   navigator.serviceWorker.register("/sw.js").catch(() => undefined);
 }
 
+// The app badge (#476): the number of blocked (needs-human) jobs over every project, the same count as the Jobs
+// tab's #blocked-count badge, capped at 999 (setRoomKitBadge's limit); null while the counts are unknown.
+function appBadgeCount(jobs) {
+  const counts = countJobs(jobs);
+  if (counts === null) {
+    return null;
+  }
+  return Math.min(counts.blocked, 999);
+}
+
 // RoomKit host hooks, registered at load time (after counts.js and live.js): every counts read of the board is checked
 // against the open job page (board.js), and each live check verifies an open decision (act.js) before the shown
-// views refresh; its promise holds that refresh until the check has started.
+// views refresh; its promise holds that refresh until the check has started. A second counts hook sets the app badge to
+// the blocked count through RoomKit's setRoomKitBadge (push.js), which clears it at 0.
 roomKitHooks.on("jobCounts", (jobs) => {
   refreshOpenJob(jobs);
+});
+roomKitHooks.on("jobCounts", (jobs) => {
+  const count = appBadgeCount(jobs);
+  if (count !== null) {
+    return setRoomKitBadge(count);
+  }
+  return undefined;
 });
 roomKitHooks.on("liveChecked", ({ jobsChanged, recovered, firstCheck }) =>
   recheckPendingCancel(jobsChanged || recovered || firstCheck, { includeForm: firstCheck }));

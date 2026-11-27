@@ -68,8 +68,8 @@ public sealed class WebAssetSplitTests
                 "  return JSON.stringify([project.next || null, project.stopped === true, asList(project.blocked), stop]);\n"),
             ("  projectClaims.set(name, readClaims(project));\n",
                 ""),
-            // #472: the RoomKit 0.2.0 host hooks for the open job page and the decision check.
-            ("\n// RoomKit host hooks, registered at load time (after counts.js and live.js): every counts read of the board is checked\n// against the open job page (board.js), and each live check verifies an open decision (act.js) before the shown\n// views refresh; its promise holds that refresh until the check has started.\nroomKitHooks.on(\"jobCounts\", (jobs) => {\n  refreshOpenJob(jobs);\n});\nroomKitHooks.on(\"liveChecked\", ({ jobsChanged, recovered, firstCheck }) =>\n  recheckPendingCancel(jobsChanged || recovered || firstCheck, { includeForm: firstCheck }));\n\n// After Save: show the current view again and reload its data, the backlogs and the counts on the Backlogs and Jobs\n",
+            // #472: the RoomKit 0.2.0 host hooks for the open job page and the decision check; #476: the app badge.
+            ("\n// The app badge (#476): the number of blocked (needs-human) jobs over every project, the same count as the Jobs\n// tab's #blocked-count badge, capped at 999 (setRoomKitBadge's limit); null while the counts are unknown.\nfunction appBadgeCount(jobs) {\n  const counts = countJobs(jobs);\n  if (counts === null) {\n    return null;\n  }\n  return Math.min(counts.blocked, 999);\n}\n\n// RoomKit host hooks, registered at load time (after counts.js and live.js): every counts read of the board is checked\n// against the open job page (board.js), and each live check verifies an open decision (act.js) before the shown\n// views refresh; its promise holds that refresh until the check has started. A second counts hook sets the app badge to\n// the blocked count through RoomKit's setRoomKitBadge (push.js), which clears it at 0.\nroomKitHooks.on(\"jobCounts\", (jobs) => {\n  refreshOpenJob(jobs);\n});\nroomKitHooks.on(\"jobCounts\", (jobs) => {\n  const count = appBadgeCount(jobs);\n  if (count !== null) {\n    return setRoomKitBadge(count);\n  }\n  return undefined;\n});\nroomKitHooks.on(\"liveChecked\", ({ jobsChanged, recovered, firstCheck }) =>\n  recheckPendingCancel(jobsChanged || recovered || firstCheck, { includeForm: firstCheck }));\n\n// After Save: show the current view again and reload its data, the backlogs and the counts on the Backlogs and Jobs\n",
                 "\n// After Save: show the current view again and reload its data, the backlogs and the counts on the Backlogs and Jobs\n"),
             // #475: History and Health behind the More button, and the #health alias.
             ("const TabForView = { job: \"board\", story: \"backlogs\" };\n// History and Health are behind the More button (#475): while one is shown, the button and its menu link are marked.\nconst MoreViews = new Set([\"history\", \"doctor\"]);\n// Another name for Health: it opens the Health view and becomes #doctor in place.\nconst HealthRoute = \"#health\";\n",
@@ -341,10 +341,10 @@ public sealed class WebAssetSplitTests
         Assert.True(start >= 0 && end > start);
         // The shell list block moved, with "/room.js" added and the version raised.
         List<string> block = develop.GetRange(start, end - start + 1);
-        block[0] = "const CacheVersion = \"v27\";";
+        block[0] = "const CacheVersion = \"v28\";";
         block.Insert(block.IndexOf("  \"/token.js\",") + 1, "  \"/room.js\",");
         block.Insert(block.IndexOf("  \"/app.css\",") + 1, "  \"/room.css\",");
-        int roomStart = room.IndexOf("const CacheVersion = \"v27\";");
+        int roomStart = room.IndexOf("const CacheVersion = \"v28\";");
         Assert.Equal(block, room.GetRange(roomStart, block.Count));
         develop.RemoveRange(start, end - start + 1);
 

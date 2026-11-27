@@ -314,9 +314,16 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `manifest.webmanifest`, `icons/`, `app.js`, `board.js`, `act.js`, `status.js`, `releases.js`, `room.js` and `room.css`.
   - `wwwroot/room.js` (ControlRoom): the app values the RoomKit scripts read as globals, loaded as the first
     `<script>` of `index.html` and by `sw.js` through `importScripts("/room.js")`: `TokenKey`, `CaptureProjectKey`,
-    `HistoryProjectKey`, `PushAppTexts` (`homeScreen`, `denied`), `CacheVersion` (`v27`), `CacheName`, `Shell` (the
+    `HistoryProjectKey`, `PushAppTexts` (`homeScreen`, `denied`), `CacheVersion` (`v28`), `CacheName`, `Shell` (the
     shell list, with `/room.js` and `/room.css`), `PushAppTitles` (`updated`), `PushFallbackTitle`, `PushDefaultTag` and
     `PushUpdatePrefix`. The script order below starts with `room.js`.
+  - App badge (#476): in `app.js`, directly after the first `jobCounts` hook a second one sets the app icon's badge to
+    the blocked (`needs-human`) count over every project (`appBadgeCount`: RoomKit's `countJobs`, the same count as
+    `#blocked-count`, capped at 999, `null` while unknown, then nothing is set) through RoomKit's `setRoomKitBadge`
+    (`push.js`), which clears it at 0; no app file calls the Badging API itself. iOS shows the badge only for the
+    Home Screen web app with notification permission. The badge changes only while the app is open and loads the job counts:
+    server pushes do not carry `badge` yet (RoomKit 0.2.0 has no server-side badge), so it can be stale while the app is
+    closed.
   - Scripts: every app value of `launch-agent.sh` and `updater.sh` is in the block between `# roomkit:app-begin`
     and `# roomkit:app-end` (assignments only); outside it `scripts/*.sh` are byte-identical to the restored
     package's `scripts/*.sh` (`RoomKitScriptTests`, which reads `$(PkgRoomKit)` through the test assembly's
