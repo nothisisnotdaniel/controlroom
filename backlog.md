@@ -44,6 +44,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#179](backlog/179-move-history-and-health-behind-a.md) Move History and Health behind a … menu in the tab bar → 475-more-menu-tabs.4bc0d3c44f8849c3a586d62c320880bd
 - [x] [#181](backlog/181-show-the-number-of-blocked-jobs.md) Show the number of blocked jobs as the app badge on the iPhone (after: RoomKit#6) → 476-blocked-jobs-badge.489646d30a9d4d00b22cb5f428b4004e
 - [x] [#163](backlog/163-show-when-the-last-check-for.md) Show when the updater last checked for updates → 477-updater-last-check.fb9bc9de67a24b2085825fdf605fabb5
+- [ ] [#188](backlog/188-show-the-severity-of-security-backlog.md) Show the severity of security backlog items
 - [h] [#186](backlog/186-set-up-the-github-packages-login.md) Set up the GitHub Packages login for RoomKit on this Mac
 - [stop] Auto stops here
 - [ ] [#176](backlog/176-show-each-backlog-item-s-factory.md) Show each backlog item's factory estimate (after: factory#62)
@@ -184,4 +185,3 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [?] [#177](backlog/177-pin-the-roomkit-package-content-with.md) Pin the RoomKit package content with a lock file and locked-mode restore
 - [ ] [#183](backlog/183-skip-the-release-workflow-changes-job.md) Skip the release workflow changes job on closed pull requests that are not release merges
 - [?] [#185](backlog/185-send-the-blocked-job-count-as.md) Send the blocked job count as the badge on every server push (after: RoomKit#12)
-- [ ] [#188](backlog/188-show-the-severity-of-security-backlog.md) Show the severity of security backlog items
