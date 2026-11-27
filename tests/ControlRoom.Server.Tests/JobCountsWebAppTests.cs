@@ -72,11 +72,12 @@ public sealed class JobCountsWebAppTests
 
         string load = FunctionBody(js, "async function loadJobCounts() {");
         Assert.Contains("jobCountsRequest += 1;\n  const request = jobCountsRequest;", load, StringComparison.Ordinal);
-        Assert.Contains("const data = JSON.parse(await fetchBoard());\n    counts = countJobs(data && data.jobs);\n"
+        Assert.Contains("const data = JSON.parse(await fetchBoard());\n    jobs = data && data.jobs;\n    counts = countJobs(jobs);\n"
                         + "    if (counts === null) {\n      throw new Error(\"data\");\n    }", load, StringComparison.Ordinal);
         Assert.Equal(2, Regex.Matches(load, Regex.Escape("if (request === jobCountsRequest) {")).Count);
         Assert.Contains("jobCounts = null;\n      showJobCounts();\n    }\n    return false;", load, StringComparison.Ordinal);
-        Assert.Contains("jobCounts = counts;\n    showJobCounts();\n  }\n  return true;", load, StringComparison.Ordinal);
+        Assert.Contains("jobCounts = counts;\n    showJobCounts();\n    await runRoomKitHooks(\"jobCounts\", jobs);\n  }\n  return true;",
+            load, StringComparison.Ordinal);
         Assert.DoesNotContain("authFetch(", js, StringComparison.Ordinal);
     }
 

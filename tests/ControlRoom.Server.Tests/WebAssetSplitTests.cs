@@ -12,7 +12,7 @@ public sealed class WebAssetSplitTests
     private static readonly string[] AppFiles =
     [
         "index.html", "manifest.webmanifest", "icons/apple-touch-icon.png", "icons/icon-192.png", "icons/icon-512.png",
-        "app.js", "board.js", "act.js", "status.js", "releases.js", "room.js",
+        "app.js", "board.js", "act.js", "status.js", "releases.js", "room.js", "room.css",
     ];
 
     private static readonly string[] KitFiles =
@@ -68,14 +68,65 @@ public sealed class WebAssetSplitTests
                 "  return JSON.stringify([project.next || null, project.stopped === true, asList(project.blocked), stop]);\n"),
             ("  projectClaims.set(name, readClaims(project));\n",
                 ""),
+            // #472: the RoomKit 0.2.0 host hooks for the open job page and the decision check.
+            ("\n// RoomKit host hooks, registered at load time (after counts.js and live.js): every counts read of the board is checked\n// against the open job page (board.js), and each live check verifies an open decision (act.js) before the shown\n// views refresh; its promise holds that refresh until the check has started.\nroomKitHooks.on(\"jobCounts\", (jobs) => {\n  refreshOpenJob(jobs);\n});\nroomKitHooks.on(\"liveChecked\", ({ jobsChanged, recovered, firstCheck }) =>\n  recheckPendingCancel(jobsChanged || recovered || firstCheck, { includeForm: firstCheck }));\n\n// After Save: show the current view again and reload its data, the backlogs and the counts on the Backlogs and Jobs\n",
+                "\n// After Save: show the current view again and reload its data, the backlogs and the counts on the Backlogs and Jobs\n"),
         ],
         ["edit.js"] =
         [
             ("  no_worktree: \"The factory's develop worktree is missing. Nothing was changed.\",\n",
                 ""),
         ],
-        ["board.js"] = [("const JobIdPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternNow,
-            "const JobIdPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternDevelop)],
+        ["board.js"] =
+        [
+            // #472: the open job page follows every board answer, with one bounded detail GET per board entry.
+            ("  pollBoard();\n  await opening.loaded;\n  opening.loaded = null;\n}\n",
+                "  pollBoard();\n}\n"),
+            ("  window.scrollTo(0, 0);\n  const opening = { needsCheck: false };\n  openingJob = opening;\n  opening.loaded = loadJob(id, false);\n",
+                "  window.scrollTo(0, 0);\n  loadJob(id, false);\n"),
+            ("\nasync function showJob(id) {\n",
+                "\nfunction showJob(id) {\n"),
+            ("  const title = renderJobPage(data);\n  if (conflict !== undefined) {\n    observeDecisionBoard(conflict);\n  }\n  if ((conflict !== undefined || (!refresh && openingJob?.needsCheck)) && typeof recheckPendingCancel === \"function\") {\n    recheckPendingCancel(true, { includeForm: true });\n  }\n",
+                "  const title = renderJobPage(data);\n"),
+            ("  }\n  jobRequest = null;\n  // These snapshots overlapped this GET. A disagreement in either delivery order needs a new read.\n  const conflict = typeof boardMatchesDecision === \"function\" ?\n    request.boards.find(entry => !boardMatchesDecision(entry, data?.job, data?.request)) : undefined;\n  if (refresh && conflict !== undefined && document.getElementById(\"act\")) {\n    recheckPendingCancel(true, { includeForm: true });\n    return;\n  }\n  if (refresh && jobDecisionHeld(data?.job, data?.request ?? null)) {\n",
+                "  }\n  if (refresh && jobDecisionHeld()) {\n"),
+            ("  } catch {\n    if (request === jobRequest) {\n      jobRequest = null;\n      if (typeof decisionDetailFailed === \"function\") {\n        decisionDetailFailed();\n      }\n      if (!refresh) {\n        showJobContent([element(\"p\", \"error\", BoardTexts.jobFailed)]);\n        document.querySelector(\"#job .back\").focus({ preventScroll: true });\n      }\n",
+                "  } catch {\n    if (request === jobRequest && !refresh) {\n      showJobContent([element(\"p\", \"error\", BoardTexts.jobFailed)]);\n      document.querySelector(\"#job .back\").focus({ preventScroll: true });\n"),
+            ("  try {\n    const response = await authFetch(\"/api/job?id=\" + encodeURIComponent(id),\n      { cache: \"no-store\", signal: AbortSignal.timeout(JobDetailTimeout) });\n",
+                "  try {\n    const response = await authFetch(\"/api/job?id=\" + encodeURIComponent(id), { cache: \"no-store\" });\n"),
+            ("  if (id === \"\") {\n    jobRequest = null;\n",
+                "  if (id === \"\") {\n"),
+            ("    openJobRecord = null;\n    jobRefreshHeld = false;\n",
+                "    openJobRecord = null;\n"),
+            ("\nasync function loadJob(id, refresh, entryText = null) {\n  if (refresh && openingJob?.loaded && openJobEntry === null) {\n    openingJob.needsCheck = true;\n    return;\n  }\n  if (refresh && openingJob) {\n    openingJob.needsCheck = false;\n  }\n  const request = { boards: [], entry: entryText };\n  jobRequest = request;\n",
+                "\nasync function loadJob(id, refresh) {\n  jobRequest += 1;\n  const request = jobRequest;\n"),
+            ("  openJobId = null;\n  openingJob = null;\n",
+                "  openJobId = null;\n"),
+            ("function leaveJob() {\n  jobRequest = null;\n",
+                "function leaveJob() {\n  jobRequest += 1;\n"),
+            ("// refresh never rebuilds the page then.\nfunction jobDecisionHeld(job, request) {\n  return typeof jobDecisionBusy === \"function\" && jobDecisionBusy(job, request);\n",
+                "// refresh never rebuilds the page then.\nfunction jobDecisionHeld() {\n  return typeof jobDecisionBusy === \"function\" && jobDecisionBusy();\n"),
+            ("    }\n    // A detail GET slower than the poll still applies: no new one for the board entry it was started for.\n    const entryText = JSON.stringify(entry);\n    if (jobRequest !== null && jobRequest.entry === entryText) {\n      return;\n    }\n    loadJob(openJobId, true, entryText);\n",
+                "    }\n    loadJob(openJobId, true);\n"),
+            ("    if (jobDecisionHeld()) {\n      if (conflict) {\n        // The held refresh must also supersede a detail that was already in flight.\n        jobRequest = null;\n      }\n",
+                "    if (jobDecisionHeld()) {\n"),
+            ("  }\n  const entry = jobs.find(job => job?.id === openJobId) ?? null;\n  jobRequest?.boards.push(entry);\n  if (openJobEntry === null) {\n    return;\n  }\n  const conflict = typeof observeDecisionBoard === \"function\" && observeDecisionBoard(entry);\n  if (conflict || (entry && JSON.stringify(entry) !== openJobEntry)) {\n",
+                "  }\n  const entry = boardJobs.find((job) => job.id === openJobId);\n  if (entry && openJobEntry !== null && JSON.stringify(entry) !== openJobEntry) {\n"),
+            ("\n// Every board read can contradict a detail or POST, even when the board itself has identical bytes.\nfunction refreshOpenJob(jobs) {\n  if (openJobId === null || document.getElementById(\"job\").hidden || !Array.isArray(jobs)) {\n",
+                "\n// Reloads the open job page when its entry on the board has changed.\nfunction refreshOpenJob() {\n  if (openJobId === null || document.getElementById(\"job\").hidden) {\n"),
+            ("    renderBoard();\n    return true;\n",
+                "    renderBoard();\n    refreshOpenJob();\n    return true;\n"),
+            ("    loadUpdate();\n    refreshOpenJob(data?.jobs);\n",
+                "    loadUpdate();\n"),
+            ("let openJobRecord = null;\nlet jobRequest = null;\n",
+                "let openJobRecord = null;\nlet jobRequest = 0;\n"),
+            ("let openJobId = null;\nlet openingJob = null;\n",
+                "let openJobId = null;\n"),
+            ("const PollInterval = 5000;\nconst JobDetailTimeout = 10000;\n",
+                "const PollInterval = 5000;\n"),
+            ("const JobIdPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternNow,
+                "const JobIdPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternDevelop),
+        ],
         ["releases.js"] = [("const ReleaseJobPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternNow,
             "const ReleaseJobPattern = /^[0-9]{1,6}-[a-z0-9-]" + JobPatternDevelop)],
         // #409: other machines' item claims.
@@ -100,6 +151,31 @@ public sealed class WebAssetSplitTests
                 "    if (!value || typeof value.backlog !== \"string\" || typeof value.stories !== \"string\") {\n      return null;\n    }\n    projects.set(name, { backlog: value.backlog, stories: value.stories });\n"),
             ("    // Another machine's claims changed: the section is fetched again, like a changed backlog.\n    if (!backlogChanged && before.claims !== after.claims) {\n      staleBacklogs.add(name);\n    }\n",
                 ""),
+            // RoomKit 0.2.0: the "liveChecked" host hooks.
+            ("    noteChanges(next, recovered);\n    // The \"liveChecked\" host hooks (counts.js) run while the board views are shown, before the views refresh.\n    if (boardViewsVisible()) {\n      await runRoomKitHooks(\"liveChecked\", {\n        jobsChanged: previous !== null && previous.jobs !== next.jobs,\n        recovered: recovered,\n        firstCheck: previous === null,\n      });\n    }\n",
+                "    noteChanges(next, recovered);\n"),
+            ("      return;\n    }\n    const previous = liveLast;\n",
+                "      return;\n    }\n"),
+        ],
+        // RoomKit 0.2.0: the host hook registry and the "jobCounts" hooks.
+        ["counts.js"] =
+        [
+            ("    jobCounts = counts;\n    showJobCounts();\n    await runRoomKitHooks(\"jobCounts\", jobs);\n",
+                "    jobCounts = counts;\n    showJobCounts();\n"),
+            ("    const data = JSON.parse(await fetchBoard());\n    jobs = data && data.jobs;\n    counts = countJobs(jobs);\n",
+                "    const data = JSON.parse(await fetchBoard());\n    counts = countJobs(data && data.jobs);\n"),
+            ("  const request = jobCountsRequest;\n  let counts;\n  let jobs;\n",
+                "  const request = jobCountsRequest;\n  let counts;\n"),
+            ("// Fetches the board once for the counts; an older answer than the last request is dropped. Returns false when it\n// failed, so the live check tries again. After new counts are set, the \"jobCounts\" host hooks get the answer's jobs.\n",
+                "// Fetches the board once for the counts; an older answer than the last request is dropped. Returns false when it\n// failed, so the live check tries again.\n"),
+            ("// every board answer it reads.\n\n// Host hooks (RoomKit #5): a host app's script, loaded after this one, registers its own code with\n// roomKitHooks.on(name, fn) for one of HostHookNames: \"jobCounts\" runs after loadJobCounts has set new counts (given\n// the board answer's jobs), \"liveChecked\" after each live check while the board views are shown (live.js, given\n// { jobsChanged, recovered, firstCheck }). A name's hooks run in registration order, each awaited; one that throws\n// or rejects is written to console.error and the next one runs. The registry is frozen and its list is closed over,\n// so no script can replace or reach it; runRoomKitHooks is only for counts.js and live.js.\nconst HostHookNames = Object.freeze([\"jobCounts\", \"liveChecked\"]);\n\nconst [roomKitHooks, runRoomKitHooks] = (() => {\n  const hooks = new Map(HostHookNames.map((name) => [name, []]));\n\n  function on(name, fn) {\n    if (typeof name !== \"string\" || !hooks.has(name)) {\n      throw new TypeError(\"roomKitHooks.on: unknown hook name\");\n    }\n    if (typeof fn !== \"function\") {\n      throw new TypeError(\"roomKitHooks.on: the hook is not a function\");\n    }\n    hooks.get(name).push(fn);\n  }\n\n  async function run(name, argument) {\n    for (const fn of [...hooks.get(name)]) {\n      try {\n        await fn(argument);\n      } catch (error) {\n        console.error(\"roomKitHooks: a \" + name + \" hook failed\", error);\n      }\n    }\n  }\n\n  return [Object.freeze({ on: on }), run];\n})();\n",
+                "// every board answer it reads.\n"),
+        ],
+        // RoomKit 0.2.0: setRoomKitBadge; push.js is checked against its develop copy, so Push_ReplacesItsTwoTextsWithTheAppTexts applies it.
+        ["push.js"] =
+        [
+            ("    await pushJson(\"/api/push/settings\", { notifyUpdate: on });\n  });\n}\n\n// Sets the app icon's badge to count (a whole number 1..999) or clears it (0) through the Badging API, for a host app\n// while it is open. Any other value does nothing. Resolves to true when a Badging call was made and settled, else\n// false (invalid value, no Badging API, or the call failed); never throws or rejects.\nasync function setRoomKitBadge(count) {\n  if (!Number.isInteger(count) || count < 0 || count > 999) {\n    return false;\n  }\n  try {\n    if (count === 0) {\n      if (typeof navigator.clearAppBadge !== \"function\") {\n        return false;\n      }\n      await navigator.clearAppBadge();\n    } else {\n      if (typeof navigator.setAppBadge !== \"function\") {\n        return false;\n      }\n      await navigator.setAppBadge(count);\n    }\n    return true;\n  } catch {\n    return false;\n  }\n}\n\n",
+                "    await pushJson(\"/api/push/settings\", { notifyUpdate: on });\n  });\n}\n\n"),
         ],
     };
 
@@ -115,6 +191,13 @@ public sealed class WebAssetSplitTests
         ("async function networkFirst(event) {\n  // One entry per shell path: the key is the bare pathname, so a query string never adds an entry.\n  const key = new URL(event.request.url).pathname;\n  const cache = await caches.open(CacheName);\n  let response;\n  try {\n    response = await fetch(event.request, { cache: \"no-cache\" });\n  } catch {\n    // No network answer (offline or unreachable): the cached copy, else a network error.\n    const cached = await cache.match(key);\n    return cached || Response.error();\n  }\n  if (response.ok) {\n    try {\n      await cache.put(key, response.clone());\n    } catch {\n      // A full or unavailable cache keeps the old copy; the network answer is still returned.\n    }\n  }\n  return response;\n}\n",
             "async function staleWhileRevalidate(event) {\n  // One entry per shell path: the key is the bare pathname, so a query string never adds an entry.\n  const key = new URL(event.request.url).pathname;\n  const cache = await caches.open(CacheName);\n  const cached = await cache.match(key);\n  const network = fetch(event.request).then(async (response) => {\n    if (response.ok) {\n      await cache.put(key, response.clone());\n    }\n    return response;\n  });\n  if (cached) {\n    event.waitUntil(network.catch(() => undefined));\n    return cached;\n  }\n  return network;\n}\n"),
         ("  event.respondWith(networkFirst(event));\n", "  event.respondWith(staleWhileRevalidate(event));\n"),
+        // RoomKit 0.2.0: the push payload's badge.
+        ("self.addEventListener(\"push\", (event) => {\n  const data = readPushData(event);\n  const note = pushNotification(data);\n  event.waitUntil(Promise.all([\n    updatePushBadge(pushBadge(data)),\n    self.registration.showNotification(note.title, note.options),\n  ]));\n",
+            "self.addEventListener(\"push\", (event) => {\n  const note = pushNotification(readPushData(event));\n  event.waitUntil(self.registration.showNotification(note.title, note.options));\n"),
+        ("  };\n}\n\n// The payload's badge when it is a whole number 0..999, else null (the badge stays as it is).\nfunction pushBadge(data) {\n  const badge = data.badge;\n  return Number.isInteger(badge) && badge >= 0 && badge <= 999 ? badge : null;\n}\n\n// Sets (1..999) or clears (0) the app icon's badge through the Badging API. Never rejects: a missing or failing API\n// leaves the badge as it is and the notification is shown either way.\nasync function updatePushBadge(badge) {\n  if (badge === null) {\n    return;\n  }\n  try {\n    if (badge === 0) {\n      if (typeof navigator.clearAppBadge === \"function\") {\n        await navigator.clearAppBadge();\n      }\n    } else if (typeof navigator.setAppBadge === \"function\") {\n      await navigator.setAppBadge(badge);\n    }\n  } catch {\n    // No badge on this device: the notification still counts.\n  }\n}\n\n",
+            "  };\n}\n\n"),
+        ("\n// Push: the payload holds only kind, project, job, stage, version, previous, reason, count and badge. The title comes from this fixed table,\n// never from the payload; the body is built from the payload's names. badge (a whole number 0..999, separate from\n// count) only sets the app icon's badge, 0 clears it, and any other value leaves it as it is. Nothing is fetched here.\n",
+            "\n// Push: the payload holds only kind, project, job, stage, version, previous, reason and count. The title comes from this fixed table,\n// never from the payload; the body is built from the payload's names. Nothing is fetched here.\n"),
     ];
 
     private static readonly string[] KitGlobals =
@@ -130,7 +213,7 @@ public sealed class WebAssetSplitTests
         Assert.Equal(KitFiles.Order(StringComparer.Ordinal), kit);
         Assert.Empty(app.Intersect(kit, StringComparer.Ordinal));
         string[] develop = [.. DevelopHashes().Keys.Order(StringComparer.Ordinal)];
-        Assert.Equal(develop, app.Concat(kit).Where(path => path != "room.js").Order(StringComparer.Ordinal));
+        Assert.Equal(develop, app.Concat(kit).Where(path => path is not ("room.js" or "room.css")).Order(StringComparer.Ordinal));
     }
 
     [Theory]
@@ -222,8 +305,14 @@ public sealed class WebAssetSplitTests
         Assert.True(home >= 0);
         develop[home] = "  ...PushAppTexts,";
         Assert.True(develop.Remove(MovedLines["push.js"][1]));
+        string script = string.Join('\n', develop);
+        foreach ((string now, string before) in LaterEdits["push.js"])
+        {
+            Assert.Contains(before, script, StringComparison.Ordinal);
+            script = script.Replace(before, now, StringComparison.Ordinal);
+        }
 
-        Assert.Equal(develop, Lines(Path.Combine(KitFolder(), "push.js")));
+        Assert.Equal(script.Split('\n').ToList(), Lines(Path.Combine(KitFolder(), "push.js")));
     }
 
     [Fact]
@@ -236,9 +325,10 @@ public sealed class WebAssetSplitTests
         Assert.True(start >= 0 && end > start);
         // The shell list block moved, with "/room.js" added and the version raised.
         List<string> block = develop.GetRange(start, end - start + 1);
-        block[0] = "const CacheVersion = \"v25\";";
+        block[0] = "const CacheVersion = \"v26\";";
         block.Insert(block.IndexOf("  \"/token.js\",") + 1, "  \"/room.js\",");
-        int roomStart = room.IndexOf("const CacheVersion = \"v25\";");
+        block.Insert(block.IndexOf("  \"/app.css\",") + 1, "  \"/room.css\",");
+        int roomStart = room.IndexOf("const CacheVersion = \"v26\";");
         Assert.Equal(block, room.GetRange(roomStart, block.Count));
         develop.RemoveRange(start, end - start + 1);
 
@@ -281,6 +371,7 @@ public sealed class WebAssetSplitTests
         Assert.Equal(index.FindIndex(line => line.Contains("<script", StringComparison.Ordinal)), index.IndexOf(Room));
         Assert.Equal(index.IndexOf(Room) + 1, index.IndexOf("  <script src=\"/token.js\" defer></script>"));
         index.Remove(Room);
+        Assert.True(index.Remove("  <link rel=\"stylesheet\" href=\"/room.css\">"));
         Assert.True(index.Remove("""      <p class="token-help">On Windows, open PowerShell in the server folder and run <code>.\controlroom.exe token</code>.</p>"""));
         Assert.Equal(develop, index);
     }

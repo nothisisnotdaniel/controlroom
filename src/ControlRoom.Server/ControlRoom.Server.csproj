@@ -35,7 +35,7 @@
 
   <ItemGroup>
     <!-- RoomKit comes from GitHub Packages (nuget.config). Bump the pin here and in the test project together. -->
-    <PackageReference Include="RoomKit" Version="0.1.0" GeneratePathProperty="true" />
+    <PackageReference Include="RoomKit" Version="0.2.0" GeneratePathProperty="true" />
   </ItemGroup>
 
   <ItemGroup>

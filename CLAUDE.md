@@ -187,7 +187,7 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   factory's job format. Since #151 it lives in its own repo `nothisisnotdaniel/roomkit` and ControlRoom uses the
   package `RoomKit` from GitHub Packages (`https://nuget.pkg.github.com/nothisisnotdaniel/index.json`; docs:
   `https://github.com/nothisisnotdaniel/roomkit/blob/main/docs/roomkit.md`), pinned to one exact version
-  (`<PackageReference Include="RoomKit" Version="0.1.0" GeneratePathProperty="true" />`) in both
+  (`<PackageReference Include="RoomKit" Version="0.2.0" GeneratePathProperty="true" />`) in both
   `ControlRoom.Server.csproj` and `ControlRoom.Server.Tests.csproj`; to bump the pin, change `Version` in both csproj
   files together (`RoomKitPinTests` checks they match). `nuget.config` clears inherited sources and maps `RoomKit` to
   the source `github` only and `*` to `nuget.org` only (no credentials in the repo). Restore needs a read credential
@@ -311,11 +311,11 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     `launch-agent.sh`, `updater.sh`, `launch-agent.ps1` and `updater.ps1`. `src/ControlRoom.Server/` keeps `Program.cs`, a thin `ServerApp`, `ControlRoomApp`,
     `StateJsonJobFormat`, `JobReader`, `JobAction`, `JobActEndpoint`, `BoardEndpoint`, `ChangesEndpoint`,
     `JobEndpoint`, `ProjectStatusEndpoint`, `ReleasesEndpoint`, and in `wwwroot/` `index.html`,
-    `manifest.webmanifest`, `icons/`, `app.js`, `board.js`, `act.js`, `status.js`, `releases.js` and `room.js`.
+    `manifest.webmanifest`, `icons/`, `app.js`, `board.js`, `act.js`, `status.js`, `releases.js`, `room.js` and `room.css`.
   - `wwwroot/room.js` (ControlRoom): the app values the RoomKit scripts read as globals, loaded as the first
     `<script>` of `index.html` and by `sw.js` through `importScripts("/room.js")`: `TokenKey`, `CaptureProjectKey`,
-    `HistoryProjectKey`, `PushAppTexts` (`homeScreen`, `denied`), `CacheVersion` (`v25`), `CacheName`, `Shell` (the
-    shell list, with `/room.js`), `PushAppTitles` (`updated`), `PushFallbackTitle`, `PushDefaultTag` and
+    `HistoryProjectKey`, `PushAppTexts` (`homeScreen`, `denied`), `CacheVersion` (`v26`), `CacheName`, `Shell` (the
+    shell list, with `/room.js` and `/room.css`), `PushAppTitles` (`updated`), `PushFallbackTitle`, `PushDefaultTag` and
     `PushUpdatePrefix`. The script order below starts with `room.js`.
   - Scripts: every app value of `launch-agent.sh` and `updater.sh` is in the block between `# roomkit:app-begin`
     and `# roomkit:app-end` (assignments only); outside it `scripts/*.sh` are byte-identical to the restored
@@ -465,10 +465,33 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
     a changed `jobs` fingerprint refetches the history while it is shown; a changed `jobs`, `backlog` or `stories`
     fingerprint refetches the health view while it is shown; a changed `jobs` or `backlog` fingerprint refetches the
     status lines and the release blocks while Backlogs is shown), `act.js` (the "Your decision" section under the state section of a `needs-human` job page only: Approve (after a
-    confirm), Rework with a note box (`maxlength` 1000) and Send (off while blank); with a pending request the fixed
-    `Waiting for the next /factory session for <project>: <Approve|Rework> sent <local time>` text, the note as text and
-    Cancel request; fixed texts per error code in `ActErrors`; `jobDecisionBusy` (a send in flight, or the note box has
-    text or focus) keeps a live refresh from rebuilding it), `counts.js` (#135: the two badges on the Backlogs tab icon, the `[h]` count (`user`) and the `[?]` count
+    confirm), Rework with a note box (no `maxlength`) and Send (off while blank); `actNoteState` counts the note with
+    `for…of` over scalars, turns each `\p{White_Space}` run into one space and trims the ends, and Send posts exactly
+    that cleaned text (the server takes 1,000 scalars, 1,001 is `400 invalid`); over 1,000 the draft is kept, the
+    textarea gets `aria-invalid="true"`, Send is off, the live hint (`role="status"`) changes to
+    `Shorten your note to 1,000 characters or fewer.` only when the note crosses the limit, and `#act-note-over` (not a live region) shows
+    `N over`; back at 1,000 or fewer the hint, Send and the attribute return; during a send the note is `readOnly` and
+    the buttons are off, a failed send restores the editable draft with the fixed error text; with a pending request
+    the fixed `Waiting for the next /factory session for <project>: <Approve|Rework> sent <local time>` text, the note
+    as text and Cancel request (`Request cancelled.`; `409 not_pending` brings the form back with
+    `ActErrors.not_pending`); while a detail check holds the buttons (`aria-disabled`) `act-status` adds
+    `Checking the current request…`, after a failed check `Could not check the request. Retrying.` (error style); when the answer keeps
+    a request other than the Approve or Rework just sent it shows `Another request replaced yours.`; the states (form,
+    sending, pending, checking, check-failed) are in the `// Decision states:` comment; fixed texts in `ActTexts`, per
+    error code in `ActErrors`; `jobDecisionBusy` (a send in flight, or the note box has text or focus) keeps a live
+    refresh from rebuilding it; Cancel sends only `id`, `round` and `action`, so a Cancel from another tab made before
+    this page polls can still delete a replacement request (not covered). `board.js` keeps the open job page in step:
+    `pollBoard` calls `refreshOpenJob(data?.jobs)` before its unchanged-text early return, `refreshOpenJob` starts no
+    second detail GET for the board entry one is in flight for, and the detail GET has `signal: AbortSignal.timeout(JobDetailTimeout)`
+    (`JobDetailTimeout` 10000 ms). `app.js` hooks it into RoomKit 0.2.0 without
+    replacing a RoomKit global: `roomKitHooks.on("jobCounts", …)` passes the board's `jobs` to `refreshOpenJob`, and
+    `roomKitHooks.on("liveChecked", …)` returns
+    `recheckPendingCancel(jobsChanged || recovered || firstCheck, { includeForm: firstCheck })`. `room.css` (linked after `app.css`, in the shell) styles the invalid note
+    (`border-color: var(--error)`), the read-only note (muted) and the over-limit hint (keeps `act-hint` 0.85rem, error
+    colour). After any change to the decision code in `act.js` or `board.js`, run the hand fixture
+    `tests/ControlRoom.Server.Tests/Browser/rework-submission.html`: open the file in a browser and wait until
+    `#result` no longer shows `Running` (it must show `PASS`); it loads only `board.js` and `act.js` and calls the
+    hook functions as `app.js` registers them, with stand-ins for the RoomKit scripts), `counts.js` (#135: the two badges on the Backlogs tab icon, the `[h]` count (`user`) and the `[?]` count
     (`approval`) summed over readable projects of one `/api/backlogs` answer (`fetchBacklogs`), older answers dropped by a request
     counter; each hidden at 0 or unknown (failed load), else the number (`aria-hidden`) plus a `span.visually-hidden`
     `, N task(s)` / `, N unapproved`; fixed texts in `CountTexts`; fetched at page load, after a token is saved, after every
