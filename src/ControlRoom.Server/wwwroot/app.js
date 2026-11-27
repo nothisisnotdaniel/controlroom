@@ -1113,7 +1113,7 @@ const InboxRoute = "#inbox";
 const TasksRoute = "#tasks";
 // A page without its own tab marks the tab it belongs to: a job is on the Jobs board, a story in a backlog.
 const TabForView = { job: "board", story: "backlogs" };
-// History and Health are behind the More button (#178): while one is shown, the button and its menu link are marked.
+// History and Health are behind the More button (#475): while one is shown, the button and its menu link are marked.
 const MoreViews = new Set(["history", "doctor"]);
 // Another name for Health: it opens the Health view and becomes #doctor in place.
 const HealthRoute = "#health";
@@ -1149,7 +1149,7 @@ function viewFor(hash) {
   return hash === BoardRoute ? "board" : "backlogs";
 }
 
-// The More menu (#178): plain links above the tab bar that #tab-more shows and hides (a disclosure, not role="menu").
+// The More menu (#475): plain links above the tab bar that #tab-more shows and hides (a disclosure, not role="menu").
 function moreMenuOpen() {
   return !document.getElementById("tab-more-menu").hidden;
 }

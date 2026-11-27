@@ -21,7 +21,7 @@
   display: none;
 }
 
-/* The More button (#178): the tab bar's last item, sized and coloured like a .tab-bar a (RoomKit styles only links
+/* The More button (#475): the tab bar's last item, sized and coloured like a .tab-bar a (RoomKit styles only links
    there), with no button border or background. */
 .tab-more {
   position: relative;

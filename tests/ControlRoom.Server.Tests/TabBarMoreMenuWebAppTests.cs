@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 
 namespace ControlRoom.Server.Tests;
 
-/// <summary>The More button at the end of the tab bar and its menu with History and Health (#178), checked as text in
+/// <summary>The More button at the end of the tab bar and its menu with History and Health (#475), checked as text in
 /// <c>index.html</c>, <c>app.js</c> and <c>room.css</c>.</summary>
 public sealed partial class TabBarWebAppTests
 {
