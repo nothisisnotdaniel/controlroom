@@ -625,3 +625,6 @@ Every factory agent reads this file before working on ControlRoom. Keep it short
   stays at 0 warnings. The web app is mobile first (iPhone width), works in light and dark mode and uses
   fixed error texts, never exception messages.
 - **Git:** `develop` is the working branch: factory work branches off it as `factory/<job-id>` and is merged back with `--no-ff`. `main` holds releases only and is pushed to only for a new release.
+
+## Lessons
+- Only use RoomKit types that are public in the pinned package; if a change needs an internal one, add a RoomKit item and release first.
