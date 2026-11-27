@@ -43,7 +43,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#178](backlog/178-redo-pr-4-on-develop-keep.md) Redo PR #4 on develop: keep overlong rework notes editable, on RoomKit 0.2.0 (after: RoomKit#6) → 472-redo-pr4-rework-notes.38de8ae8b29444d09f4f9496f5e88bf4
 - [x] [#179](backlog/179-move-history-and-health-behind-a.md) Move History and Health behind a … menu in the tab bar → 475-more-menu-tabs.4bc0d3c44f8849c3a586d62c320880bd
 - [x] [#181](backlog/181-show-the-number-of-blocked-jobs.md) Show the number of blocked jobs as the app badge on the iPhone (after: RoomKit#6) → 476-blocked-jobs-badge.489646d30a9d4d00b22cb5f428b4004e
-- [ ] [#163](backlog/163-show-when-the-last-check-for.md) Show when the updater last checked for updates
+- [x] [#163](backlog/163-show-when-the-last-check-for.md) Show when the updater last checked for updates → 477-updater-last-check.fb9bc9de67a24b2085825fdf605fabb5
 - [stop] Auto stops here
 - [ ] [#176](backlog/176-show-each-backlog-item-s-factory.md) Show each backlog item's factory estimate (after: factory#62)
 - [ ] [#180](backlog/180-keep-a-scrollable-list-of-sent.md) Keep a scrollable list of sent notifications in a Notifications tab (after: #179)
