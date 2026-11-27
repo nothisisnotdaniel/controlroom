@@ -183,5 +183,5 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#172](backlog/172-split-the-release-tests-across-parallel.md) Split the release tests across parallel runners → 415-parallel-release-tests.2a7150e6f23a4394b4a23946f6f34dc1
 - [ ] [#173](backlog/173-spike-find-the-slowest-tests-on.md) Spike: find the slowest tests on CI
 - [?] [#177](backlog/177-pin-the-roomkit-package-content-with.md) Pin the RoomKit package content with a lock file and locked-mode restore
-- [?] [#183](backlog/183-skip-the-release-workflow-changes-job.md) Skip the release workflow changes job on closed pull requests that are not release merges
+- [ ] [#183](backlog/183-skip-the-release-workflow-changes-job.md) Skip the release workflow changes job on closed pull requests that are not release merges
 - [?] [#185](backlog/185-send-the-blocked-job-count-as.md) Send the blocked job count as the badge on every server push (after: RoomKit#12)
