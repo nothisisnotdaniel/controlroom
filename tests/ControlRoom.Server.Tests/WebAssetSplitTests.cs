@@ -213,6 +213,7 @@ public sealed class WebAssetSplitTests
         Assert.Equal(KitFiles.Order(StringComparer.Ordinal), kit);
         Assert.Empty(app.Intersect(kit, StringComparer.Ordinal));
         string[] develop = [.. DevelopHashes().Keys.Order(StringComparer.Ordinal)];
+        // room.js and room.css are app files that develop never had, so they have no develop hash.
         Assert.Equal(develop, app.Concat(kit).Where(path => path is not ("room.js" or "room.css")).Order(StringComparer.Ordinal));
     }
 
