@@ -44,6 +44,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#179](backlog/179-move-history-and-health-behind-a.md) Move History and Health behind a … menu in the tab bar → 475-more-menu-tabs.4bc0d3c44f8849c3a586d62c320880bd
 - [x] [#181](backlog/181-show-the-number-of-blocked-jobs.md) Show the number of blocked jobs as the app badge on the iPhone (after: RoomKit#6) → 476-blocked-jobs-badge.489646d30a9d4d00b22cb5f428b4004e
 - [x] [#163](backlog/163-show-when-the-last-check-for.md) Show when the updater last checked for updates → 477-updater-last-check.fb9bc9de67a24b2085825fdf605fabb5
+- [ ] [#191](backlog/191-restore-roomkit-with-the-keychain-token.md) Restore RoomKit with the Keychain token in agent shells
 - [ ] [#188](backlog/188-show-the-severity-of-security-backlog.md) Show the severity of security backlog items
 - [ ] [#189](backlog/189-back-from-a-story-in-another.md) Back from a story in another backlog returns to the backlog it came from
 - [ ] [#171](backlog/171-one-project-filter-on-the-backlog.md) One project filter on the Backlog page, with factory
