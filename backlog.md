@@ -50,7 +50,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#185](backlog/185-send-the-blocked-job-count-as.md) Send the blocked job count as the badge on every server push (after: RoomKit#12)
 - [ ] [#176](backlog/176-show-each-backlog-item-s-factory.md) Show each backlog item's factory estimate (after: factory#62)
 - [ ] [#156](backlog/156-drop-the-one-off-controlroom-400.md) Drop the one-off ControlRoom 400 test workflow
-- [h] [#186](backlog/186-set-up-the-github-packages-login.md) Set up the GitHub Packages login for RoomKit on this Mac
+- [x] [#186](backlog/186-set-up-the-github-packages-login.md) Set up the GitHub Packages login for RoomKit on this Mac
 - [ ] [#190](backlog/190-offer-drop-on-approved-backlog-items.md) Offer Drop on approved backlog items (after: RoomKit#15)
 - [stop] Auto stops here
 - [ ] [#180](backlog/180-keep-a-scrollable-list-of-sent.md) Keep a scrollable list of sent notifications in a Notifications tab (after: #179)
