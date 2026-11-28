@@ -91,7 +91,7 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#75](backlog/075-browser-check-of-the-next-and.md) Browser check of the next and waiting view
 - [x] [#76](backlog/076-browser-check-of-add-note-on.md) Browser check of Add note on a story
 - [x] [#82](backlog/082-browser-check-of-capture-and-the.md) Browser check of Capture and the two-row nav
-- [h] [#83](backlog/083-browser-check-of-approve-and-rework.md) Browser check of Approve and Rework on an escalated job
+- [x] [#83](backlog/083-browser-check-of-approve-and-rework.md) Browser check of Approve and Rework on an escalated job
 - [x] [#84](backlog/084-browser-check-of-the-history-view.md) Browser check of the History view and seven-link nav
 - [ ] [#88](backlog/088-one-doctor-check-at-a-time.md) One doctor check at a time
 - [x] [#89](backlog/089-browser-check-of-the-health-view.md) Browser check of the Health view
