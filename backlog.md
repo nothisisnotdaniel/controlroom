@@ -54,7 +54,6 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [x] [#186](backlog/186-set-up-the-github-packages-login.md) Set up the GitHub Packages login for RoomKit on this Mac
 - [ ] [#190](backlog/190-offer-drop-on-approved-backlog-items.md) Offer Drop on approved backlog items (after: RoomKit#15)
 - [stop] Auto stops here
-- [ ] [#180](backlog/180-keep-a-scrollable-list-of-sent.md) Keep a scrollable list of sent notifications in a Notifications tab (after: #179)
 - [x] [#13](backlog/013-releases-overview.md) Releases overview → 375-releases-overview
 - [x] [#15](backlog/015-job-detail.md) Job detail (after: #2) → 248-job-detail-gaps
 - [x] [#16](backlog/016-live-updates.md) Live updates → 249-live-board-updates
