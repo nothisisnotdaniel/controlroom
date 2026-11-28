@@ -132,3 +132,4 @@ The order of the lines is the priority. Add items with `python3 factory/tools/jo
 - [ ] [#168](backlog/168-update-the-factory-s-claim-marks.md) Update the factory's claim marks live
 - [x] [#172](backlog/172-split-the-release-tests-across-parallel.md) Split the release tests across parallel runners → 415-parallel-release-tests.2a7150e6f23a4394b4a23946f6f34dc1
 - [ ] [#173](backlog/173-spike-find-the-slowest-tests-on.md) Spike: find the slowest tests on CI
+- [ ] [#192](backlog/192-this-week-page-from-the-structured.md) This week page from the structured weekly plan (after: factory#102)
